@@ -1,19 +1,18 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NEUROSTAT // PLATFORM SYSTEMS</title>
 <style>
-  /* ---- NeuroStat: azul-clinico frio, tecnico, levemente errado ---- */
   :root{
     --bg:#070b0e;
     --panel:#0c1418;
     --line:#16323a;
-    --ink:#9fc6c9;          /* texto base, ciano dessaturado */
+    --ink:#9fc6c9;
     --ink-dim:#456066;
-    --live:#62e0c4;         /* verde-agua: o "ligado", frio */
-    --warn:#d8a24a;         /* ambar de alerta */
+    --live:#62e0c4;
+    --warn:#d8a24a;
     --locked:#1b2b30;
     --scan: rgba(98,224,196,.025);
     --font: "SFMono-Regular", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
@@ -27,18 +26,16 @@
     font-size:14px;
     line-height:1.5;
     overflow:hidden;
-    /* scanline ambiente sutil */
     background-image:repeating-linear-gradient(
       0deg, var(--scan) 0px, var(--scan) 1px, transparent 1px, transparent 3px);
   }
-  /* leve vinheta uncanny nas bordas */
   body::after{
     content:"";position:fixed;inset:0;pointer-events:none;
     box-shadow:inset 0 0 180px rgba(0,0,0,.85);
     z-index:50;
   }
 
-  /* ================= STANDBY (terminal dormindo) ================= */
+  /* ================= STANDBY ================= */
   #standby{
     position:fixed;inset:0;z-index:40;
     background:var(--bg);
@@ -49,13 +46,13 @@
     width:9px;height:9px;border-radius:50%;
     background:var(--ink-dim);
     box-shadow:0 0 12px var(--ink-dim);
-    animation:pulse 2.7s infinite;       /* ritmo proposital fora do "1s redondo" */
+    animation:pulse 2.7s infinite;
   }
   @keyframes pulse{0%,100%{opacity:.25}45%{opacity:.9}}
   #standby .msg{color:var(--ink-dim);letter-spacing:.28em;font-size:12px}
   #standby .sub{color:var(--ink-dim);opacity:.5;font-size:11px;letter-spacing:.1em}
 
-  /* ================= TERMINAL ATIVO ================= */
+  /* ================= TERMINAL ================= */
   #terminal{display:none;height:100%;flex-direction:column}
   #terminal.on{display:flex}
 
@@ -71,7 +68,6 @@
 
   main{flex:1;display:flex;min-height:0}
 
-  /* ----- coluna esquerda: o mapa vertical ----- */
   .mapwrap{
     width:300px;border-right:1px solid var(--line);
     display:flex;flex-direction:column;min-height:0;
@@ -82,7 +78,6 @@
   }
   .levels{flex:1;overflow-y:auto;padding:14px 12px;display:flex;flex-direction:column;gap:0}
 
-  /* cada andar empilhado verticalmente, do topo (heliponto) ao fundo (DRE) */
   .lvl{
     position:relative;
     border:1px solid var(--locked);
@@ -95,26 +90,17 @@
   .lvl:last-child{border-bottom:1px solid var(--locked)}
   .lvl .tag{font-size:10px;letter-spacing:.2em;opacity:.6}
   .lvl .name{font-size:13px;margin-top:2px;letter-spacing:.04em}
-  .lvl .stat{
-    position:absolute;right:12px;top:13px;font-size:9px;letter-spacing:.18em;
-  }
-  /* andar liberado pelo Guardiao */
-  .lvl.live{
-    border-color:var(--line);
-    background:var(--panel);
-    color:var(--ink);
-  }
+  .lvl .stat{position:absolute;right:12px;top:13px;font-size:9px;letter-spacing:.18em}
+  .lvl.live{border-color:var(--line);background:var(--panel);color:var(--ink)}
   .lvl.live .tag{color:var(--live);opacity:1}
   .lvl.live .stat{color:var(--live)}
   .lvl.live::before{
     content:"";position:absolute;left:-1px;top:-1px;bottom:-1px;width:2px;
     background:var(--live);box-shadow:0 0 8px var(--live);
   }
-  /* andar em destaque (foco do Guardiao) */
   .lvl.focus{outline:1px solid var(--live);outline-offset:-1px}
   .lvl.focus .name{color:var(--live)}
 
-  /* ----- coluna direita: leitura ----- */
   .read{flex:1;display:flex;flex-direction:column;min-height:0}
   .read .cap{
     padding:9px 16px;border-bottom:1px solid var(--line);
@@ -127,8 +113,28 @@
     color:var(--live);font-size:14px;font-weight:600;letter-spacing:.1em;
     margin-bottom:14px;text-transform:uppercase;
   }
-  .read .body p{margin-bottom:12px;max-width:62ch;color:var(--ink)}
   .read .body .meta{color:var(--ink-dim);font-size:11px;letter-spacing:.1em;margin-bottom:18px}
+
+  /* corpo do dossie renderizado */
+  .read .body .doc h3{
+    color:var(--ink);font-size:12px;letter-spacing:.18em;text-transform:uppercase;
+    margin:20px 0 8px;border-bottom:1px solid var(--line);padding-bottom:5px;
+  }
+  .read .body .doc p{margin-bottom:12px;max-width:64ch;color:var(--ink)}
+  .read .body .doc em{color:var(--live);font-style:normal;font-weight:600}
+  .read .body .doc .redacted{
+    background:#0d2026;color:transparent;user-select:none;
+    padding:0 4px;border-radius:1px;position:relative;
+    text-shadow:none;
+  }
+  .read .body .doc .redacted::after{
+    content:"";position:absolute;inset:0;background:#16323a;border-radius:1px;
+  }
+  /* separador entre multiplos dossies no mesmo nivel */
+  .read .body .docsep{
+    border:none;border-top:1px dashed var(--line);margin:26px 0;
+  }
+  .read .body .docfile + .docfile{margin-top:4px}
 
   footer{
     border-top:1px solid var(--line);padding:6px 16px;
@@ -138,14 +144,84 @@
   .blink{animation:bl 1.3s steps(1) infinite}
   @keyframes bl{50%{opacity:0}}
 
-  /* scrollbars discretas */
+  /* ================= CAMERA FEED (overlay) ================= */
+  #camfeed{
+    position:fixed;inset:0;z-index:60;display:none;
+    background:#05080a;
+    flex-direction:column;align-items:center;justify-content:center;
+  }
+  #camfeed.on{display:flex}
+  .camframe{
+    position:relative;width:min(78vw,820px);aspect-ratio:4/3;
+    background:#0a1014;border:1px solid var(--line);overflow:hidden;
+  }
+  /* a "imagem" placeholder: gradiente escuro + vinheta. Troca por <img> depois. */
+  .camimg{
+    position:absolute;inset:0;
+    background:
+      radial-gradient(ellipse at 50% 38%, #16252b 0%, #0a1216 55%, #05080a 100%);
+  }
+  /* ruido/grao */
+  .camnoise{
+    position:absolute;inset:-50%;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+    opacity:.16;mix-blend-mode:screen;
+    animation:noise .4s steps(3) infinite;
+  }
+  @keyframes noise{
+    0%{transform:translate(0,0)}33%{transform:translate(-6%,3%)}66%{transform:translate(4%,-5%)}100%{transform:translate(0,0)}
+  }
+  /* scanline de camera, mais densa */
+  .camscan{
+    position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,.4) 0 1px, transparent 1px 3px);
+  }
+  /* barra de rolagem vertical (sync loss) */
+  .camroll{
+    position:absolute;left:0;right:0;height:60px;pointer-events:none;
+    background:linear-gradient(180deg, transparent, rgba(255,255,255,.05) 45%, rgba(255,255,255,.08) 50%, transparent);
+    animation:roll 5.5s linear infinite;
+  }
+  @keyframes roll{0%{top:-60px}100%{top:100%}}
+  /* glitch horizontal ocasional */
+  .camglitch{
+    position:absolute;left:0;right:0;height:3px;background:rgba(98,224,196,.25);
+    opacity:0;
+    animation:glitch 3.2s steps(1) infinite;
+  }
+  @keyframes glitch{
+    0%,92%,100%{opacity:0;top:30%}
+    93%{opacity:.7;top:42%}94%{opacity:0}
+    96%{opacity:.6;top:67%}97%{opacity:0}
+  }
+  .camhud{
+    position:absolute;top:10px;left:12px;right:12px;
+    display:flex;justify-content:space-between;
+    font-size:11px;letter-spacing:.14em;color:var(--live);
+    text-shadow:0 0 6px rgba(98,224,196,.5);z-index:2;
+  }
+  .camhud .rec{display:flex;align-items:center;gap:7px}
+  .camhud .rec .rd{width:8px;height:8px;border-radius:50%;background:#d65a5a;
+    box-shadow:0 0 8px #d65a5a;animation:bl 1s steps(1) infinite}
+  .camhud .tc{color:var(--ink)}
+  .cambot{
+    position:absolute;bottom:10px;left:12px;right:12px;
+    display:flex;justify-content:space-between;
+    font-size:10px;letter-spacing:.16em;color:var(--ink-dim);z-index:2;
+  }
+  .camloss{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:13px;letter-spacing:.3em;color:var(--ink-dim);
+    background:rgba(5,8,10,.6);opacity:0;z-index:3;
+  }
+  .camframe.dropping .camloss{animation:lossflash .5s ease}
+  @keyframes lossflash{0%{opacity:0}40%{opacity:1}100%{opacity:0}}
+
   ::-webkit-scrollbar{width:8px}
   ::-webkit-scrollbar-thumb{background:var(--line)}
   ::-webkit-scrollbar-track{background:transparent}
 
-  @media (prefers-reduced-motion: reduce){
-    *{animation:none !important}
-  }
+  @media (prefers-reduced-motion: reduce){ *{animation:none !important} }
 </style>
 </head>
 <body>
@@ -155,6 +231,26 @@
     <div class="dot"></div>
     <div class="msg">AWAITING UPLINK</div>
     <div class="sub">neurostat platform systems &nbsp;//&nbsp; node idle</div>
+  </div>
+
+  <!-- ===== CAMERA FEED OVERLAY ===== -->
+  <div id="camfeed">
+    <div class="camframe" id="camframe">
+      <div class="camimg" id="camimg"></div>
+      <div class="camnoise"></div>
+      <div class="camroll"></div>
+      <div class="camglitch"></div>
+      <div class="camscan"></div>
+      <div class="camhud">
+        <div class="rec"><span class="rd"></span><span id="camlabel">CAM</span></div>
+        <div class="tc" id="camtc">--:--:--</div>
+      </div>
+      <div class="cambot">
+        <span id="camloc">—</span>
+        <span>SIGNAL: DEGRADED</span>
+      </div>
+      <div class="camloss">SIGNAL LOST</div>
+    </div>
   </div>
 
   <!-- ===== TERMINAL ===== -->
@@ -167,7 +263,7 @@
     <main>
       <section class="mapwrap">
         <div class="cap">VERTICAL SECTION // PLATFORM</div>
-        <div class="levels" id="levels"><!-- montado via JS --></div>
+        <div class="levels" id="levels"></div>
       </section>
 
       <section class="read">
@@ -191,8 +287,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="firebase-config.js"></script>
 <script>
-  // ----- estrutura placeholder da plataforma (topo -> fundo) -----
-  // Fatia 2 troca isso pela estrutura real / imagem.
+  const CAM_DURATION = 6000; // ms que o feed fica no ar antes de cortar
+
   const LEVELS = [
     { id:"helipad",  tag:"L-07", name:"Helipad" },
     { id:"quarters", tag:"L-06", name:"Crew Quarters" },
@@ -203,7 +299,8 @@
     { id:"dre",      tag:"L-??", name:"[ NO RECORD ]" }
   ];
 
-  // conteudo de leitura por nivel (placeholder; Fatia 2 conecta arquivos/cameras)
+  // leituras fixas de base (placeholder). Os dossies que voce escreve no painel
+  // sao ADICIONADOS embaixo destas, por nivel.
   const READINGS = {
     helipad:  { h:"Helipad — L-07", meta:"LAST LANDING: 04:11 / OPERATIONAL", body:
       ["Upper landing platform. Traffic log intact up to the weekly communications failure.",
@@ -233,7 +330,9 @@
   const elTitle  = document.getElementById("readtitle");
   const elStat   = document.getElementById("readstat");
 
-  // monta o mapa
+  // guarda os dossies vindos do firebase, por nivel
+  let FILES = {}; // { key: {title,body,level,at} }
+
   LEVELS.forEach(l=>{
     const d=document.createElement("div");
     d.className="lvl"; d.dataset.id=l.id;
@@ -243,34 +342,94 @@
     elLevels.appendChild(d);
   });
 
-  function renderReading(id){
-    const r=READINGS[id];
-    if(!r){ elBody.innerHTML=`<div class="empty">No readout for this level.</div>`; return; }
-    elTitle.textContent = r.h.toUpperCase();
-    elStat.textContent  = "ACCESS GRANTED";
-    elBody.innerHTML = `<h2>${r.h}</h2><div class="meta">${r.meta}</div>` +
-                       r.body.map(p=>`<p>${p}</p>`).join("");
+  // ---- escape de seguranca: nada de HTML do usuario vira HTML ----
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c=>(
+      {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]
+    ));
   }
 
-  // ---------- ESCUTA O ESTADO DO GUARDIAO ----------
+  // ---- markup leve e CONTROLADO de dossie ----
+  // entrada ja escapada -> aplica so as marcas que EU defino.
+  function renderDocBody(raw){
+    const esc = escapeHtml(raw || "");
+    // divide em paragrafos por linha em branco
+    const blocks = esc.split(/\n\s*\n/);
+    return blocks.map(block=>{
+      const line = block.trim();
+      if(!line) return "";
+      // cabecalho: linha que comeca com ##
+      if(/^##\s+/.test(line)){
+        return `<h3>${inline(line.replace(/^##\s+/,""))}</h3>`;
+      }
+      // paragrafo normal (quebras simples viram espaco)
+      return `<p>${inline(line.replace(/\n/g," "))}</p>`;
+    }).join("");
+  }
+  // marcas inline: *enfase* e [[ redigido ]]
+  function inline(t){
+    // redigido primeiro (consome o conteudo)
+    t = t.replace(/\[\[(.+?)\]\]/g, (m,p1)=>
+      `<span class="redacted">${p1}</span>`);
+    // enfase
+    t = t.replace(/\*(.+?)\*/g, (m,p1)=>`<em>${p1}</em>`);
+    return t;
+  }
+
+  function renderReading(id){
+    const r=READINGS[id];
+    elTitle.textContent = (r? r.h : id).toUpperCase();
+    elStat.textContent  = "ACCESS GRANTED";
+
+    let html = "";
+    if(r){
+      html += `<h2>${r.h}</h2><div class="meta">${r.meta}</div>`;
+      html += r.body.map(p=>`<p>${escapeHtml(p)}</p>`).join("");
+    }
+    // dossies publicados para este nivel (ordenados por data)
+    const docs = Object.keys(FILES)
+      .filter(k=>FILES[k].level===id)
+      .sort((a,b)=>(FILES[a].at||0)-(FILES[b].at||0));
+    if(docs.length){
+      html += `<hr class="docsep">`;
+      html += docs.map(k=>{
+        const f=FILES[k];
+        return `<div class="docfile">
+                  <h2>${escapeHtml(f.title||"FILE")}</h2>
+                  <div class="doc">${renderDocBody(f.body)}</div>
+                </div>`;
+      }).join(`<hr class="docsep">`);
+    }
+    elBody.innerHTML = html;
+  }
+
+  // estado de foco atual, pra re-render quando arquivos mudam
+  let currentFocus=null, currentUnlocked={};
+
+  // ---------- escuta arquivos ----------
+  sessionRef.child("station/files").on("value", snap=>{
+    FILES = snap.val() || {};
+    if(currentFocus && currentUnlocked[currentFocus]) renderReading(currentFocus);
+  });
+
+  // ---------- escuta estado geral ----------
   sessionRef.child("station").on("value", snap=>{
     const s = snap.val() || {};
 
-    // liga / desliga o terminal
     const online = !!s.online;
-    document.getElementById("standby").style.display  = online ? "none" : "flex";
-    document.getElementById("terminal").className     = online ? "on" : "";
+    document.getElementById("standby").style.display = online ? "none" : "flex";
+    document.getElementById("terminal").className    = online ? "on" : "";
 
-    // niveis liberados
     const unlocked = s.unlocked || {};
+    currentUnlocked = unlocked;
     document.querySelectorAll(".lvl").forEach(el=>{
       const on = !!unlocked[el.dataset.id];
       el.classList.toggle("live", on);
       el.querySelector(".stat").textContent = on ? "ACCESS" : "LOCKED";
     });
 
-    // nivel em foco -> abre leitura
     const focus = s.focus || null;
+    currentFocus = focus;
     document.querySelectorAll(".lvl").forEach(el=>{
       el.classList.toggle("focus", el.dataset.id===focus);
     });
@@ -282,11 +441,53 @@
     }
   });
 
-  // relogio (com micro-desvio proposital pra sensacao uncanny)
+  // ---------- camera feed ----------
+  const CAMERAS = {
+    cam01:{label:"CAM-01", loc:"Mess Deck"},
+    cam02:{label:"CAM-02", loc:"Drilling Deck"},
+    cam03:{label:"CAM-03", loc:"Corridor B"},
+    cam04:{label:"CAM-04", loc:"Moonpool"}
+  };
+  let camTimer=null, lastCamAt=0;
+
+  sessionRef.child("station/camera").on("value", snap=>{
+    const c=snap.val();
+    if(!c || !c.at) return;
+    if(c.at===lastCamAt) return;     // evita re-disparo no refresh
+    lastCamAt=c.at;
+    // so dispara se for recente (evita feed velho ao abrir a pagina)
+    if(Date.now()-c.at > 15000) return;
+    playCamera(c.id);
+  });
+
+  function playCamera(id){
+    const meta=CAMERAS[id]||{label:"CAM", loc:"—"};
+    document.getElementById("camlabel").textContent=meta.label;
+    document.getElementById("camloc").textContent=meta.loc;
+    const feed=document.getElementById("camfeed");
+    const frame=document.getElementById("camframe");
+    feed.classList.add("on");
+    frame.classList.remove("dropping");
+
+    clearTimeout(camTimer);
+    camTimer=setTimeout(()=>{
+      // dropa o sinal
+      frame.classList.add("dropping");
+      setTimeout(()=>feed.classList.remove("on"), 480);
+    }, CAM_DURATION);
+  }
+
+  // timecode da camera
   setInterval(()=>{
     const n=new Date();
-    document.getElementById("clock").textContent =
-      n.toTimeString().slice(0,8);
+    const tc=document.getElementById("camtc");
+    if(tc) tc.textContent=n.toTimeString().slice(0,8);
+  },1000);
+
+  // relogio do rodape
+  setInterval(()=>{
+    const n=new Date();
+    document.getElementById("clock").textContent = n.toTimeString().slice(0,8);
   },1000);
 </script>
 </body>
