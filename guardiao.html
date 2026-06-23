@@ -149,7 +149,14 @@
           <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">CASCO</div>
           <div style="display:flex;gap:8px">
             <button class="btn skin" data-skin="old" style="flex:1">VELHO (Iron Lung)</button>
-            <button class="btn skin" data-skin="modern" style="flex:1">MODERNO (NeuroStat)</button>
+            <button class="btn skin" data-skin="neurostat" style="flex:1">MODERNO (NeuroStat)</button>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+            <button class="btn" id="crackBtn" style="flex:1">⚠ RACHAR CASCO (velho)</button>
+            <span id="crackStat" style="font-size:10px;letter-spacing:.1em;color:var(--ink-dim);min-width:90px;text-align:center">intacto</span>
+          </div>
+          <div style="font-size:10px;color:var(--ink-dim);margin-top:5px;letter-spacing:.04em;line-height:1.6">
+            Rachar é permanente — o visor do submarino velho fica danificado até você apertar de novo pra consertar.
           </div>
         </div>
         <!-- estados -->
@@ -465,6 +472,19 @@
   document.querySelectorAll(".skin").forEach(b=>{
     b.addEventListener("click",()=>subRef.child("skin").set(b.dataset.skin));
   });
+  // rachar / consertar o casco velho (permanente até reset manual)
+  document.getElementById("crackBtn").addEventListener("click",()=>{
+    subRef.child("cracked").once("value").then(s=>{
+      const isCracked=!!s.val();
+      if(!isCracked){
+        if(confirm("Rachar o casco do submarino velho? Fica danificado permanentemente até você consertar aqui.")){
+          subRef.child("cracked").set(true);
+        }
+      } else {
+        subRef.child("cracked").set(false); // conserta (reset)
+      }
+    });
+  });
   elSubStates.addEventListener("click",e=>{
     const b=e.target.closest(".substate"); if(!b) return;
     subRef.child("state").set(b.dataset.state);
@@ -486,7 +506,7 @@
 
   document.getElementById("subreset").addEventListener("click",()=>{
     if(confirm("Resetar o submarino? Desliga o visor e zera estado, direção, leitura e imagem.")){
-      subRef.update({online:false,state:"void",threatDir:null,readout:"",imgUrl:null});
+      subRef.update({online:false,state:"void",threatDir:null,readout:"",imgUrl:null,cracked:false});
     }
   });
 
@@ -558,10 +578,21 @@
 
     subSkinNow=s.skin||"old";
     document.querySelectorAll(".skin").forEach(b=>{
-      b.classList.toggle("is-on", b.dataset.skin===subSkinNow);
-      // reaproveita estilo do lock
-      b.classList.toggle("lock", true); b.classList.toggle("is-on", b.dataset.skin===subSkinNow);
+      const on=b.dataset.skin===subSkinNow;
+      b.style.borderColor=on?"var(--live-dim)":"";
+      b.style.color=on?"var(--live)":"";
     });
+    // estado de rachadura
+    const cracked=!!s.cracked;
+    const crackBtn=document.getElementById("crackBtn");
+    const crackStat=document.getElementById("crackStat");
+    if(crackBtn){
+      crackBtn.textContent = cracked ? "✓ CONSERTAR CASCO" : "⚠ RACHAR CASCO (velho)";
+      crackBtn.style.borderColor = cracked ? "var(--danger)" : "";
+      crackBtn.style.color = cracked ? "var(--danger)" : "";
+      crackStat.textContent = cracked ? "RACHADO" : "intacto";
+      crackStat.style.color = cracked ? "var(--danger)" : "var(--ink-dim)";
+    }
     document.querySelectorAll(".substate").forEach(b=>{
       const on=b.dataset.state===(s.state||"void");
       b.style.borderColor=on?"var(--live-dim)":"";
