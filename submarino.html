@@ -31,14 +31,30 @@
   /* vinheta escura nas bordas do visor: esconde artefatos da IA e dá profundidade */
   #viewportVignette{position:absolute;inset:0;z-index:3;pointer-events:none;
     box-shadow:inset 0 0 8vmin 2vmin rgba(0,0,0,.7), inset 0 0 2vmin rgba(0,0,0,.5)}
-  /* blur de base do vidro (sempre leve; focar reduz) */
-  #viewportBlur{position:absolute;inset:0;z-index:3;pointer-events:none;backdrop-filter:blur(1.4px);transition:backdrop-filter .35s ease}
 
   /* o casco preenche a tela */
   #hullImg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;pointer-events:none}
 
+  /* escurecimento + luz piscante de cima (só no casco velho) */
+  #flicker{position:absolute;inset:0;z-index:5;pointer-events:none;opacity:0;
+    background:linear-gradient(180deg, rgba(0,0,0,.55) 0%, rgba(0,0,0,.25) 30%, rgba(0,0,0,.45) 100%)}
+  #sub.old #flicker{opacity:1}
+  /* a fonte de luz tremida vinda de cima */
+  #flickerLight{position:absolute;left:0;right:0;top:-10%;height:60%;z-index:5;pointer-events:none;opacity:0;
+    background:radial-gradient(ellipse 70% 100% at 50% 0%, rgba(180,150,90,.22) 0%, transparent 65%)}
+  #sub.old #flickerLight{opacity:1;animation:flick 4s linear infinite}
+  @keyframes flick{
+    0%{opacity:.7}3%{opacity:.15}5%{opacity:.6}7%{opacity:.2}8%{opacity:.75}
+    40%{opacity:.7}42%{opacity:.1}43%{opacity:.65}
+    70%{opacity:.7}71%{opacity:.25}73%{opacity:.7}74%{opacity:.12}76%{opacity:.7}
+    100%{opacity:.7}
+  }
+
+  /* blur global da VISÃO (na frente de tudo — casco + visor). Focar reduz. */
+  #visionBlur{position:absolute;inset:0;z-index:7;pointer-events:none;backdrop-filter:blur(1.5px);transition:backdrop-filter .35s ease}
+
   /* HUD */
-  #hud{position:absolute;inset:0;z-index:6;pointer-events:none}
+  #hud{position:absolute;inset:0;z-index:8;pointer-events:none}
   .hud-top{position:absolute;top:2.5vh;left:0;right:0;display:flex;justify-content:center}
   .compass{font-size:12px;letter-spacing:.34em;color:#6a9a9a;text-shadow:0 0 10px rgba(90,180,180,.5)}
   #sub.old .compass{color:#b8923a;text-shadow:0 0 10px rgba(180,140,50,.5)}
@@ -80,12 +96,18 @@
     <div id="viewport">
       <canvas id="abyss"></canvas>
       <div id="moonpoolLayer"></div>
-      <div id="viewportBlur"></div>
       <div id="viewportVignette"></div>
     </div>
 
     <!-- casco por cima -->
     <img id="hullImg" alt="">
+
+    <!-- escurecimento + luz piscante (casco velho) -->
+    <div id="flicker"></div>
+    <div id="flickerLight"></div>
+
+    <!-- blur da visão, na frente de tudo -->
+    <div id="visionBlur"></div>
 
     <div id="hud">
       <div class="hud-top"><div class="compass" id="compass">BRG 000</div></div>
@@ -93,7 +115,7 @@
       <div class="hud-read" id="hudread"></div>
     </div>
 
-    <div class="hint-drag" id="hintdrag">drag to look around · hold to focus</div>
+    <div class="hint-drag" id="hintdrag">drag to look around · hold SPACE or button to focus</div>
     <div id="ctrls">
       <div class="cbtn" id="btnLight">LIGHT: OFF</div>
       <div class="cbtn" id="btnFocus">HOLD TO FOCUS</div>
@@ -237,10 +259,10 @@
       x.restore();
     }
 
-    // FOCO: blur de base sempre leve, focar reduz quase a zero
+    // FOCO: blur de base sempre leve, focar reduz quase a zero (na frente de tudo)
     focusAmt += ((focusing?1:0)-focusAmt)*0.1;
-    const baseBlur = 1.4 - focusAmt*1.25; // 1.4 normal -> 0.15 focado
-    document.getElementById("viewportBlur").style.backdropFilter=`blur(${baseBlur.toFixed(2)}px)`;
+    const baseBlur = 1.5 - focusAmt*1.35; // 1.5 normal -> 0.15 focado
+    document.getElementById("visionBlur").style.backdropFilter=`blur(${baseBlur.toFixed(2)}px)`;
 
     requestAnimationFrame(draw);
   }
@@ -309,6 +331,17 @@
   surface.addEventListener("touchstart",down,{passive:true});
   addEventListener("touchmove",move,{passive:true});addEventListener("touchend",up);
 
+  // DESKTOP: quando a luz está no modo AIM, o facho segue o cursor livre (sem clicar)
+  const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
+  if(!isTouch){
+    addEventListener("mousemove",e=>{
+      if(!lightMode || dragging) return; // ao arrastar, usa o move() acima
+      const r=elViewport.getBoundingClientRect();
+      beamX=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
+      beamY=Math.max(0,Math.min(1,(e.clientY-r.top)/r.height));
+    });
+  }
+
   const btnLight=document.getElementById("btnLight");
   btnLight.addEventListener("click",()=>{
     if(!lightOn){lightOn=true;lightMode=true;}
@@ -316,7 +349,7 @@
     else{lightOn=false;}
     btnLight.classList.toggle("active",lightMode);
     btnLight.textContent=!lightOn?"LIGHT: OFF":(lightMode?"LIGHT: AIM":"LIGHT: ON");
-    document.getElementById("hintdrag").textContent=lightMode?"drag to aim the light · hold to focus":"drag to look around · hold to focus";
+    document.getElementById("hintdrag").textContent=lightMode?"move cursor / drag to aim · SPACE to focus":"drag to look around · SPACE or button to focus";
   });
 
   const btnFocus=document.getElementById("btnFocus");
@@ -326,6 +359,9 @@
   btnFocus.addEventListener("mouseup",fEnd);btnFocus.addEventListener("mouseleave",fEnd);
   btnFocus.addEventListener("touchstart",e=>{e.preventDefault();fStart();},{passive:false});
   btnFocus.addEventListener("touchend",e=>{e.preventDefault();fEnd();},{passive:false});
+  // barra de espaço também ativa o foco (segurar)
+  addEventListener("keydown",e=>{ if(e.code==="Space" && !e.repeat){ e.preventDefault(); fStart(); } });
+  addEventListener("keyup",  e=>{ if(e.code==="Space"){ e.preventDefault(); fEnd(); } });
 
   // ===== troca de casco =====
   function setHull(which){
