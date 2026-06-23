@@ -130,6 +130,73 @@
     </div>
   </div>
 
+  <!-- SUBMARINO -->
+  <div class="card">
+    <div class="hd">
+      <div class="name dim">SUBMERSÍVEL // <b>visor</b></div>
+      <div class="power" id="subpower"><span class="led"></span><span id="subpowertxt">VISOR DESLIGADO</span></div>
+    </div>
+    <div class="hint">
+      Ligar acende o visor dos jogadores. Escolha o <b>casco</b>, dispare <b>estados</b> do breu, marque a <b>direção</b> de onde a ameaça aparece,
+      e use a <b>leitura</b> pra escrever no HUD deles. O minimapa mostra pra onde cada investigador está olhando.
+    </div>
+
+    <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+      <!-- coluna controles -->
+      <div style="flex:1;min-width:300px;display:flex;flex-direction:column;gap:14px">
+        <!-- skin -->
+        <div>
+          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">CASCO</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn skin" data-skin="old" style="flex:1">VELHO (Iron Lung)</button>
+            <button class="btn skin" data-skin="modern" style="flex:1">MODERNO (NeuroStat)</button>
+          </div>
+        </div>
+        <!-- estados -->
+        <div>
+          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">ESTADO DO BREU</div>
+          <div id="substates" style="display:grid;grid-template-columns:1fr 1fr;gap:7px"></div>
+        </div>
+        <!-- leitura livre -->
+        <div>
+          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">LEITURA / LEGENDA (HUD)</div>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="subReadout" placeholder="ex: sonar — massa biológica, 40m, descendo"
+              style="flex:1;background:var(--bg);border:1px solid var(--line);border-radius:4px;color:var(--ink);font-family:inherit;font-size:13px;padding:8px 10px">
+            <button class="btn" id="subReadClear">limpar</button>
+          </div>
+        </div>
+        <!-- imagem -->
+        <div>
+          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">IMAGEM DA AMEAÇA (PNG transparente, opcional)</div>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="subImgUrl" placeholder="cole a URL de um PNG (deixe vazio = formas abstratas)"
+              style="flex:1;background:var(--bg);border:1px solid var(--line);border-radius:4px;color:var(--ink);font-family:inherit;font-size:12px;padding:8px 10px">
+            <button class="btn" id="subImgSet">usar</button>
+            <button class="btn" id="subImgClear">tirar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- coluna minimapa -->
+      <div style="width:240px">
+        <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">DIREÇÃO DA AMEAÇA · clique no anel</div>
+        <div style="position:relative;width:220px;height:220px;margin:0 auto">
+          <canvas id="radar" width="220" height="220" style="cursor:crosshair"></canvas>
+        </div>
+        <div style="font-size:10px;color:var(--ink-dim);text-align:center;margin-top:8px;letter-spacing:.08em">
+          setas = investigadores olhando · <span style="color:var(--danger)">vermelho</span> = ameaça
+        </div>
+        <button class="btn" id="threatClear" style="width:100%;margin-top:8px">tirar direção da ameaça</button>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>O visor é controlado quase todo por você. Os jogadores só espiam.</span>
+      <span class="x" id="subreset">RESETAR SUBMARINO</span>
+    </div>
+  </div>
+
   <!-- ARQUIVOS -->
   <div class="card">
     <div class="hd"><div class="name dim">ARQUIVOS // <b>escrever ao vivo</b></div></div>
@@ -371,6 +438,146 @@
       else stat.textContent="● ON / pronta";
     });
   }); },1000);
+
+  // =================== SUBMARINO ===================
+  const subRef = sessionRef.child("submarine");
+  const SUB_STATES=[
+    {id:"moonpool", label:"Na moonpool"},
+    {id:"diving",   label:"Submergindo"},
+    {id:"open",     label:"Água aberta"},
+    {id:"distant",  label:"Algo à distância"},
+    {id:"passing",  label:"Vulto no visor"},
+    {id:"close",    label:"Contato próximo"},
+    {id:"void",     label:"Breu / nada"}
+  ];
+
+  // monta botoes de estado
+  const elSubStates=document.getElementById("substates");
+  SUB_STATES.forEach(s=>{
+    const b=document.createElement("button");
+    b.className="btn substate"; b.dataset.state=s.id; b.textContent=s.label;
+    b.style.textAlign="left";
+    elSubStates.appendChild(b);
+  });
+
+  document.getElementById("subpower").addEventListener("click",()=>subRef.child("online").transaction(v=>!v));
+
+  document.querySelectorAll(".skin").forEach(b=>{
+    b.addEventListener("click",()=>subRef.child("skin").set(b.dataset.skin));
+  });
+  elSubStates.addEventListener("click",e=>{
+    const b=e.target.closest(".substate"); if(!b) return;
+    subRef.child("state").set(b.dataset.state);
+  });
+
+  // leitura livre
+  const elSubReadout=document.getElementById("subReadout");
+  elSubReadout.addEventListener("input",()=>subRef.child("readout").set(elSubReadout.value));
+  document.getElementById("subReadClear").addEventListener("click",()=>{elSubReadout.value="";subRef.child("readout").set("");});
+
+  // imagem
+  document.getElementById("subImgSet").addEventListener("click",()=>{
+    const u=document.getElementById("subImgUrl").value.trim();
+    subRef.child("imgUrl").set(u||null);
+  });
+  document.getElementById("subImgClear").addEventListener("click",()=>{
+    document.getElementById("subImgUrl").value=""; subRef.child("imgUrl").set(null);
+  });
+
+  document.getElementById("subreset").addEventListener("click",()=>{
+    if(confirm("Resetar o submarino? Desliga o visor e zera estado, direção, leitura e imagem.")){
+      subRef.update({online:false,state:"void",threatDir:null,readout:"",imgUrl:null});
+    }
+  });
+
+  // ---- RADAR / minimapa ----
+  const radar=document.getElementById("radar");
+  const rctx=radar.getContext("2d");
+  const RC=110, RR=88; // centro e raio
+  let viewers={}, threatDir=null, subSkinNow="old";
+
+  // clique no anel = define direcao da ameaca
+  radar.addEventListener("click",e=>{
+    const rect=radar.getBoundingClientRect();
+    const x=e.clientX-rect.left-RC, y=e.clientY-rect.top-RC;
+    let ang=Math.atan2(x,-y)*180/Math.PI; // 0 = topo (norte), horario
+    ang=(ang+360)%360;
+    subRef.child("threatDir").set(Math.round(ang));
+  });
+  document.getElementById("threatClear").addEventListener("click",()=>subRef.child("threatDir").set(null));
+
+  function drawRadar(){
+    rctx.clearRect(0,0,220,220);
+    // aneis
+    rctx.strokeStyle="#2a3035"; rctx.lineWidth=1;
+    [RR,RR*0.66,RR*0.33].forEach(r=>{rctx.beginPath();rctx.arc(RC,RC,r,0,7);rctx.stroke();});
+    // cruz
+    rctx.beginPath();rctx.moveTo(RC,RC-RR);rctx.lineTo(RC,RC+RR);rctx.moveTo(RC-RR,RC);rctx.lineTo(RC+RR,RC);rctx.stroke();
+    // N
+    rctx.fillStyle="#6a767d";rctx.font="9px monospace";rctx.textAlign="center";rctx.fillText("N",RC,RC-RR-4);
+
+    // submersivel no centro
+    rctx.fillStyle="#62e0c4";
+    rctx.beginPath();rctx.arc(RC,RC,5,0,7);rctx.fill();
+
+    // setas dos investigadores (heading)
+    const now=Date.now();
+    Object.keys(viewers).forEach((id,i)=>{
+      const v=viewers[id]; if(!v||now-(v.at||0)>12000) return; // some apos 12s sem reportar
+      const h=(v.heading||0)*Math.PI/180;
+      const dx=Math.sin(h), dy=-Math.cos(h);
+      rctx.strokeStyle="#62e0c4";rctx.fillStyle="#62e0c4";rctx.lineWidth=2;
+      rctx.globalAlpha=.85;
+      rctx.beginPath();rctx.moveTo(RC,RC);rctx.lineTo(RC+dx*RR*0.8,RC+dy*RR*0.8);rctx.stroke();
+      // ponta
+      rctx.beginPath();
+      rctx.arc(RC+dx*RR*0.8,RC+dy*RR*0.8,3,0,7);rctx.fill();
+      rctx.globalAlpha=1;
+      // rotulo
+      rctx.fillStyle="#7a8a8a";rctx.font="8px monospace";
+      rctx.fillText("INV "+(i+1), RC+dx*RR*0.92, RC+dy*RR*0.92);
+    });
+
+    // direcao da ameaca (vermelho)
+    if(threatDir!=null){
+      const a=threatDir*Math.PI/180;
+      const dx=Math.sin(a), dy=-Math.cos(a);
+      rctx.strokeStyle="#d65a5a";rctx.fillStyle="#d65a5a";rctx.lineWidth=2;
+      rctx.beginPath();rctx.moveTo(RC,RC);rctx.lineTo(RC+dx*RR,RC+dy*RR);rctx.stroke();
+      rctx.beginPath();rctx.arc(RC+dx*RR,RC+dy*RR,4,0,7);rctx.fill();
+    }
+  }
+
+  // escuta estado do submarino pro painel
+  subRef.on("value",snap=>{
+    const s=snap.val()||{};
+    const online=!!s.online;
+    const p=document.getElementById("subpower");
+    p.classList.toggle("on",online);
+    document.getElementById("subpowertxt").textContent=online?"VISOR LIGADO":"VISOR DESLIGADO";
+
+    subSkinNow=s.skin||"old";
+    document.querySelectorAll(".skin").forEach(b=>{
+      b.classList.toggle("is-on", b.dataset.skin===subSkinNow);
+      // reaproveita estilo do lock
+      b.classList.toggle("lock", true); b.classList.toggle("is-on", b.dataset.skin===subSkinNow);
+    });
+    document.querySelectorAll(".substate").forEach(b=>{
+      const on=b.dataset.state===(s.state||"void");
+      b.style.borderColor=on?"var(--live-dim)":"";
+      b.style.color=on?"var(--live)":"";
+    });
+    if(document.activeElement!==elSubReadout){ elSubReadout.value=s.readout||""; }
+    threatDir = (s.threatDir!=null)?s.threatDir:null;
+    drawRadar();
+  });
+
+  // escuta viewers (presenca dos jogadores)
+  subRef.child("viewers").on("value",snap=>{
+    viewers=snap.val()||{};
+    drawRadar();
+  });
+  setInterval(drawRadar,1000); // atualiza setas/expira
 
   function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 </script>
