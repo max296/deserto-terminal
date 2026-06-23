@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GUARDIÃO // controle</title>
+<style>
+  /* painel do mestre: sobrio, denso, sem cerimonia. Nao e diegetico,
+     e a sua mesa de controle. Cinza-grafite, acoes claras. */
+  :root{
+    --bg:#101214;
+    --panel:#171a1d;
+    --panel2:#1d2125;
+    --line:#2a3035;
+    --ink:#cdd4d8;
+    --ink-dim:#6a767d;
+    --live:#62e0c4;
+    --live-dim:#2f6f62;
+    --warn:#d8a24a;
+    --danger:#d65a5a;
+    --font: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg);color:var(--ink);font-family:var(--font);
+    font-size:14px;line-height:1.5;padding:20px;min-height:100vh;
+  }
+  .top{
+    display:flex;justify-content:space-between;align-items:center;
+    border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:20px;
+  }
+  .top h1{font-size:15px;letter-spacing:.22em;font-weight:600}
+  .top h1 span{color:var(--live)}
+  .top .sess{font-size:11px;color:var(--ink-dim);letter-spacing:.12em}
+
+  .card{
+    background:var(--panel);border:1px solid var(--line);border-radius:6px;
+    padding:18px;max-width:760px;
+  }
+  .card .hd{
+    display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;
+  }
+  .card .hd .name{font-size:13px;letter-spacing:.16em;color:var(--ink)}
+  .card .hd .name b{color:var(--live)}
+
+  /* botao liga/desliga do terminal */
+  .power{
+    display:inline-flex;align-items:center;gap:9px;cursor:pointer;
+    background:var(--panel2);border:1px solid var(--line);border-radius:5px;
+    padding:8px 14px;font-size:12px;letter-spacing:.1em;color:var(--ink-dim);
+    transition:all .2s; user-select:none;
+  }
+  .power .led{width:9px;height:9px;border-radius:50%;background:var(--ink-dim)}
+  .power.on{color:var(--live);border-color:var(--live-dim)}
+  .power.on .led{background:var(--live);box-shadow:0 0 10px var(--live)}
+
+  .hint{font-size:11px;color:var(--ink-dim);margin:4px 0 18px;letter-spacing:.04em}
+
+  /* lista de niveis pro DM */
+  .lvls{display:flex;flex-direction:column;gap:8px}
+  .row{
+    display:flex;align-items:center;gap:12px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:5px;
+    padding:10px 12px;transition:border-color .2s;
+  }
+  .row.unlocked{border-color:var(--live-dim)}
+  .row .tag{font-size:10px;color:var(--ink-dim);letter-spacing:.14em;width:46px}
+  .row .nm{flex:1;font-size:13px}
+  .row.unlocked .nm{color:var(--live)}
+
+  .btn{
+    cursor:pointer;border:1px solid var(--line);background:var(--panel);
+    color:var(--ink-dim);border-radius:4px;padding:6px 12px;font-family:inherit;
+    font-size:11px;letter-spacing:.08em;transition:all .15s;
+  }
+  .btn:hover{border-color:var(--ink-dim);color:var(--ink)}
+  .btn.lock{min-width:96px;text-align:center}
+  .btn.lock.is-on{color:var(--live);border-color:var(--live-dim)}
+  .btn.show{min-width:80px;text-align:center}
+  .btn.show.is-focus{color:var(--bg);background:var(--live);border-color:var(--live)}
+  .btn:disabled{opacity:.3;cursor:not-allowed}
+
+  .footer{
+    margin-top:18px;display:flex;gap:10px;align-items:center;
+    font-size:11px;color:var(--ink-dim);letter-spacing:.06em;
+  }
+  .footer .x{cursor:pointer;color:var(--danger);border:1px solid var(--line);
+    border-radius:4px;padding:5px 11px;background:var(--panel)}
+  .footer .x:hover{border-color:var(--danger)}
+
+  .urls{
+    margin-top:22px;max-width:760px;font-size:11px;color:var(--ink-dim);
+    line-height:1.8;letter-spacing:.04em;
+  }
+  .urls code{background:var(--panel);padding:2px 7px;border-radius:3px;color:var(--ink)}
+</style>
+</head>
+<body>
+
+  <div class="top">
+    <h1>PAINEL DO <span>GUARDIÃO</span></h1>
+    <div class="sess">sessão: <b id="sk">—</b></div>
+  </div>
+
+  <div class="card">
+    <div class="hd">
+      <div class="name"><b>NEUROSTAT</b> // Terminal de Estação</div>
+      <div class="power" id="power">
+        <span class="led"></span><span id="powertxt">TERMINAL DESLIGADO</span>
+      </div>
+    </div>
+    <div class="hint">
+      Ligar acende o terminal na tela dos jogadores ao vivo. Liberar dá acesso ao nível.
+      Mostrar abre a leitura daquele nível pra eles. Só um nível fica em foco por vez.
+    </div>
+
+    <div class="lvls" id="lvls"></div>
+
+    <div class="footer">
+      <span>Tudo o que você muda aqui aparece nos terminais na hora.</span>
+      <span class="x" id="reset">RESETAR ESTAÇÃO</span>
+    </div>
+  </div>
+
+  <div class="urls">
+    <div>jogadores abrem &rarr; <code>.../estacao.html</code></div>
+    <div>você (este painel) &rarr; <code>.../guardiao.html</code></div>
+  </div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script>
+  document.getElementById("sk").textContent = SESSION_KEY;
+
+  const LEVELS = [
+    { id:"helipad",  tag:"L-07", name:"Heliponto" },
+    { id:"quarters", tag:"L-06", name:"Alojamentos" },
+    { id:"control",  tag:"L-05", name:"Centro de Controle" },
+    { id:"mess",     tag:"L-04", name:"Refeitório / Comum" },
+    { id:"drill",    tag:"L-03", name:"Deck de Perfuração" },
+    { id:"sub",      tag:"L-02", name:"Nível Submerso" },
+    { id:"dre",      tag:"L-??", name:"[ SEM REGISTRO ]" }
+  ];
+
+  const ref = sessionRef.child("station");
+  const elLvls = document.getElementById("lvls");
+
+  // monta as linhas
+  LEVELS.forEach(l=>{
+    const row=document.createElement("div");
+    row.className="row"; row.dataset.id=l.id;
+    row.innerHTML=`
+      <div class="tag">${l.tag}</div>
+      <div class="nm">${l.name}</div>
+      <button class="btn lock" data-act="lock">LIBERAR</button>
+      <button class="btn show" data-act="show">MOSTRAR</button>`;
+    elLvls.appendChild(row);
+  });
+
+  // ---- acoes ----
+  document.getElementById("power").addEventListener("click",()=>{
+    ref.child("online").transaction(v=>!v);
+  });
+
+  elLvls.addEventListener("click", e=>{
+    const btn=e.target.closest("button"); if(!btn) return;
+    const id=btn.closest(".row").dataset.id;
+    const act=btn.dataset.act;
+    if(act==="lock"){
+      ref.child("unlocked/"+id).transaction(v=> v?null:true ); // toggle
+    }
+    if(act==="show"){
+      ref.child("focus").transaction(v=> v===id?null:id ); // toggle foco
+    }
+  });
+
+  document.getElementById("reset").addEventListener("click",()=>{
+    if(confirm("Resetar a Estação? Desliga o terminal e tranca todos os níveis.")){
+      ref.set({ online:false, unlocked:{}, focus:null });
+    }
+  });
+
+  // ---- reflete o estado atual no proprio painel ----
+  ref.on("value", snap=>{
+    const s=snap.val()||{};
+    const online=!!s.online;
+    const power=document.getElementById("power");
+    power.classList.toggle("on", online);
+    document.getElementById("powertxt").textContent =
+      online ? "TERMINAL LIGADO" : "TERMINAL DESLIGADO";
+
+    const unlocked=s.unlocked||{};
+    const focus=s.focus||null;
+    document.querySelectorAll(".row").forEach(row=>{
+      const id=row.dataset.id;
+      const isUn=!!unlocked[id];
+      row.classList.toggle("unlocked", isUn);
+      const lockBtn=row.querySelector(".lock");
+      lockBtn.textContent = isUn ? "TRANCAR" : "LIBERAR";
+      lockBtn.classList.toggle("is-on", isUn);
+      const showBtn=row.querySelector(".show");
+      showBtn.disabled = !isUn;            // so mostra o que ja foi liberado
+      showBtn.classList.toggle("is-focus", focus===id);
+      showBtn.textContent = focus===id ? "EM TELA" : "MOSTRAR";
+    });
+  });
+</script>
+</body>
+</html>
