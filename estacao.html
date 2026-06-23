@@ -153,7 +153,7 @@
   <!-- ===== STANDBY ===== -->
   <div id="standby">
     <div class="dot"></div>
-    <div class="msg">AGUARDANDO ENLACE</div>
+    <div class="msg">AWAITING UPLINK</div>
     <div class="sub">neurostat platform systems &nbsp;//&nbsp; node idle</div>
   </div>
 
@@ -166,23 +166,23 @@
 
     <main>
       <section class="mapwrap">
-        <div class="cap">CORTE VERTICAL // PLATAFORMA</div>
+        <div class="cap">VERTICAL SECTION // PLATFORM</div>
         <div class="levels" id="levels"><!-- montado via JS --></div>
       </section>
 
       <section class="read">
         <div class="cap">
-          <span id="readtitle">LEITURA</span>
+          <span id="readtitle">READOUT</span>
           <span id="readstat">—</span>
         </div>
         <div class="body" id="readbody">
-          <div class="empty">Nenhum nível selecionado. Aguardando liberação de acesso.</div>
+          <div class="empty">No level selected. Awaiting access clearance.</div>
         </div>
       </section>
     </main>
 
     <footer>
-      <span>ENLACE ATIVO<span class="blink">_</span></span>
+      <span>UPLINK ACTIVE<span class="blink">_</span></span>
       <span id="clock">--:--:--</span>
     </footer>
   </div>
@@ -194,38 +194,38 @@
   // ----- estrutura placeholder da plataforma (topo -> fundo) -----
   // Fatia 2 troca isso pela estrutura real / imagem.
   const LEVELS = [
-    { id:"helipad",  tag:"L-07", name:"Heliponto" },
-    { id:"quarters", tag:"L-06", name:"Alojamentos" },
-    { id:"control",  tag:"L-05", name:"Centro de Controle" },
-    { id:"mess",     tag:"L-04", name:"Refeitório / Comum" },
-    { id:"drill",    tag:"L-03", name:"Deck de Perfuração" },
-    { id:"sub",      tag:"L-02", name:"Nível Submerso" },
-    { id:"dre",      tag:"L-??", name:"[ SEM REGISTRO ]" }
+    { id:"helipad",  tag:"L-07", name:"Helipad" },
+    { id:"quarters", tag:"L-06", name:"Crew Quarters" },
+    { id:"control",  tag:"L-05", name:"Control Center" },
+    { id:"mess",     tag:"L-04", name:"Mess / Common Deck" },
+    { id:"drill",    tag:"L-03", name:"Drilling Deck" },
+    { id:"sub",      tag:"L-02", name:"Submerged Level" },
+    { id:"dre",      tag:"L-??", name:"[ NO RECORD ]" }
   ];
 
   // conteudo de leitura por nivel (placeholder; Fatia 2 conecta arquivos/cameras)
   const READINGS = {
-    helipad:  { h:"Heliponto — L-07", meta:"ÚLTIMO POUSO: 04:11 / OPERANTE", body:
-      ["Plataforma de pouso superior. Registro de tráfego íntegro até a falha de comunicação semanal.",
-       "Marcação de combustível dentro do esperado. Sem ocorrências."] },
-    quarters: { h:"Alojamentos — L-06", meta:"OCUPAÇÃO: 11 / 14 LEITOS", body:
-      ["Quartos da tripulação rotativa. Três leitos sem registro de uso na última janela.",
-       "Acesso de cartão funcional. Logs disponíveis sob liberação."] },
-    control:  { h:"Centro de Controle — L-05", meta:"SISTEMAS: NOMINAL", body:
-      ["Núcleo operacional da plataforma. Telemetria centralizada.",
-       "Discrepância menor entre relógio interno e satélite. Tolerância dentro do limite."] },
-    mess:     { h:"Refeitório / Área Comum — L-04", meta:"CÂMERAS: 2 ATIVAS", body:
-      ["Espaço comum. Acesso a câmeras momentâneas sob liberação do operador.",
-       "Sem anomalia registrada no período."] },
-    drill:    { h:"Deck de Perfuração — L-03", meta:"OPERAÇÃO: SUSPENSA", body:
-      ["Perfuração suspensa por ordem operacional. Equipamento em espera.",
-       "Vibração de fundo intermitente sem origem mapeada."] },
-    sub:      { h:"Nível Submerso — L-02", meta:"PRESSÃO: ELEVADA", body:
-      ["Estruturas abaixo da linha d'água. Acesso restrito.",
-       "Leitura de pressão acima do histórico da plataforma."] },
-    dre:      { h:"[ SETOR SEM REGISTRO ]", meta:"DADOS CORROMPIDOS", body:
-      ["Este nível não consta na planta oficial da NeuroStat.",
-       "Registro recuperado parcialmente. Acesso requer terminal local."] }
+    helipad:  { h:"Helipad — L-07", meta:"LAST LANDING: 04:11 / OPERATIONAL", body:
+      ["Upper landing platform. Traffic log intact up to the weekly communications failure.",
+       "Fuel readings within expected range. No incidents."] },
+    quarters: { h:"Crew Quarters — L-06", meta:"OCCUPANCY: 11 / 14 BUNKS", body:
+      ["Rotating crew quarters. Three bunks show no use in the last window.",
+       "Keycard access functional. Logs available on clearance."] },
+    control:  { h:"Control Center — L-05", meta:"SYSTEMS: NOMINAL", body:
+      ["Platform operations core. Centralized telemetry.",
+       "Minor drift between internal clock and satellite. Within tolerance."] },
+    mess:     { h:"Mess / Common Deck — L-04", meta:"CAMERAS: 2 ACTIVE", body:
+      ["Common area. Momentary camera access available on operator clearance.",
+       "No anomalies logged during this period."] },
+    drill:    { h:"Drilling Deck — L-03", meta:"OPERATION: SUSPENDED", body:
+      ["Drilling suspended by operational order. Equipment on standby.",
+       "Intermittent background vibration of unmapped origin."] },
+    sub:      { h:"Submerged Level — L-02", meta:"PRESSURE: ELEVATED", body:
+      ["Structures below the waterline. Restricted access.",
+       "Pressure reading above platform baseline."] },
+    dre:      { h:"[ UNLOGGED SECTOR ]", meta:"DATA CORRUPTED", body:
+      ["This level does not appear in the official NeuroStat schematic.",
+       "Record partially recovered. Access requires local terminal."] }
   };
 
   const elLevels = document.getElementById("levels");
@@ -239,15 +239,15 @@
     d.className="lvl"; d.dataset.id=l.id;
     d.innerHTML=`<div class="tag">${l.tag}</div>
                  <div class="name">${l.name}</div>
-                 <div class="stat">TRAVADO</div>`;
+                 <div class="stat">LOCKED</div>`;
     elLevels.appendChild(d);
   });
 
   function renderReading(id){
     const r=READINGS[id];
-    if(!r){ elBody.innerHTML=`<div class="empty">Sem leitura para este nível.</div>`; return; }
+    if(!r){ elBody.innerHTML=`<div class="empty">No readout for this level.</div>`; return; }
     elTitle.textContent = r.h.toUpperCase();
-    elStat.textContent  = "ACESSO LIBERADO";
+    elStat.textContent  = "ACCESS GRANTED";
     elBody.innerHTML = `<h2>${r.h}</h2><div class="meta">${r.meta}</div>` +
                        r.body.map(p=>`<p>${p}</p>`).join("");
   }
@@ -266,7 +266,7 @@
     document.querySelectorAll(".lvl").forEach(el=>{
       const on = !!unlocked[el.dataset.id];
       el.classList.toggle("live", on);
-      el.querySelector(".stat").textContent = on ? "ACESSO" : "TRAVADO";
+      el.querySelector(".stat").textContent = on ? "ACCESS" : "LOCKED";
     });
 
     // nivel em foco -> abre leitura
@@ -277,8 +277,8 @@
     if(focus && unlocked[focus]){
       renderReading(focus);
     } else if(!focus){
-      elTitle.textContent="LEITURA"; elStat.textContent="—";
-      elBody.innerHTML=`<div class="empty">Nenhum nível selecionado. Aguardando liberação de acesso.</div>`;
+      elTitle.textContent="READOUT"; elStat.textContent="—";
+      elBody.innerHTML=`<div class="empty">No level selected. Awaiting access clearance.</div>`;
     }
   });
 
