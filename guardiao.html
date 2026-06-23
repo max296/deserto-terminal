@@ -5,155 +5,98 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GUARDIÃO // controle</title>
 <style>
-  /* painel do mestre: sobrio, denso, sem cerimonia. Nao e diegetico,
-     e a sua mesa de controle. Cinza-grafite, acoes claras. */
   :root{
-    --bg:#101214;
-    --panel:#171a1d;
-    --panel2:#1d2125;
-    --line:#2a3035;
-    --ink:#cdd4d8;
-    --ink-dim:#6a767d;
-    --live:#62e0c4;
-    --live-dim:#2f6f62;
-    --warn:#d8a24a;
-    --danger:#d65a5a;
+    --bg:#101214; --panel:#171a1d; --panel2:#1d2125; --line:#2a3035;
+    --ink:#cdd4d8; --ink-dim:#6a767d; --live:#62e0c4; --live-dim:#2f6f62;
+    --warn:#d8a24a; --warn-dim:#6e5523; --danger:#d65a5a;
     --font: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  body{
-    background:var(--bg);color:var(--ink);font-family:var(--font);
-    font-size:14px;line-height:1.5;padding:20px;min-height:100vh;
-  }
-  .top{
-    display:flex;justify-content:space-between;align-items:center;
-    border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:20px;
-  }
+  body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.5;padding:20px;min-height:100vh}
+  .top{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:20px}
   .top h1{font-size:15px;letter-spacing:.22em;font-weight:600}
   .top h1 span{color:var(--live)}
   .top .sess{font-size:11px;color:var(--ink-dim);letter-spacing:.12em}
 
-  .card{
-    background:var(--panel);border:1px solid var(--line);border-radius:6px;
-    padding:18px;max-width:820px;margin-bottom:18px;
-  }
-  .card .hd{
-    display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;
-  }
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px;max-width:840px;margin-bottom:18px}
+  .card .hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
   .card .hd .name{font-size:13px;letter-spacing:.16em;color:var(--ink)}
   .card .hd .name b{color:var(--live)}
   .card .hd .name.dim b{color:var(--ink)}
 
-  /* botao liga/desliga do terminal */
-  .power{
-    display:inline-flex;align-items:center;gap:9px;cursor:pointer;
-    background:var(--panel2);border:1px solid var(--line);border-radius:5px;
-    padding:8px 14px;font-size:12px;letter-spacing:.1em;color:var(--ink-dim);
-    transition:all .2s; user-select:none;
-  }
+  .power{display:inline-flex;align-items:center;gap:9px;cursor:pointer;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:8px 14px;font-size:12px;letter-spacing:.1em;color:var(--ink-dim);transition:all .2s;user-select:none}
   .power .led{width:9px;height:9px;border-radius:50%;background:var(--ink-dim)}
   .power.on{color:var(--live);border-color:var(--live-dim)}
   .power.on .led{background:var(--live);box-shadow:0 0 10px var(--live)}
 
   .hint{font-size:11px;color:var(--ink-dim);margin:4px 0 18px;letter-spacing:.04em;line-height:1.7}
+  .sub-hd{font-size:10px;letter-spacing:.24em;color:var(--ink-dim);border-top:1px solid var(--line);padding-top:16px;margin:20px 0 12px;display:flex;justify-content:space-between;align-items:center}
+  .sub-hd .clear-force{cursor:pointer;color:var(--warn);font-size:10px;border:1px solid var(--warn-dim);border-radius:3px;padding:3px 9px;background:transparent;letter-spacing:.1em}
+  .sub-hd .clear-force:hover{background:var(--warn);color:var(--bg)}
+  .sub-hd .clear-force.hidden{display:none}
 
-  /* divisoria de subsecao dentro do card */
-  .sub-hd{
-    font-size:10px;letter-spacing:.24em;color:var(--ink-dim);
-    border-top:1px solid var(--line);padding-top:16px;margin:20px 0 12px;
-  }
-
-  /* lista de niveis pro DM */
+  /* niveis */
   .lvls{display:flex;flex-direction:column;gap:8px}
-  .row{
-    display:flex;align-items:center;gap:12px;
-    background:var(--panel2);border:1px solid var(--line);border-radius:5px;
-    padding:10px 12px;transition:border-color .2s;
-  }
+  .row{display:flex;align-items:center;gap:12px;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:10px 12px;transition:border-color .2s}
   .row.unlocked{border-color:var(--live-dim)}
+  .row.forced{border-color:var(--warn)}
   .row .tag{font-size:10px;color:var(--ink-dim);letter-spacing:.14em;width:46px}
   .row .nm{flex:1;font-size:13px}
   .row.unlocked .nm{color:var(--live)}
+  .row.forced .nm{color:var(--warn)}
 
-  .btn{
-    cursor:pointer;border:1px solid var(--line);background:var(--panel);
-    color:var(--ink-dim);border-radius:4px;padding:6px 12px;font-family:inherit;
-    font-size:11px;letter-spacing:.08em;transition:all .15s;
-  }
+  .btn{cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink-dim);border-radius:4px;padding:6px 12px;font-family:inherit;font-size:11px;letter-spacing:.08em;transition:all .15s}
   .btn:hover{border-color:var(--ink-dim);color:var(--ink)}
   .btn.lock{min-width:96px;text-align:center}
   .btn.lock.is-on{color:var(--live);border-color:var(--live-dim)}
-  .btn.show{min-width:80px;text-align:center}
-  .btn.show.is-focus{color:var(--bg);background:var(--live);border-color:var(--live)}
-  .btn:disabled{opacity:.3;cursor:not-allowed}
+  .btn.force{min-width:84px;text-align:center}
+  .btn.force.is-on{color:var(--bg);background:var(--warn);border-color:var(--warn)}
+  .btn.force:disabled{opacity:.3;cursor:not-allowed}
 
-  /* ---- cameras ---- */
+  /* cameras */
   .cams{display:flex;flex-wrap:wrap;gap:8px}
-  .cam{
-    display:flex;flex-direction:column;gap:8px;
-    background:var(--panel2);border:1px solid var(--line);border-radius:5px;
-    padding:11px 12px;width:172px;
-  }
+  .cam{display:flex;flex-direction:column;gap:9px;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:11px 12px;width:180px}
+  .cam.on{border-color:var(--live-dim)}
   .cam .cl{font-size:11px;letter-spacing:.1em;color:var(--ink)}
   .cam .cloc{font-size:10px;color:var(--ink-dim);letter-spacing:.08em}
-  .cam .fire{
-    cursor:pointer;border:1px solid var(--warn);background:transparent;
-    color:var(--warn);border-radius:4px;padding:7px;font-family:inherit;
-    font-size:11px;letter-spacing:.1em;transition:all .15s;
-  }
-  .cam .fire:hover{background:var(--warn);color:var(--bg)}
-  .cam .fire:disabled{opacity:.35;cursor:wait;border-color:var(--ink-dim);color:var(--ink-dim);background:transparent}
+  .cam .cstat{font-size:10px;letter-spacing:.1em;color:var(--ink-dim);min-height:13px}
+  .cam.on .cstat{color:var(--live)}
+  .cam .cstat.cool{color:var(--danger)}
+  .cam .toggle{cursor:pointer;border:1px solid var(--line);background:transparent;color:var(--ink-dim);border-radius:4px;padding:7px;font-family:inherit;font-size:11px;letter-spacing:.1em;transition:all .15s}
+  .cam .toggle:hover{border-color:var(--ink-dim);color:var(--ink)}
+  .cam.on .toggle{color:var(--live);border-color:var(--live-dim)}
 
-  /* ---- editor de dossie ---- */
+  /* editor */
   .editor{display:flex;flex-direction:column;gap:10px}
   .editor .pickbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-  .editor label{font-size:10px;letter-spacing:.16em;color:var(--ink-dim)}
-  .editor input[type=text], .editor select, .editor textarea{
-    background:var(--bg);border:1px solid var(--line);border-radius:4px;
-    color:var(--ink);font-family:inherit;font-size:13px;padding:8px 10px;
-  }
+  .editor input[type=text],.editor select,.editor textarea{background:var(--bg);border:1px solid var(--line);border-radius:4px;color:var(--ink);font-family:inherit;font-size:13px;padding:8px 10px}
   .editor input[type=text]{flex:1;min-width:200px}
   .editor select{min-width:160px}
   .editor textarea{width:100%;min-height:150px;resize:vertical;line-height:1.6}
   .editor .tools{font-size:10px;color:var(--ink-dim);letter-spacing:.04em;line-height:1.9}
   .editor .tools code{background:var(--panel2);padding:1px 6px;border-radius:3px;color:var(--live)}
   .editor .acts{display:flex;gap:8px;align-items:center}
-  .pub{
-    cursor:pointer;border:1px solid var(--live-dim);background:var(--panel2);
-    color:var(--live);border-radius:5px;padding:9px 18px;font-family:inherit;
-    font-size:12px;letter-spacing:.1em;transition:all .15s;
-  }
+  .pub{cursor:pointer;border:1px solid var(--live-dim);background:var(--panel2);color:var(--live);border-radius:5px;padding:9px 18px;font-family:inherit;font-size:12px;letter-spacing:.1em;transition:all .15s}
   .pub:hover{background:var(--live);color:var(--bg)}
   .saved{font-size:11px;color:var(--live);letter-spacing:.06em;opacity:0;transition:opacity .3s}
   .saved.show{opacity:1}
 
-  /* lista de dossies ja publicados */
   .doclist{display:flex;flex-direction:column;gap:6px;margin-top:6px}
-  .doc{
-    display:flex;align-items:center;gap:10px;font-size:12px;
-    background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:8px 11px;
-  }
+  .doc{display:flex;align-items:center;gap:10px;font-size:12px;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:8px 11px}
+  .doc.avail{border-color:var(--live-dim)}
   .doc .dt{flex:1;color:var(--ink)}
+  .doc.avail .dt{color:var(--live)}
   .doc .dl{font-size:10px;color:var(--ink-dim);letter-spacing:.1em}
-  .doc .del{cursor:pointer;color:var(--danger);font-size:11px;border:1px solid var(--line);
-    border-radius:3px;padding:3px 9px;background:var(--panel)}
-  .doc .del:hover{border-color:var(--danger)}
-  .doc .edit{cursor:pointer;color:var(--ink-dim);font-size:11px;border:1px solid var(--line);
-    border-radius:3px;padding:3px 9px;background:var(--panel)}
-  .doc .edit:hover{border-color:var(--ink-dim);color:var(--ink)}
+  .doc .av{cursor:pointer;font-size:10px;border-radius:3px;padding:4px 10px;letter-spacing:.08em;border:1px solid var(--line);background:var(--panel);color:var(--ink-dim);min-width:84px;text-align:center}
+  .doc.avail .av{color:var(--live);border-color:var(--live-dim)}
+  .doc .edit,.doc .del{cursor:pointer;font-size:11px;border:1px solid var(--line);border-radius:3px;padding:3px 9px;background:var(--panel)}
+  .doc .edit{color:var(--ink-dim)} .doc .edit:hover{border-color:var(--ink-dim);color:var(--ink)}
+  .doc .del{color:var(--danger)} .doc .del:hover{border-color:var(--danger)}
 
-  .footer{
-    margin-top:18px;display:flex;gap:10px;align-items:center;justify-content:space-between;
-    font-size:11px;color:var(--ink-dim);letter-spacing:.06em;
-  }
-  .footer .x{cursor:pointer;color:var(--danger);border:1px solid var(--line);
-    border-radius:4px;padding:5px 11px;background:var(--panel)}
+  .footer{margin-top:18px;display:flex;gap:10px;align-items:center;justify-content:space-between;font-size:11px;color:var(--ink-dim);letter-spacing:.06em}
+  .footer .x{cursor:pointer;color:var(--danger);border:1px solid var(--line);border-radius:4px;padding:5px 11px;background:var(--panel)}
   .footer .x:hover{border-color:var(--danger)}
-
-  .urls{
-    max-width:820px;font-size:11px;color:var(--ink-dim);
-    line-height:1.8;letter-spacing:.04em;
-  }
+  .urls{max-width:840px;font-size:11px;color:var(--ink-dim);line-height:1.8;letter-spacing:.04em}
   .urls code{background:var(--panel);padding:2px 7px;border-radius:3px;color:var(--ink)}
 </style>
 </head>
@@ -164,23 +107,21 @@
     <div class="sess">sessão: <b id="sk">—</b></div>
   </div>
 
-  <!-- ============ CARD: TERMINAL DE ESTACAO ============ -->
+  <!-- ESTACAO -->
   <div class="card">
     <div class="hd">
       <div class="name"><b>NEUROSTAT</b> // Terminal de Estação</div>
-      <div class="power" id="power">
-        <span class="led"></span><span id="powertxt">TERMINAL DESLIGADO</span>
-      </div>
+      <div class="power" id="power"><span class="led"></span><span id="powertxt">TERMINAL DESLIGADO</span></div>
     </div>
     <div class="hint">
-      Ligar acende o terminal na tela dos jogadores ao vivo. Liberar dá acesso ao nível.
-      Mostrar abre a leitura daquele nível pra eles. Só um nível fica em foco por vez.
+      Ligar acende o terminal dos jogadores. <b>Liberar</b> deixa o nível clicável pra eles explorarem sozinhos.
+      <b>Forçar</b> puxa a tela de todos pra aquele nível na hora (momento de cena) — clique de novo ou em "soltar foco" pra liberar.
     </div>
 
     <div class="lvls" id="lvls"></div>
 
     <!-- cameras -->
-    <div class="sub-hd">CÂMERAS — feed momentâneo (~6s e corta sozinho)</div>
+    <div class="sub-hd"><span>CÂMERAS — marque ON pra deixar acessível (jogador puxa, ~6s, 1min de cooldown)</span></div>
     <div class="cams" id="cams"></div>
 
     <div class="footer">
@@ -189,15 +130,12 @@
     </div>
   </div>
 
-  <!-- ============ CARD: ARQUIVOS / DOSSIES ============ -->
+  <!-- ARQUIVOS -->
   <div class="card">
-    <div class="hd">
-      <div class="name dim">ARQUIVOS // <b>escrever ao vivo</b></div>
-    </div>
+    <div class="hd"><div class="name dim">ARQUIVOS // <b>escrever ao vivo</b></div></div>
     <div class="hint">
-      Escreva um dossiê, escolha a que nível pertence e publique. Ele aparece na leitura
-      daquele nível pros jogadores assim que você liberar e mostrar o nível. Tudo que você
-      digita aqui é tratado como texto — use as marcas abaixo pra formatar.
+      Escreva um dossiê e escolha o nível. Publicar só salva — ele <b>não</b> aparece pros jogadores até você marcar
+      <b>DISPONÍVEL</b> na lista de baixo. Assim você segura cada documento até a hora certa.
     </div>
 
     <div class="editor">
@@ -205,18 +143,16 @@
         <input type="text" id="docTitle" placeholder="Título do arquivo (ex: Incident Report 04-A)">
         <select id="docLevel"></select>
       </div>
-      <textarea id="docBody" placeholder="Corpo do dossiê.&#10;&#10;Use ## no início de uma linha para um cabeçalho de seção.&#10;Use [[ texto ]] para marcar algo REDIGIDO (vira tarja).&#10;Use *texto* para ênfase.&#10;Linha em branco separa parágrafos."></textarea>
-      <div class="tools">
-        marcas: <code>## Cabeçalho</code> &nbsp; <code>[[ redigido ]]</code> &nbsp; <code>*ênfase*</code> &nbsp; — linha em branco = novo parágrafo
-      </div>
+      <textarea id="docBody" placeholder="Corpo do dossiê.&#10;&#10;## cabeçalho de seção&#10;[[ texto ]] vira tarja de redigido&#10;*texto* vira ênfase&#10;Linha em branco separa parágrafos."></textarea>
+      <div class="tools">marcas: <code>## Cabeçalho</code> &nbsp; <code>[[ redigido ]]</code> &nbsp; <code>*ênfase*</code> &nbsp; — linha em branco = novo parágrafo</div>
       <div class="acts">
-        <button class="pub" id="publish">PUBLICAR ARQUIVO</button>
+        <button class="pub" id="publish">SALVAR ARQUIVO</button>
         <button class="btn" id="clearForm">limpar campos</button>
-        <span class="saved" id="saved">✓ publicado</span>
+        <span class="saved" id="saved">✓ salvo</span>
       </div>
     </div>
 
-    <div class="sub-hd">ARQUIVOS PUBLICADOS</div>
+    <div class="sub-hd"><span>ARQUIVOS SALVOS — marque DISPONÍVEL pra liberar pros jogadores</span></div>
     <div class="doclist" id="doclist"></div>
   </div>
 
@@ -229,6 +165,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="firebase-config.js"></script>
 <script>
+  const CAM_COOLDOWN = 60000;
   document.getElementById("sk").textContent = SESSION_KEY;
 
   const LEVELS = [
@@ -240,8 +177,6 @@
     { id:"sub",      tag:"L-02", name:"Submerged Level" },
     { id:"dre",      tag:"L-??", name:"[ NO RECORD ]" }
   ];
-
-  // cameras placeholder (Fatia: voce troca os frames depois)
   const CAMERAS = [
     { id:"cam01", label:"CAM-01", loc:"Mess Deck" },
     { id:"cam02", label:"CAM-02", loc:"Drilling Deck" },
@@ -250,10 +185,10 @@
   ];
 
   const ref = sessionRef.child("station");
-  const elLvls = document.getElementById("lvls");
-  const elCams = document.getElementById("cams");
+  const elLvls=document.getElementById("lvls");
+  const elCams=document.getElementById("cams");
 
-  // ---- monta niveis ----
+  // niveis
   LEVELS.forEach(l=>{
     const row=document.createElement("div");
     row.className="row"; row.dataset.id=l.id;
@@ -261,98 +196,85 @@
       <div class="tag">${l.tag}</div>
       <div class="nm">${l.name}</div>
       <button class="btn lock" data-act="lock">LIBERAR</button>
-      <button class="btn show" data-act="show">MOSTRAR</button>`;
+      <button class="btn force" data-act="force">FORÇAR</button>`;
     elLvls.appendChild(row);
   });
 
-  // ---- popula o select de niveis do editor ----
-  const elDocLevel = document.getElementById("docLevel");
-  LEVELS.forEach(l=>{
-    const o=document.createElement("option");
-    o.value=l.id; o.textContent=`${l.tag} · ${l.name}`;
-    elDocLevel.appendChild(o);
-  });
+  // editor: select de niveis
+  const elDocLevel=document.getElementById("docLevel");
+  LEVELS.forEach(l=>{const o=document.createElement("option");o.value=l.id;o.textContent=`${l.tag} · ${l.name}`;elDocLevel.appendChild(o);});
 
-  // ---- monta cameras ----
+  // cameras
   CAMERAS.forEach(c=>{
     const d=document.createElement("div");
     d.className="cam"; d.dataset.id=c.id;
     d.innerHTML=`
       <div class="cl">${c.label}</div>
       <div class="cloc">${c.loc}</div>
-      <button class="fire" data-id="${c.id}">PUXAR FEED</button>`;
+      <div class="cstat" data-stat>OFF</div>
+      <button class="toggle" data-id="${c.id}">LIGAR</button>`;
     elCams.appendChild(d);
   });
 
-  // ===== acoes de nivel =====
-  document.getElementById("power").addEventListener("click",()=>{
-    ref.child("online").transaction(v=>!v);
-  });
+  // ===== acoes =====
+  document.getElementById("power").addEventListener("click",()=>ref.child("online").transaction(v=>!v));
 
   elLvls.addEventListener("click", e=>{
     const btn=e.target.closest("button"); if(!btn) return;
     const id=btn.closest(".row").dataset.id;
     const act=btn.dataset.act;
-    if(act==="lock"){ ref.child("unlocked/"+id).transaction(v=> v?null:true ); }
-    if(act==="show"){ ref.child("focus").transaction(v=> v===id?null:id ); }
+    if(act==="lock"){ ref.child("unlocked/"+id).transaction(v=>v?null:true); }
+    if(act==="force"){ ref.child("force").transaction(v=> v===id?null:id ); }
   });
 
-  // ===== camera: grava um "pulso" que a estacao escuta =====
-  // grava timestamp + id; a estacao mostra o feed e corta sozinha.
+  // camera: liga/desliga (toggle do "on"). Ligar zera o cooldown.
   elCams.addEventListener("click", e=>{
-    const btn=e.target.closest(".fire"); if(!btn) return;
-    const camId=btn.dataset.id;
-    ref.child("camera").set({ id:camId, at: Date.now() });
-    // feedback local: trava o botao uns segundos
-    btn.disabled=true; const old=btn.textContent; btn.textContent="NO AR…";
-    setTimeout(()=>{ btn.disabled=false; btn.textContent=old; }, 6500);
+    const btn=e.target.closest(".toggle"); if(!btn) return;
+    const id=btn.dataset.id;
+    ref.child("cams/"+id).once("value").then(s=>{
+      const c=s.val()||{};
+      if(c.on){ ref.child("cams/"+id).set({on:false}); }
+      else { ref.child("cams/"+id).set({on:true, pulledAt:0}); } // ON e pronto pra puxar
+    });
   });
 
-  // ===== editor de dossie =====
+  // ===== editor =====
   const elTitle=document.getElementById("docTitle");
   const elBody=document.getElementById("docBody");
   const elSaved=document.getElementById("saved");
-  let editingKey=null; // se estiver editando um existente
+  let editingKey=null;
 
   document.getElementById("publish").addEventListener("click",()=>{
-    const title=elTitle.value.trim();
-    const body=elBody.value;
-    const level=elDocLevel.value;
-    if(!title){ elTitle.focus(); return; }
-    const payload={ title, body, level, at: Date.now() };
-    const dest = editingKey
-      ? ref.child("files/"+editingKey)
-      : ref.child("files").push();
-    dest.set(payload);
-    editingKey=null;
-    elSaved.classList.add("show");
-    setTimeout(()=>elSaved.classList.remove("show"), 1600);
-    elTitle.value=""; elBody.value="";
+    const title=elTitle.value.trim(); if(!title){elTitle.focus();return;}
+    // preserva o estado 'available' se estiver editando
+    const finish=(prevAvail)=>{
+      const payload={title, body:elBody.value, level:elDocLevel.value, at:Date.now(), available:!!prevAvail};
+      const dest=editingKey?ref.child("files/"+editingKey):ref.child("files").push();
+      dest.set(payload);
+      editingKey=null;
+      elSaved.classList.add("show"); setTimeout(()=>elSaved.classList.remove("show"),1600);
+      elTitle.value=""; elBody.value="";
+    };
+    if(editingKey){ ref.child("files/"+editingKey+"/available").once("value").then(s=>finish(s.val())); }
+    else finish(false);
   });
 
-  document.getElementById("clearForm").addEventListener("click",()=>{
-    elTitle.value=""; elBody.value=""; editingKey=null;
-  });
+  document.getElementById("clearForm").addEventListener("click",()=>{elTitle.value="";elBody.value="";editingKey=null;});
 
-  // lista de dossies publicados
   const elDocList=document.getElementById("doclist");
   ref.child("files").on("value", snap=>{
-    const files=snap.val()||{};
-    const keys=Object.keys(files);
-    if(!keys.length){
-      elDocList.innerHTML=`<div style="color:var(--ink-dim);opacity:.5;font-size:12px">Nenhum arquivo publicado ainda.</div>`;
-      return;
-    }
-    // ordena por nivel pra agrupar visualmente
-    keys.sort((a,b)=> (files[a].level||"").localeCompare(files[b].level||""));
+    const files=snap.val()||{}; const keys=Object.keys(files);
+    if(!keys.length){ elDocList.innerHTML=`<div style="color:var(--ink-dim);opacity:.5;font-size:12px">Nenhum arquivo salvo ainda.</div>`; return; }
+    keys.sort((a,b)=>(files[a].level||"").localeCompare(files[b].level||""));
     elDocList.innerHTML="";
     keys.forEach(k=>{
       const f=files[k];
       const lvlName=(LEVELS.find(l=>l.id===f.level)||{}).name||f.level||"—";
       const d=document.createElement("div");
-      d.className="doc";
+      d.className="doc"+(f.available?" avail":"");
       d.innerHTML=`<span class="dt">${escapeHtml(f.title||"(sem título)")}</span>
                    <span class="dl">${escapeHtml(lvlName)}</span>
+                   <button class="av" data-k="${k}">${f.available?"DISPONÍVEL":"oculto"}</button>
                    <button class="edit" data-k="${k}">editar</button>
                    <button class="del" data-k="${k}">apagar</button>`;
       elDocList.appendChild(d);
@@ -361,16 +283,14 @@
 
   elDocList.addEventListener("click", e=>{
     const k=e.target.dataset.k; if(!k) return;
+    if(e.target.classList.contains("av")){ ref.child("files/"+k+"/available").transaction(v=>!v); }
     if(e.target.classList.contains("del")){
-      if(confirm("Apagar este arquivo? Some da tela dos jogadores também.")){
-        ref.child("files/"+k).remove();
-      }
+      if(confirm("Apagar este arquivo? Some pros jogadores também.")) ref.child("files/"+k).remove();
     }
     if(e.target.classList.contains("edit")){
       ref.child("files/"+k).once("value").then(s=>{
         const f=s.val(); if(!f) return;
-        elTitle.value=f.title||""; elBody.value=f.body||"";
-        elDocLevel.value=f.level||LEVELS[0].id;
+        elTitle.value=f.title||""; elBody.value=f.body||""; elDocLevel.value=f.level||LEVELS[0].id;
         editingKey=k;
         window.scrollTo({top:document.querySelector(".editor").offsetTop-40,behavior:"smooth"});
       });
@@ -378,44 +298,81 @@
   });
 
   document.getElementById("reset").addEventListener("click",()=>{
-    if(confirm("Resetar a Estação? Desliga o terminal, tranca todos os níveis e mantém os arquivos.")){
+    if(confirm("Resetar a Estação? Desliga, tranca níveis, solta foco e desliga câmeras. Mantém os arquivos salvos.")){
       ref.child("online").set(false);
       ref.child("unlocked").set({});
-      ref.child("focus").set(null);
-      ref.child("camera").set(null);
+      ref.child("force").set(null);
+      ref.child("cams").set({});
     }
   });
 
-  // ---- reflete estado no painel ----
+  // ===== reflete estado no painel =====
   ref.on("value", snap=>{
     const s=snap.val()||{};
     const online=!!s.online;
     const power=document.getElementById("power");
-    power.classList.toggle("on", online);
-    document.getElementById("powertxt").textContent =
-      online ? "TERMINAL LIGADO" : "TERMINAL DESLIGADO";
+    power.classList.toggle("on",online);
+    document.getElementById("powertxt").textContent=online?"TERMINAL LIGADO":"TERMINAL DESLIGADO";
 
     const unlocked=s.unlocked||{};
-    const focus=s.focus||null;
+    const force=s.force||null;
     document.querySelectorAll(".row").forEach(row=>{
       const id=row.dataset.id;
       const isUn=!!unlocked[id];
-      row.classList.toggle("unlocked", isUn);
+      row.classList.toggle("unlocked",isUn);
+      row.classList.toggle("forced",force===id);
       const lockBtn=row.querySelector(".lock");
-      lockBtn.textContent = isUn ? "TRANCAR" : "LIBERAR";
-      lockBtn.classList.toggle("is-on", isUn);
-      const showBtn=row.querySelector(".show");
-      showBtn.disabled = !isUn;
-      showBtn.classList.toggle("is-focus", focus===id);
-      showBtn.textContent = focus===id ? "EM TELA" : "MOSTRAR";
+      lockBtn.textContent=isUn?"TRANCAR":"LIBERAR"; lockBtn.classList.toggle("is-on",isUn);
+      const forceBtn=row.querySelector(".force");
+      forceBtn.disabled=!isUn; // so força o que está liberado
+      forceBtn.classList.toggle("is-on",force===id);
+      forceBtn.textContent=force===id?"FORÇANDO":"FORÇAR";
+    });
+
+    // botao global de soltar foco
+    let cf=document.getElementById("clearForceBtn");
+    const camsHd=document.querySelectorAll(".sub-hd")[0];
+    if(force){
+      if(!cf){
+        cf=document.createElement("button");
+        cf.id="clearForceBtn"; cf.className="clear-force";
+        cf.textContent="✕ SOLTAR FOCO";
+        cf.addEventListener("click",()=>ref.child("force").set(null));
+        document.querySelector(".lvls").parentNode.insertBefore(cf, document.querySelector(".lvls").nextSibling);
+      }
+    } else if(cf){ cf.remove(); }
+
+    // cameras
+    const cams=s.cams||{}; const now=Date.now();
+    document.querySelectorAll(".cam").forEach(cam=>{
+      const id=cam.dataset.id; const c=cams[id]||{};
+      const isOn=!!c.on; const pulledAt=c.pulledAt||0;
+      const inCool=isOn && (now-pulledAt<CAM_COOLDOWN) && pulledAt>0;
+      cam.classList.toggle("on",isOn);
+      const stat=cam.querySelector("[data-stat]");
+      const toggle=cam.querySelector(".toggle");
+      stat.classList.toggle("cool",inCool);
+      if(!isOn){ stat.textContent="OFF"; toggle.textContent="LIGAR"; }
+      else if(inCool){ const left=Math.ceil((CAM_COOLDOWN-(now-pulledAt))/1000); stat.textContent=`COOLDOWN ${left}s`; toggle.textContent="DESLIGAR"; }
+      else { stat.textContent="● ON / pronta"; toggle.textContent="DESLIGAR"; }
     });
   });
+  // tick pro cooldown atualizar no painel
+  setInterval(()=>{ ref.child("cams").once("value").then(s=>{
+    const cams=s.val()||{}; const now=Date.now();
+    document.querySelectorAll(".cam").forEach(cam=>{
+      const id=cam.dataset.id; const c=cams[id]||{};
+      if(!c.on) return;
+      const pulledAt=c.pulledAt||0;
+      const inCool=(now-pulledAt<CAM_COOLDOWN)&&pulledAt>0;
+      const stat=cam.querySelector("[data-stat]");
+      stat.classList.toggle("cool",inCool);
+      if(inCool){ const left=Math.ceil((CAM_COOLDOWN-(now-pulledAt))/1000); stat.textContent=`COOLDOWN ${left}s`; }
+      else stat.textContent="● ON / pronta";
+    });
+  }); },1000);
 
-  function escapeHtml(s){
-    return String(s).replace(/[&<>"']/g, c=>(
-      {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]
-    ));
-  }
+  function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 </script>
 </body>
 </html>
