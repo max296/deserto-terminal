@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SUBMERSIBLE // VIEWPORT</title>
+<style>
+  :root{
+    --font:"SFMono-Regular",ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:#000}
+  body{font-family:var(--font);color:#8a9a9c;user-select:none;-webkit-user-select:none;touch-action:none}
+
+  /* STANDBY */
+  #standby{position:fixed;inset:0;z-index:60;background:#05060a;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+  #standby .ring{width:14px;height:14px;border-radius:50%;border:2px solid #2a3a3a;border-top-color:#4a6a6a;animation:spin 2s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #standby .msg{letter-spacing:.3em;font-size:12px;color:#3a4a4a}
+  #standby .sub{font-size:10px;color:#2a3a3a;letter-spacing:.12em}
+
+  #sub{position:fixed;inset:0;display:none}
+  #sub.on{display:block}
+
+  /* ====== O BREU (espaco 360 que desliza ao girar) ====== */
+  #abyss{position:absolute;inset:0;overflow:hidden;background:radial-gradient(ellipse at 50% 45%, #0a1418 0%, #050a0c 45%, #000 100%)}
+  /* o "mundo" la fora: largo, desliza horizontalmente conforme o angulo */
+  #world{position:absolute;top:0;bottom:0;width:300%;left:0;will-change:transform}
+  /* particulas em suspensao (geradas via JS) */
+  .mote{position:absolute;border-radius:50%;background:rgba(150,180,180,.5);pointer-events:none}
+  /* a ameaca (forma abstrata OU imagem do DM) */
+  #threat{position:absolute;top:50%;transform:translate(-50%,-50%);opacity:0;transition:opacity 1.2s ease;pointer-events:none;will-change:opacity}
+  #threatShape{filter:blur(2px)}
+  #threatImg{max-width:46vmin;max-height:46vmin;display:none;filter:contrast(1.1) brightness(.7)}
+
+  /* facho de luz: um cone radial que segue o ponto do holofote */
+  #beam{position:absolute;width:80vmin;height:80vmin;border-radius:50%;left:50%;top:50%;
+    transform:translate(-50%,-50%);pointer-events:none;mix-blend-mode:screen;
+    background:radial-gradient(circle at center, rgba(150,190,190,.22) 0%, rgba(120,160,160,.08) 30%, transparent 60%);
+    transition:opacity .3s}
+
+  /* ====== ESTRUTURA DO SUBMERSIVEL (overlay por cima do breu) ====== */
+  /* mascara escura com um furo quadrado = o visor */
+  #hull{position:absolute;inset:0;pointer-events:none;z-index:5}
+
+  /* moldura/casco - desenhado com CSS, troca de skin via classe no #sub */
+  #frame{position:absolute;inset:0;z-index:6;pointer-events:none}
+
+  /* foco/pálpebra: vinheta que fecha quando NAO esta focando, abre quando foca */
+  #lid{position:absolute;inset:0;z-index:7;pointer-events:none;
+    box-shadow:inset 0 0 22vmin 12vmin rgba(0,0,0,.92);
+    transition:box-shadow .25s ease, backdrop-filter .25s}
+  #blur{position:absolute;inset:0;z-index:4;pointer-events:none;backdrop-filter:blur(3px);transition:backdrop-filter .4s ease}
+
+  /* HUD: leitura/legenda do DM + bussola + estado */
+  #hud{position:absolute;inset:0;z-index:8;pointer-events:none}
+  .hud-top{position:absolute;top:14px;left:0;right:0;display:flex;justify-content:center}
+  .compass{font-size:11px;letter-spacing:.3em;color:#5a7a7a;text-shadow:0 0 8px rgba(90,160,160,.4)}
+  .hud-read{position:absolute;bottom:48px;left:0;right:0;text-align:center;padding:0 8vw}
+  .hud-read .line{display:inline-block;font-size:13px;letter-spacing:.08em;color:#7aa;background:rgba(0,8,10,.55);padding:6px 14px;border:1px solid rgba(90,140,140,.25);max-width:80ch;line-height:1.5}
+  .hud-state{position:absolute;top:14px;right:16px;font-size:10px;letter-spacing:.16em;color:#456}
+
+  /* controles do jogador */
+  #ctrls{position:absolute;bottom:14px;left:0;right:0;z-index:9;display:flex;gap:10px;justify-content:center;align-items:center}
+  .cbtn{pointer-events:auto;cursor:pointer;background:rgba(10,18,20,.7);border:1px solid rgba(90,130,130,.35);color:#7a9a9a;
+    border-radius:5px;padding:9px 16px;font-family:inherit;font-size:11px;letter-spacing:.14em;transition:all .15s;backdrop-filter:blur(2px)}
+  .cbtn:hover{border-color:#7aa;color:#acc}
+  .cbtn.active{background:rgba(120,180,180,.18);border-color:#8cc;color:#cee}
+  .hint-drag{position:absolute;bottom:54px;left:0;right:0;text-align:center;font-size:9px;letter-spacing:.18em;color:#2a3a3a;z-index:9;pointer-events:none}
+
+  /* ====== SKINS ====== */
+  /* --- VELHO (Iron Lung): ferrugem, rebites, visor amarelado riscado --- */
+  #sub.old #frame{
+    background:
+      radial-gradient(ellipse at 50% 50%, transparent 32%, rgba(20,12,6,.4) 40%, rgba(30,18,8,.92) 62%),
+      linear-gradient(135deg, #2a1d10, #1a1208 60%, #241a0e);
+  }
+  #sub.old .visor-edge{position:absolute;inset:0;z-index:6;pointer-events:none;
+    box-shadow:inset 0 0 0 3vmin #1c1408, inset 0 0 4vmin 3vmin rgba(0,0,0,.7);}
+  /* tinta amarelada do vidro velho */
+  #sub.old #glasstint{position:absolute;inset:0;z-index:5;pointer-events:none;
+    background:radial-gradient(ellipse at 50% 45%, rgba(120,100,40,.10) 0%, rgba(60,45,15,.18) 70%);mix-blend-mode:multiply}
+  #sub.old .rivets{opacity:.9}
+  #sub.old .compass{color:#9a7a3a;text-shadow:0 0 8px rgba(150,110,40,.4)}
+  #sub.old #beam{background:radial-gradient(circle at center, rgba(200,170,90,.20) 0%, rgba(150,120,50,.07) 30%, transparent 60%)}
+
+  /* --- MODERNO (NeuroStat): casco limpo, vidro ciano, HUD --- */
+  #sub.modern #frame{
+    background:
+      radial-gradient(ellipse at 50% 50%, transparent 34%, rgba(8,18,20,.35) 42%, rgba(6,14,16,.94) 64%),
+      linear-gradient(135deg, #0e1a1d, #0a1416 60%, #0c181b);
+  }
+  #sub.modern .visor-edge{position:absolute;inset:0;z-index:6;pointer-events:none;
+    box-shadow:inset 0 0 0 2.4vmin #0c1c1f, inset 0 0 3vmin 2.4vmin rgba(0,20,20,.6);}
+  #sub.modern #glasstint{position:absolute;inset:0;z-index:5;pointer-events:none;
+    background:radial-gradient(ellipse at 50% 45%, rgba(40,120,120,.06) 0%, rgba(20,60,70,.12) 75%)}
+  #sub.modern .rivets{opacity:.25}
+
+  /* rebites (pontos) ao redor do visor - so destacam no velho */
+  .rivets{position:absolute;inset:0;z-index:7;pointer-events:none}
+  .rivet{position:absolute;width:1.5vmin;height:1.5vmin;border-radius:50%;
+    background:radial-gradient(circle at 35% 35%, #6a5530, #2a1d0e);box-shadow:0 1px 2px #000}
+
+  /* arranhoes no vidro */
+  .scratches{position:absolute;inset:0;z-index:5;pointer-events:none;opacity:.5;
+    background-image:
+      linear-gradient(118deg, transparent 49.6%, rgba(180,180,160,.12) 49.8%, transparent 50.1%),
+      linear-gradient(73deg, transparent 39.7%, rgba(180,180,160,.08) 39.9%, transparent 40.1%);}
+  #sub.modern .scratches{opacity:.12}
+
+  /* tremor sutil do casco */
+  #sub.old #frame, #sub.old .visor-edge, #sub.old .rivets{animation:tremor 7s ease-in-out infinite}
+  @keyframes tremor{0%,100%{transform:translate(0,0)}25%{transform:translate(.3px,-.4px)}50%{transform:translate(-.4px,.3px)}75%{transform:translate(.2px,.3px)}}
+
+  @media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</head>
+<body>
+
+  <div id="standby">
+    <div class="ring"></div>
+    <div class="msg">SUBMERSIBLE OFFLINE</div>
+    <div class="sub">viewport feed inactive</div>
+  </div>
+
+  <div id="sub" class="old">
+    <div id="abyss">
+      <div id="world">
+        <div id="threat">
+          <svg id="threatShape" width="380" height="380" viewBox="0 0 380 380"></svg>
+          <img id="threatImg" alt="">
+        </div>
+      </div>
+      <div id="beam"></div>
+    </div>
+
+    <div id="blur"></div>
+    <div id="glasstint"></div>
+    <div class="scratches"></div>
+    <div class="visor-edge"></div>
+    <div id="frame"></div>
+    <div class="rivets" id="rivets"></div>
+    <div id="lid"></div>
+
+    <div id="hud">
+      <div class="hud-top"><div class="compass" id="compass">BRG 000</div></div>
+      <div class="hud-state" id="hudstate">—</div>
+      <div class="hud-read" id="hudread"></div>
+    </div>
+
+    <div class="hint-drag" id="hintdrag">drag to look around · hold to focus</div>
+    <div id="ctrls">
+      <div class="cbtn" id="btnLight">LIGHT: OFF</div>
+      <div class="cbtn" id="btnFocus">HOLD TO FOCUS</div>
+    </div>
+  </div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script>
+  // ===== identidade desta aba (investigador) =====
+  const MY_ID = "inv-" + Math.random().toString(36).slice(2,8);
+  let myLabel = null; // atribuido pela ordem de chegada (Investigador N)
+
+  const ref = sessionRef.child("submarine");
+  const presenceRef = ref.child("viewers/" + MY_ID);
+
+  // ===== estado =====
+  let heading = 0;          // angulo de visao do submersivel (0-359)
+  let lightMode = false;    // false = arrastar gira; true = arrastar move o facho
+  let lightOn = false;
+  let beamX = 50, beamY = 50; // posicao do facho em % do visor
+  let focusing = false;
+  let STATE = {};
+
+  const elWorld = document.getElementById("world");
+  const elBeam  = document.getElementById("beam");
+  const elLid   = document.getElementById("lid");
+  const elBlur  = document.getElementById("blur");
+  const elCompass = document.getElementById("compass");
+  const elThreat = document.getElementById("threat");
+  const elThreatShape = document.getElementById("threatShape");
+  const elThreatImg = document.getElementById("threatImg");
+
+  // ---- particulas ----
+  (function makeMotes(){
+    const w=document.getElementById("world");
+    for(let i=0;i<90;i++){
+      const m=document.createElement("div");
+      m.className="mote";
+      const s=Math.random()*2.4+0.6;
+      m.style.width=s+"px"; m.style.height=s+"px";
+      m.style.left=(Math.random()*100)+"%";
+      m.style.top=(Math.random()*100)+"%";
+      m.style.opacity=(Math.random()*0.5+0.1);
+      w.appendChild(m);
+    }
+  })();
+
+  // ---- rebites ao redor do visor ----
+  (function makeRivets(){
+    const r=document.getElementById("rivets");
+    const cx=50, cy=50, rad=33; // % 
+    for(let a=0;a<360;a+=18){
+      const rv=document.createElement("div");
+      rv.className="rivet";
+      const ra=a*Math.PI/180;
+      rv.style.left=(cx+Math.cos(ra)*rad)+"%";
+      rv.style.top=(cy+Math.sin(ra)*rad*1.0)+"%";
+      r.appendChild(rv);
+    }
+  })();
+
+  // ===== render do heading: desliza o mundo + bussola =====
+  function applyHeading(){
+    // world tem 300% de largura; heading 0-360 mapeia pra deslocamento
+    // centralizamos: a -100% (1/3) e o ponto base
+    const frac = heading/360;
+    const shift = -frac * (elWorld.offsetWidth - window.innerWidth);
+    elWorld.style.transform = `translateX(${shift}px)`;
+    const brg = String(Math.round(heading)).padStart(3,"0");
+    elCompass.textContent = "BRG " + brg;
+    // reporta meu heading
+    presenceRef.update({ heading: Math.round(heading), at: Date.now() });
+    positionThreat();
+  }
+
+  // posiciona a ameaca conforme a direcao escolhida pelo DM, relativa ao heading
+  function positionThreat(){
+    const dir = (STATE.threatDir!=null)?STATE.threatDir:null;
+    if(dir==null){ return; }
+    // diferenca angular entre onde o jogador olha e onde a ameaca esta
+    let delta = ((dir - heading + 540) % 360) - 180; // -180..180
+    // mapeia delta pra posicao X no visor (centro = direto a frente)
+    // fora de ~+-70 graus, fica fora do visor
+    const pct = 50 + (delta/70)*50;
+    elThreat.style.left = pct + "%";
+    // visivel so se dentro do campo
+    elThreat.style.display = (Math.abs(delta)<=85) ? "block" : "none";
+  }
+
+  // ===== input: arrastar (gira OU move facho) =====
+  let dragging=false, lastX=0, lastY=0;
+  const surface = document.getElementById("abyss");
+
+  function pointerDown(e){
+    dragging=true;
+    const p=evtPoint(e); lastX=p.x; lastY=p.y;
+  }
+  function pointerMove(e){
+    if(!dragging) return;
+    const p=evtPoint(e);
+    const dx=p.x-lastX, dy=p.y-lastY;
+    lastX=p.x; lastY=p.y;
+    if(lightMode){
+      // move o facho
+      beamX=Math.max(0,Math.min(100, beamX + dx/window.innerWidth*100));
+      beamY=Math.max(0,Math.min(100, beamY + dy/window.innerHeight*100));
+      elBeam.style.left=beamX+"%"; elBeam.style.top=beamY+"%";
+    } else {
+      // gira
+      heading = (heading + dx*0.25 + 360) % 360;
+      applyHeading();
+    }
+  }
+  function pointerUp(){ dragging=false; }
+  function evtPoint(e){
+    if(e.touches && e.touches[0]) return {x:e.touches[0].clientX,y:e.touches[0].clientY};
+    return {x:e.clientX,y:e.clientY};
+  }
+  surface.addEventListener("mousedown",pointerDown);
+  window.addEventListener("mousemove",pointerMove);
+  window.addEventListener("mouseup",pointerUp);
+  surface.addEventListener("touchstart",pointerDown,{passive:true});
+  window.addEventListener("touchmove",pointerMove,{passive:true});
+  window.addEventListener("touchend",pointerUp);
+
+  // ===== botao LUZ =====
+  const btnLight=document.getElementById("btnLight");
+  btnLight.addEventListener("click",()=>{
+    if(!lightOn){ lightOn=true; lightMode=true; }
+    else if(lightMode){ lightMode=false; } // luz acesa mas volta a girar
+    else { lightOn=false; }                // apaga
+    updateLightBtn();
+  });
+  function updateLightBtn(){
+    elBeam.style.opacity = lightOn ? "1":"0";
+    btnLight.classList.toggle("active", lightMode);
+    btnLight.textContent = !lightOn ? "LIGHT: OFF" : (lightMode ? "LIGHT: AIM" : "LIGHT: ON");
+    document.getElementById("hintdrag").textContent =
+      lightMode ? "drag to aim the light · hold to focus" : "drag to look around · hold to focus";
+  }
+  updateLightBtn();
+
+  // ===== focar (segurar) =====
+  const btnFocus=document.getElementById("btnFocus");
+  function startFocus(){ focusing=true; applyFocus(); }
+  function endFocus(){ focusing=false; applyFocus(); }
+  function applyFocus(){
+    if(focusing){
+      elLid.style.boxShadow="inset 0 0 10vmin 3vmin rgba(0,0,0,.78)";
+      elBlur.style.backdropFilter="blur(0.4px)";
+      btnFocus.classList.add("active");
+    } else {
+      elLid.style.boxShadow="inset 0 0 22vmin 12vmin rgba(0,0,0,.92)";
+      elBlur.style.backdropFilter="blur(3px)";
+      btnFocus.classList.remove("active");
+    }
+  }
+  btnFocus.addEventListener("mousedown",startFocus);
+  btnFocus.addEventListener("mouseup",endFocus);
+  btnFocus.addEventListener("mouseleave",endFocus);
+  btnFocus.addEventListener("touchstart",e=>{e.preventDefault();startFocus();},{passive:false});
+  btnFocus.addEventListener("touchend",e=>{e.preventDefault();endFocus();},{passive:false});
+
+  // ===== formas de ameaca abstratas por estado =====
+  function drawThreatShape(kind){
+    const svg=elThreatShape;
+    svg.innerHTML="";
+    elThreatImg.style.display="none";
+    svg.style.display="block";
+    const ns="http://www.w3.org/2000/svg";
+    function blob(cx,cy,r,fill,op){
+      const c=document.createElementNS(ns,"ellipse");
+      c.setAttribute("cx",cx);c.setAttribute("cy",cy);
+      c.setAttribute("rx",r);c.setAttribute("ry",r*(0.7+Math.random()*0.5));
+      c.setAttribute("fill",fill);c.setAttribute("opacity",op);
+      svg.appendChild(c);
+    }
+    if(kind==="distant"){
+      svg.style.filter="blur(5px)";
+      blob(190,190,42,"#1a2a2a",.7); blob(190,180,28,"#0e1a1a",.6);
+    } else if(kind==="passing"){
+      svg.style.filter="blur(3px)";
+      blob(190,190,60,"#16201f",.8); blob(150,200,30,"#0c1414",.7); blob(235,180,26,"#0c1414",.6);
+    } else if(kind==="close"){
+      svg.style.filter="blur(1.6px)";
+      blob(190,190,120,"#16201f",.9); blob(140,160,50,"#0a1212",.85);
+      blob(245,210,55,"#0a1212",.8); blob(190,250,40,"#0a1212",.75);
+    } else {
+      svg.style.display="none";
+    }
+  }
+
+  // ===== presenca: remove minha entrada ao sair =====
+  presenceRef.onDisconnect().remove();
+  presenceRef.set({ heading:0, at:Date.now() });
+
+  // ===== escuta estado do DM =====
+  sessionRef.child("submarine").on("value", snap=>{
+    STATE = snap.val()||{};
+    const online=!!STATE.online;
+    document.getElementById("standby").style.display=online?"none":"flex";
+    document.getElementById("sub").classList.toggle("on",online);
+
+    // skin
+    const skin=STATE.skin||"old";
+    const sub=document.getElementById("sub");
+    sub.classList.toggle("old", skin==="old");
+    sub.classList.toggle("modern", skin==="modern");
+
+    // estado do breu
+    const st=STATE.state||"void";
+    const labels={
+      void:"VOID", moonpool:"IN MOONPOOL", diving:"DESCENDING",
+      open:"OPEN WATER", distant:"CONTACT — DISTANT",
+      passing:"MOVEMENT", close:"CONTACT — CLOSE"
+    };
+    document.getElementById("hudstate").textContent = labels[st]||st;
+
+    // ameaca visual conforme estado
+    const threatKinds={distant:"distant",passing:"passing",close:"close"};
+    if(STATE.imgUrl){
+      // imagem do DM tem prioridade quando houver
+      elThreatShape.style.display="none";
+      elThreatImg.style.display="block";
+      elThreatImg.src=STATE.imgUrl;
+      elThreat.style.opacity = (threatKinds[st]||STATE.showImg) ? "1":"0";
+    } else {
+      drawThreatShape(threatKinds[st]||null);
+      elThreat.style.opacity = threatKinds[st] ? "1":"0";
+    }
+    positionThreat();
+
+    // leitura/legenda livre
+    const read=(STATE.readout||"").trim();
+    const hr=document.getElementById("hudread");
+    hr.innerHTML = read ? `<span class="line">${escapeHtml(read)}</span>` : "";
+  });
+
+  function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+
+  // init
+  applyHeading();
+  window.addEventListener("resize", applyHeading);
+</script>
+</body>
+</html>
