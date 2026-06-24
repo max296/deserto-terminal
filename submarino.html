@@ -346,7 +346,7 @@
           if(camZ <= 1) continue;                       // atrás da câmera -> ignora
           const rel = Math.atan2(-camX, camZ)*180/Math.PI;
           if(Math.abs(rel)>halfFov+8) continue;
-          pts.push({rel, camZ});
+          pts.push({rel, camZ, sd:Math.round(sampleDepth)});
         }
         if(!pts.length) return;
 
@@ -371,10 +371,11 @@
           // POUCOS grãos grandes por amostra (era 6+prox*14)
           const grains = Math.round(2+prox*4);
           for(let i=0;i<grains;i++){
-            const s1=Math.sin((p.rel*3.1+i*12.9)+sideSign*7.7)*43758.5; const rx=s1-Math.floor(s1);
-            const s2=Math.sin((p.rel*1.7+i*7.3)+sideSign*3.1)*9301; const ry=s2-Math.floor(s2);
+            // semente ancorada na PROFUNDIDADE da amostra (fixa no mundo): não re-sorteia ao girar
+            const s1=Math.sin((p.sd*0.13+i*12.9)+sideSign*7.7)*43758.5; const rx=s1-Math.floor(s1);
+            const s2=Math.sin((p.sd*0.07+i*7.3)+sideSign*3.1)*9301; const ry=s2-Math.floor(s2);
             const gx = cxBase + (rx-0.5)*spread*2;
-            const gy = h*0.5 + (ry-0.5)*reach*2 + Math.sin(depth*0.02+i)*4;
+            const gy = h*0.5 + (ry-0.5)*reach*2;
             const cx=Math.max(-w*0.12,Math.min(w*1.12,gx));
             const col=rockColor(cx,gy);
             // vultos maiores
@@ -590,20 +591,38 @@
       if(keys["KeyD"]||keys["ArrowRight"]) turn+=1;
       if(turn){ nav.heading=(nav.heading+turn*TURN*dt+360)%360; pushNav(); }
 
-      // mover: W pra frente na direção que olha, S ré (movimento livre)
+      // mover: W pra frente na direção que olha, S ré (movimento livre Iron Lung)
       let drive=0;
       if(keys["KeyW"]||keys["ArrowUp"]) drive+=1;
       if(keys["KeyS"]||keys["ArrowDown"]) drive-=1;
       if(drive!==0){
         const rad=nav.heading*Math.PI/180;
         // plano de cima: heading 0 = descer (+depth), 90 = +x (direita)
-        const nx = nav.x + Math.sin(rad)*SPEED*dt*drive;
-        const nd = nav.depth + Math.cos(rad)*SPEED*dt*drive;
-        const c = corridorAt(nd);
-        if(Math.abs(nx-c.cx) <= c.hw && nd>=START_DEPTH-1 && nd<=MAX_DEPTH){
-          nav.x=nx; nav.depth=Math.max(START_DEPTH,nd); pushNav();
-        } else {
-          if(now-lastWallHit>450){ lastWallHit=now; elWallHit.classList.remove("hit"); void elWallHit.offsetWidth; elWallHit.classList.add("hit"); }
+        const stepX = Math.sin(rad)*SPEED*dt*drive;
+        const stepD = Math.cos(rad)*SPEED*dt*drive;
+
+        // limites de profundidade (sem falso "impacto": só trava a componente vertical)
+        let nd = nav.depth + stepD;
+        nd = Math.max(START_DEPTH, Math.min(MAX_DEPTH, nd));
+
+        // colisão lateral checada NA profundidade de destino, eixo X separado:
+        // tenta mover X; se sair do corredor, encosta na parede (desliza, não trava tudo).
+        const cTarget = corridorAt(nd);
+        let nx = nav.x + stepX;
+        const leftWall = cTarget.cx - cTarget.hw;
+        const rightWall = cTarget.cx + cTarget.hw;
+        let hitWall=false;
+        if(nx < leftWall){ nx = leftWall; hitWall=true; }
+        else if(nx > rightWall){ nx = rightWall; hitWall=true; }
+
+        // aplica: a profundidade sempre avança (dentro dos limites), o X desliza preso à parede
+        nav.x = nx;
+        nav.depth = nd;
+        pushNav();
+
+        // só sinaliza impacto quando DE FATO raspa a parede lateral (não nos limites de profundidade)
+        if(hitWall && Math.abs(stepX)>0.5 && now-lastWallHit>450){
+          lastWallHit=now; elWallHit.classList.remove("hit"); void elWallHit.offsetWidth; elWallHit.classList.add("hit");
         }
       }
     }
