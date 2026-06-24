@@ -320,13 +320,21 @@
       // (worldX - nav.x) lateral e (sampleDepth - depth) à frente.
       // projeção: ângulo = atan2(lateral_rotacionado_x, frente_rotacionada) relativo ao heading.
 
-      // amostro cada parede ao longo da profundidade (à frente e atrás de mim) e projeto.
-      // cada amostra vira um "tijolo" de vulto na posição X/altura projetada.
+      // amostro cada parede ao longo da profundidade e projeto no visor.
+      // CHAVE: a posição X vem da projeção (ângulo), mas o TAMANHO vem da distância
+      // lateral real da margem — senão dar ré perto de uma parede a faz crescer (bug).
       function projectWall(worldX, sideSign){
-        const samples=[];
         const ch=Math.cos(-hdg), sh=Math.sin(-hdg);
-        // amostra um trecho CURTO em torno de mim — senão a curva do canyon "dobra" a parede.
-        for(let dd=-60; dd<=120; dd+=20){
+        // distância lateral imediata até esta margem (no mundo) — controla o tamanho/proximidade
+        const cNow=corridorAt(depth);
+        const marginNow = (sideSign<0) ? (cNow.cx-cNow.hw) : (cNow.cx+cNow.hw);
+        const lateralDist = Math.abs(marginNow - nav.x);
+        const prox = Math.max(0, Math.min(1, 1 - lateralDist/(cNow.hw*1.6)));
+        if(prox<=0.04) return;
+
+        // amostro pontos ao longo de um trecho curto à frente/atrás pra desenhar a massa
+        const pts=[];
+        for(let dd=-40; dd<=100; dd+=12){
           const sampleDepth=depth+dd;
           if(sampleDepth<0) continue;
           const cc=corridorAt(sampleDepth);
@@ -335,38 +343,59 @@
           const fwd = dd;
           const camX = lat*ch - fwd*sh;
           const camZ = lat*sh + fwd*ch;
-          if(camZ <= 1) continue;
+          if(camZ <= 1) continue;                       // atrás da câmera -> ignora
           const rel = Math.atan2(-camX, camZ)*180/Math.PI;
           if(Math.abs(rel)>halfFov+8) continue;
-          const dist = Math.hypot(lat, fwd);
-          samples.push({rel, dist, camZ});
+          pts.push({rel, camZ});
         }
-        samples.sort((a,b)=>b.dist-a.dist);
-        for(const s of samples){
-          // clampa a posição na tela (vultos de borda ficam na borda, não somem fora)
-          const cxRaw = w/2 + (s.rel/halfFov)*(w/2);
-          const cx = Math.max(-w*0.1, Math.min(w*1.1, cxRaw));
-          const prox = Math.max(0, Math.min(1, 1 - s.camZ/(c.hw*2.4)));
-          if(prox<=0.05) continue;
-          const vh = h*(0.55+prox*0.7);
-          const cy = h*0.5;
-          const vw = w*(0.18+prox*0.34);
+        if(!pts.length) return;
+
+        // cor base (cinza penumbra; cinza claro sob luz, quente no velho)
+        function rockColor(cx,cy){
           let lit=0;
           if(lightOn) lit=Math.max(0,1-Math.abs(beamX-cx/w)*2.2)*Math.max(0,1-Math.abs(beamY-cy/h)*1.4);
-          let r2,g2,b2;
-          if(lit>0.1){ const base=70+lit*70;
-            if(isOld){ r2=base*1.0|0; g2=base*0.92|0; b2=base*0.74|0; }
-            else { r2=base*0.94|0; g2=base*1.02|0; b2=base*1.08|0; }
-          } else { r2=18; g2=22; b2=24; }
-          x.save();
-          x.filter=`blur(${(14-prox*6-lit*4).toFixed(1)}px)`;
-          x.globalAlpha=(0.4+prox*0.5);
-          x.fillStyle=`rgb(${r2},${g2},${b2})`;
-          x.beginPath();
-          x.ellipse(cx, cy, vw*0.6, vh*0.5, 0, 0, 6.28);
-          x.fill();
-          x.restore();
+          let r,g,b;
+          if(lit>0.1){ const base=64+lit*72;
+            if(isOld){ r=base*1.0|0; g=base*0.92|0; b=base*0.74|0; }
+            else { r=base*0.94|0; g=base*1.02|0; b=base*1.08|0; }
+          } else { r=18; g=22; b=24; }
+          return {r,g,b,lit};
         }
+
+        // desenha a massa como MUITOS círculos pequenos (textura granulada de rocha)
+        // espalhados ao redor das posições projetadas, com seed estável (não tremula).
+        const spread = w*(0.10+prox*0.22);     // o quanto a massa se espalha do eixo
+        const reach  = w/2*(0.30+prox*0.55);   // quão alto/largo a massa toma
+        for(const p of pts){
+          const cxBase = w/2 + (p.rel/halfFov)*(w/2);
+          // número de grãos proporcional à proximidade
+          const grains = Math.round(6+prox*14);
+          for(let i=0;i<grains;i++){
+            // seed estável por (rel, i) pra não cintilar
+            const s1=Math.sin((p.rel*3.1+i*12.9)+sideSign*7.7)*43758.5; const rx=s1-Math.floor(s1);
+            const s2=Math.sin((p.rel*1.7+i*7.3)+sideSign*3.1)*9301; const ry=s2-Math.floor(s2);
+            const gx = cxBase + (rx-0.5)*spread*2;
+            // vertical: distribui ao longo da altura, rola levemente com a profundidade
+            const gy = h*0.5 + (ry-0.5)*reach*2 + Math.sin(depth*0.02+i)*4;
+            const cx=Math.max(-w*0.12,Math.min(w*1.12,gx));
+            const col=rockColor(cx,gy);
+            const sz = (1.2 + rx*3.2) * (0.7+prox*0.8);   // círculos pequenos
+            x.save();
+            x.filter=`blur(${(3.5 - col.lit*2).toFixed(1)}px)`;  // bem menos blur que antes (mais textura)
+            x.globalAlpha=(0.28+prox*0.45+col.lit*0.3);
+            x.fillStyle=`rgb(${col.r},${col.g},${col.b})`;
+            x.beginPath();x.arc(cx,gy,sz,0,6.28);x.fill();
+            x.restore();
+          }
+        }
+        // uma sombra de base suave atrás dos grãos, pra dar massa (não só pontilhado solto)
+        const cxAvg = w/2 + (pts[Math.floor(pts.length/2)].rel/halfFov)*(w/2);
+        x.save();
+        x.filter="blur(22px)";
+        x.globalAlpha=0.35+prox*0.4;
+        x.fillStyle="rgb(10,13,15)";
+        x.beginPath();x.ellipse(Math.max(0,Math.min(w,cxAvg)), h*0.5, spread*1.6, reach*1.4, 0,0,6.28);x.fill();
+        x.restore();
       }
       projectWall(c.cx-c.hw, -1); // esquerda
       projectWall(c.cx+c.hw, +1); // direita
