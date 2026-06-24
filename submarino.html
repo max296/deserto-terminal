@@ -179,34 +179,36 @@
   const ref=sessionRef.child("submarine");
   const presenceRef=ref.child("viewers/"+MY_ID);
 
-  // ====== CANYON: rota navegável por profundidade ======
-  // gerado proceduralmente; você pode ajustar os pontos depois.
+  // ====== CANYON: corredor 2D com paredes reais ======
+  // linha central que serpenteia descendo; o submarino navega em (x, depth).
+  // colisão = encostar nas margens (centro ± meia-largura). Ajustável depois.
   const MAX_DEPTH=3122, CORAL_DEPTH=600, START_DEPTH=200;
   const CANYON=(function(){
     let s=7; const rnd=()=>{s=(s*9301+49297)%233280;return s/233280;};
-    const pts=[]; let dir=45;
-    for(let d=0; d<=MAX_DEPTH; d+=80){
-      dir=(dir+(rnd()-0.5)*55+360)%360;
-      // tolerâncias mais largas (mais espaço pra explorar); aperta de leve no fundo
-      let width;
-      if(d<CORAL_DEPTH) width = 52 - (d/CORAL_DEPTH)*8;        // 52 -> 44
-      else width = 44 - ((d-CORAL_DEPTH)/(MAX_DEPTH-CORAL_DEPTH))*16; // 44 -> 28
-      pts.push({depth:d, dir:Math.round(dir), width:Math.round(width)});
+    const pts=[]; let cx=0, vx=0;
+    for(let d=0; d<=MAX_DEPTH; d+=40){
+      vx+=(rnd()-0.5)*8; vx*=0.82; cx+=vx;
+      cx=Math.max(-180,Math.min(180,cx));
+      let hw = d<CORAL_DEPTH ? 95-(d/CORAL_DEPTH)*15 : 80-((d-CORAL_DEPTH)/(MAX_DEPTH-CORAL_DEPTH))*35;
+      pts.push({depth:d, cx:Math.round(cx), hw:Math.round(hw)});
     }
     return pts;
   })();
-  function canyonAt(depth){
-    return CANYON.reduce((a,b)=>Math.abs(b.depth-depth)<Math.abs(a.depth-depth)?b:a);
-  }
-  function alignment(h,d){
-    const seg=canyonAt(d);
-    let delta=((seg.dir-h+540)%360)-180;
-    return {aligned:Math.abs(delta)<=seg.width, need:seg.dir, tol:seg.width, off:delta};
+  function corridorAt(depth){
+    depth=Math.max(0,Math.min(MAX_DEPTH,depth));
+    const i=Math.min(CANYON.length-1, Math.floor(depth/40));
+    const j=Math.min(CANYON.length-1, i+1);
+    const f=(depth-CANYON[i].depth)/40;
+    return {
+      cx: CANYON[i].cx+(CANYON[j].cx-CANYON[i].cx)*f,
+      hw: CANYON[i].hw+(CANYON[j].hw-CANYON[i].hw)*f
+    };
   }
 
   // ====== navegação compartilhada ======
-  // estado autoritativo: submarine/nav = { heading, depth, mode }
-  let nav={heading:0, depth:START_DEPTH, mode:"moonpool"};
+  // estado autoritativo: submarine/nav = { x, depth, heading, mode }
+  // x = posição lateral no corredor; depth = profundidade; heading = pra onde aponta (0=descer)
+  let nav={x:0, depth:START_DEPTH, heading:0, mode:"moonpool"};
   let navReady=false;
   const keys={};
   let lastWallHit=0;
@@ -297,52 +299,61 @@
     }
     x.globalAlpha=1;
 
-    // ===== PAREDE DO CANYON: massa escura quando o heading sai do caminho =====
-    // quanto mais fora da tolerância, mais perto/escura a parede aparece à frente.
+    // ===== PAREDES DO CANYON: geometria real, ancoradas no espaço =====
+    // as margens esquerda/direita do corredor são paredes em posições do mundo.
+    // desenhamos a que estiver no campo de visão (segundo o heading), com a
+    // proximidade baseada na distância real do submarino até aquela margem.
     if(mode==="diving"){
-      const seg=canyonAt(depth);
-      let off=Math.abs(((seg.dir-nav.heading+540)%360)-180); // graus fora do centro
-      const tol=seg.width;
-      // "proximidade da parede": começa a aparecer um pouco ANTES de sair da tolerância
-      const approach=Math.max(0, Math.min(1, (off-(tol*0.55))/(tol*0.75) ));
-      if(approach>0.02){
-        // a parede vem de um dos lados conforme o sinal do desvio
-        const side=Math.sign(((seg.dir-nav.heading+540)%360)-180)||1;
-        const cx=w*0.5 - side*w*0.15*(1-approach) + side*0; // centraliza ao se aproximar
-        const cy=h*0.52;
-        const rw=w*(0.5+approach*0.6), rh=h*(0.7+approach*0.5);
-        // se a luz aponta pra parede, ela "revela" (fica mais nítida e iluminada)
+      const c=corridorAt(depth);
+      // distância lateral até cada margem (no mundo)
+      const distR = (c.cx + c.hw) - nav.x;   // margem direita (mundo +x)
+      const distL = nav.x - (c.cx - c.hw);   // margem esquerda (mundo -x)
+      // ângulo no mundo de cada margem em relação ao submarino:
+      // a margem direita está em +x (mundo) => bearing 90°; esquerda => 270°.
+      // o que aparece no visor depende do heading (centro do visor = heading).
+      const fov=70; // meio-campo de visão em graus
+      function drawWall(worldBearing, dist, halfRef){
+        // posição angular relativa ao centro do visor
+        let rel=((worldBearing - nav.heading +540)%360)-180;
+        if(Math.abs(rel)>fov+30) return; // fora do campo
+        // proximidade: perto da margem = parede grande/escura tomando o lado
+        const prox=Math.max(0, Math.min(1, 1 - dist/(halfRef*1.6)));
+        if(prox<=0.03) return;
+        const cx = w/2 + (rel/fov)*(w*0.5);
+        const cy = h*0.52;
+        const rw = w*(0.45+prox*0.7), rh=h*(0.8+prox*0.4);
+        // luz revela: nitidez e brilho quando o facho aponta pra perto da massa
         let lit=0;
-        if(lightOn){
-          const dxl=(beamX-0.5), bxThreat=(cx/w-0.5);
-          lit=Math.max(0,1-Math.abs(beamX-cx/w)*3); // luz perto do centro da massa
-        }
+        if(lightOn) lit=Math.max(0,1-Math.abs(beamX-cx/w)*2.5);
+        // cor da rocha: âmbar no casco velho, cinza no NeuroStat (luz branca)
+        const isOld=(STATE.skin||"old").startsWith("old");
+        const base=8+lit*(isOld?26:40);   // NeuroStat ilumina mais (mais cinza claro)
+        let r2,g2,b2;
+        if(isOld){ r2=Math.round(base*1.0); g2=Math.round(base*0.92); b2=Math.round(base*0.72); }
+        else { r2=Math.round(base*1.0); g2=Math.round(base*1.04); b2=Math.round(base*1.06); } // cinza-azulado frio
         x.save();
-        // massa escura difusa (blur forte sem luz, menos com luz)
-        x.filter=`blur(${(16-lit*11).toFixed(1)}px)`;
-        // cor: rocha esverdeada-escura; mais clara/visível quando iluminada
-        const base = 8 + lit*26;
-        const g2=Math.round(base*1.05), r2=Math.round(base*0.9), b2=Math.round(base*0.85);
-        x.fillStyle=`rgba(${r2},${g2},${b2},${(0.55+approach*0.4).toFixed(2)})`;
+        x.filter=`blur(${(15-lit*10).toFixed(1)}px)`;
+        x.fillStyle=`rgba(${r2},${g2},${b2},${(0.5+prox*0.45).toFixed(2)})`;
         x.beginPath();
-        // forma de rocha irregular
         for(let a=0;a<6.28;a+=0.4){
-          const rr=(Math.min(rw,rh)*0.5)*(0.8+0.35*Math.sin(a*2.5+depth*0.05));
+          const rr=(Math.min(rw,rh)*0.5)*(0.8+0.35*Math.sin(a*2.5+depth*0.05+worldBearing));
           const px=cx+Math.cos(a)*rr, py=cy+Math.sin(a)*rr*1.1;
           a===0?x.moveTo(px,py):x.lineTo(px,py);
         }
         x.closePath();x.fill();
-        // textura de rocha sob a luz: pontilhado mais claro
         if(lit>0.15){
           x.filter="blur(1px)";
-          x.fillStyle=`rgba(${r2+30},${g2+34},${b2+28},${(lit*0.5).toFixed(2)})`;
-          for(let i=0;i<30;i++){
+          x.fillStyle=`rgba(${r2+34},${g2+36},${b2+32},${(lit*0.5).toFixed(2)})`;
+          for(let i=0;i<26;i++){
             const a=Math.random()*6.28, rr=Math.random()*Math.min(rw,rh)*0.4;
             x.beginPath();x.arc(cx+Math.cos(a)*rr, cy+Math.sin(a)*rr*1.1, Math.random()*3+1,0,6.28);x.fill();
           }
         }
         x.restore();
       }
+      // desenha a mais distante primeiro pra sobrepor a mais próxima
+      const walls=[{b:90,d:distR},{b:270,d:distL}].sort((a,b)=>b.d-a.d);
+      walls.forEach(wl=>drawWall(wl.b, wl.d, c.hw));
     }
 
     // AMEACA direcional
@@ -420,69 +431,66 @@
   const elDepthBox=document.getElementById("depthbox");
   const elWallHit=document.getElementById("wallHit");
 
-  // throttle de escrita do nav no firebase (10x/s) — só quem está controlando escreve
-  let navDirty=false, lastNavWrite=0;
-  function pushNav(){
-    navDirty=true;
-  }
+  // throttle de escrita do nav no firebase (10x/s)
+  let navDirty=false;
+  function pushNav(){ navDirty=true; }
   setInterval(()=>{
-    if(!navDirty) return;
-    navDirty=false;
+    if(!navDirty) return; navDirty=false;
     ref.child("nav").update({
-      heading:Math.round(nav.heading),
-      depth:Math.round(nav.depth),
-      mode:nav.mode
+      x:Math.round(nav.x), depth:Math.round(nav.depth),
+      heading:Math.round(nav.heading), mode:nav.mode
     });
   },100);
 
-  // loop de simulação local (movimento físico), ~60fps
+  // loop de simulação local (~60fps): movimento livre Iron Lung em 2D
   let lastT=performance.now();
+  const SPEED=42, TURN=52; // unidades/s e graus/s
   function navLoop(now){
     const dt=Math.min((now-lastT)/1000, 0.05); lastT=now;
 
     if(nav.mode==="diving"){
-      // virar com A/D (ou setas) — só quando submersos
+      // virar com A/D (gira o submarino)
       let turn=0;
       if(keys["KeyA"]||keys["ArrowLeft"]) turn-=1;
       if(keys["KeyD"]||keys["ArrowRight"]) turn+=1;
-      if(turn){ nav.heading=(nav.heading+turn*50*dt+360)%360; pushNav(); }
+      if(turn){ nav.heading=(nav.heading+turn*TURN*dt+360)%360; pushNav(); }
 
-      // avançar/recuar com W/S — só desce se alinhado ao canyon
-      let fwd=0;
-      if(keys["KeyW"]||keys["ArrowUp"]) fwd+=1;
-      if(keys["KeyS"]||keys["ArrowDown"]) fwd-=1;
-      if(fwd>0){
-        const al=alignment(nav.heading, nav.depth);
-        if(al.aligned){
-          nav.depth=Math.min(MAX_DEPTH, nav.depth + 22*dt); // desce
-          pushNav();
+      // mover: W pra frente na direção que olha, S ré (movimento livre)
+      let drive=0;
+      if(keys["KeyW"]||keys["ArrowUp"]) drive+=1;
+      if(keys["KeyS"]||keys["ArrowDown"]) drive-=1;
+      if(drive!==0){
+        const rad=nav.heading*Math.PI/180;
+        // plano de cima: heading 0 = descer (+depth), 90 = +x (direita)
+        const nx = nav.x + Math.sin(rad)*SPEED*dt*drive;
+        const nd = nav.depth + Math.cos(rad)*SPEED*dt*drive;
+        const c = corridorAt(nd);
+        if(Math.abs(nx-c.cx) <= c.hw && nd>=START_DEPTH-1 && nd<=MAX_DEPTH){
+          nav.x=nx; nav.depth=Math.max(START_DEPTH,nd); pushNav();
         } else {
-          if(now-lastWallHit>500){ lastWallHit=now; elWallHit.classList.remove("hit"); void elWallHit.offsetWidth; elWallHit.classList.add("hit"); }
+          if(now-lastWallHit>450){ lastWallHit=now; elWallHit.classList.remove("hit"); void elWallHit.offsetWidth; elWallHit.classList.add("hit"); }
         }
-      } else if(fwd<0){
-        nav.depth=Math.max(START_DEPTH, nav.depth - 22*dt); // recuar não passa da entrada
-        pushNav();
       }
     }
     else if(nav.mode==="reeling"){
-      // o cabo recolhe sozinho até a profundidade de entrada
+      // cabo recolhe: recentra no corredor e sobe até a entrada
       if(nav.depth>START_DEPTH){
-        nav.depth=Math.max(START_DEPTH, nav.depth - 26*dt);
+        nav.depth=Math.max(START_DEPTH, nav.depth-26*dt);
+        const c=corridorAt(nav.depth);
+        nav.x += (c.cx-nav.x)*Math.min(1,dt*1.5);
         pushNav();
         if(nav.depth<=START_DEPTH){ nav.mode="moonpool"; pushNav(); }
       }
     }
 
-    // atualiza HUD local
+    // HUD local
     heading=nav.heading;
     document.getElementById("compass").textContent="BRG "+String(Math.round(nav.heading)).padStart(3,"0");
     const dm=Math.round(nav.depth);
     elDepthVal.textContent=String(dm).padStart(4,"0");
     elDepthBox.classList.toggle("beyond", dm>CORAL_DEPTH);
 
-    // reporta presença (heading individual pro radar; aqui todos compartilham, mas mantém vivo)
     presenceRef.update({heading:Math.round(nav.heading),depth:dm,at:Date.now()});
-
     requestAnimationFrame(navLoop);
   }
   requestAnimationFrame(navLoop);
@@ -575,6 +583,7 @@
     if(!meActive){
       if(typeof n.heading==="number") nav.heading=n.heading;
       if(typeof n.depth==="number")  nav.depth=n.depth;
+      if(typeof n.x==="number")      nav.x=n.x;
     }
     if(n.mode && n.mode!==nav.mode){ nav.mode=n.mode; }
     navReady=true;
