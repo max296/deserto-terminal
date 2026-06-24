@@ -159,9 +159,20 @@
             Rachar é permanente — o visor do submarino velho fica danificado até você apertar de novo pra consertar.
           </div>
         </div>
-        <!-- estados -->
+        <!-- pilotagem (modo de navegação) -->
         <div>
-          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">ESTADO DO BREU</div>
+          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">PERCURSO / PILOTAGEM
+            <span style="color:#456;text-transform:none;letter-spacing:0"> — quem pilota são os jogadores (WASD)</span></div>
+          <div id="submodes" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px"></div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:8px;font-size:11px;color:var(--ink-dim)">
+            profundidade atual: <b id="navDepth" style="color:var(--live)">0</b> m
+            <span id="navBeyond" style="color:var(--danger);display:none">· ALÉM DO CORAL</span>
+            <button class="btn" id="navSurface" style="margin-left:auto">zerar p/ superfície</button>
+          </div>
+        </div>
+        <!-- ameaça no breu -->
+        <div>
+          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">AMEAÇA NO BREU</div>
           <div id="substates" style="display:grid;grid-template-columns:1fr 1fr;gap:7px"></div>
         </div>
         <!-- leitura livre -->
@@ -448,17 +459,28 @@
 
   // =================== SUBMARINO ===================
   const subRef = sessionRef.child("submarine");
-  const SUB_STATES=[
+  // modos de pilotagem (controlam nav.mode)
+  const SUB_MODES=[
     {id:"moonpool", label:"Na moonpool"},
-    {id:"diving",   label:"Submergindo"},
-    {id:"open",     label:"Água aberta"},
+    {id:"diving",   label:"Submersos"},
+    {id:"reeling",  label:"Puxar de volta"}
+  ];
+  // estados de ameaça (controlam state)
+  const SUB_STATES=[
+    {id:"void",     label:"Nada"},
     {id:"distant",  label:"Algo à distância"},
     {id:"passing",  label:"Vulto no visor"},
-    {id:"close",    label:"Contato próximo"},
-    {id:"void",     label:"Breu / nada"}
+    {id:"close",    label:"Contato próximo"}
   ];
 
-  // monta botoes de estado
+  // monta botoes de pilotagem
+  const elSubModes=document.getElementById("submodes");
+  SUB_MODES.forEach(s=>{
+    const b=document.createElement("button");
+    b.className="btn submode"; b.dataset.mode=s.id; b.textContent=s.label;
+    elSubModes.appendChild(b);
+  });
+  // monta botoes de ameaça
   const elSubStates=document.getElementById("substates");
   SUB_STATES.forEach(s=>{
     const b=document.createElement("button");
@@ -472,7 +494,6 @@
   document.querySelectorAll(".skin").forEach(b=>{
     b.addEventListener("click",()=>subRef.child("skin").set(b.dataset.skin));
   });
-  // rachar / consertar o casco velho (permanente até reset manual)
   document.getElementById("crackBtn").addEventListener("click",()=>{
     subRef.child("cracked").once("value").then(s=>{
       const isCracked=!!s.val();
@@ -480,11 +501,19 @@
         if(confirm("Rachar o casco do submarino velho? Fica danificado permanentemente até você consertar aqui.")){
           subRef.child("cracked").set(true);
         }
-      } else {
-        subRef.child("cracked").set(false); // conserta (reset)
-      }
+      } else { subRef.child("cracked").set(false); }
     });
   });
+  // pilotagem: muda nav.mode
+  elSubModes.addEventListener("click",e=>{
+    const b=e.target.closest(".submode"); if(!b) return;
+    subRef.child("nav/mode").set(b.dataset.mode);
+  });
+  // zerar profundidade pra superfície
+  document.getElementById("navSurface").addEventListener("click",()=>{
+    subRef.child("nav").update({depth:0, mode:"moonpool"});
+  });
+  // ameaça: muda state
   elSubStates.addEventListener("click",e=>{
     const b=e.target.closest(".substate"); if(!b) return;
     subRef.child("state").set(b.dataset.state);
@@ -505,8 +534,9 @@
   });
 
   document.getElementById("subreset").addEventListener("click",()=>{
-    if(confirm("Resetar o submarino? Desliga o visor e zera estado, direção, leitura e imagem.")){
+    if(confirm("Resetar o submarino? Desliga o visor, zera profundidade/percurso, ameaça, direção, leitura e imagem.")){
       subRef.update({online:false,state:"void",threatDir:null,readout:"",imgUrl:null,cracked:false});
+      subRef.child("nav").set({heading:0,depth:0,mode:"moonpool"});
     }
   });
 
@@ -598,6 +628,19 @@
       b.style.borderColor=on?"var(--live-dim)":"";
       b.style.color=on?"var(--live)":"";
     });
+    // pilotagem: highlight do modo atual + profundidade ao vivo
+    const navmode=(s.nav&&s.nav.mode)||"moonpool";
+    document.querySelectorAll(".submode").forEach(b=>{
+      const on=b.dataset.mode===navmode;
+      b.style.borderColor=on?"var(--live-dim)":"";
+      b.style.color=on?"var(--live)":"";
+    });
+    const depth=(s.nav&&s.nav.depth)||0;
+    const nd=document.getElementById("navDepth");
+    if(nd) nd.textContent=Math.round(depth);
+    const nb=document.getElementById("navBeyond");
+    if(nb) nb.style.display = depth>600 ? "inline" : "none";
+
     if(document.activeElement!==elSubReadout){ elSubReadout.value=s.readout||""; }
     threatDir = (s.threatDir!=null)?s.threatDir:null;
     drawRadar();
