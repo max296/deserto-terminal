@@ -301,107 +301,54 @@
     }
     x.globalAlpha=1;
 
-    // ===== PAREDES DO CANYON: superfície de rocha com profundidade e movimento =====
-    // cada margem é uma faixa vertical de rocha feita de fatias empilhadas.
-    // as fatias rolam pra cima conforme o submarino desce (usando depth como offset),
-    // então a parede "passa" por você em vez de ficar estática. relevo irregular de caverna.
+    // ===== PAREDES (atmosféricas): sombra densa + partículas do lado da margem perto =====
+    // não desenha "a parede" — sugere massa sólida próxima. A navegação real vem dos mapas.
     if(mode==="diving"){
       const c=corridorAt(depth);
-      const distR = (c.cx + c.hw) - nav.x;   // distância até margem direita
-      const distL = nav.x - (c.cx - c.hw);   // distância até margem esquerda
-      const fov=70;
+      const distR=(c.cx+c.hw)-nav.x;   // distância até margem direita
+      const distL=nav.x-(c.cx-c.hw);   // distância até margem esquerda
       const isOld=(STATE.skin||"old").startsWith("old");
+      const fov=70;
+      // proximidade a cada margem (0 longe, 1 colado)
+      const proxR=Math.max(0,Math.min(1,1-distR/(c.hw*1.5)));
+      const proxL=Math.max(0,Math.min(1,1-distL/(c.hw*1.5)));
 
-      function drawWall(worldBearing, dist, side){
-        let rel=((worldBearing - nav.heading +540)%360)-180;
-        if(Math.abs(rel)>fov+25) return;
-        // proximidade 0..1 (perto = parede toma a lateral)
-        const prox=Math.max(0, Math.min(1, 1 - dist/(c.hw*1.7)));
+      function wallSide(worldBearing, prox){
         if(prox<=0.02) return;
+        let rel=((worldBearing-nav.heading+540)%360)-180; // onde a margem cai no visor
+        if(Math.abs(rel)>fov+40) return;
+        // posição horizontal da sombra no visor (segue o ângulo da margem)
+        const sxPos=w/2+(rel/fov)*(w*0.5);
+        const left = sxPos < w/2;
+        const band = w*(0.28+prox*0.34); // largura da sombra
+        // sombra densa do lado (escurece, sugere rocha)
+        const edge = left?0:w;
+        const grd=x.createLinearGradient(edge,0, left?band:w-band,0);
+        const isLit = lightOn && Math.abs(beamX-sxPos/w)<0.35;
+        // sob a luz, em vez de só escuro, aparece um cinza/âmbar (rocha revelada vagamente)
+        const darkA=(0.45+prox*0.4);
+        grd.addColorStop(0, isLit ? (isOld?`rgba(60,48,28,${darkA})`:`rgba(46,54,60,${darkA})`) : `rgba(2,6,7,${darkA})`);
+        grd.addColorStop(1,"rgba(0,0,0,0)");
+        x.fillStyle=grd; x.fillRect(left?0:w-band,0,band,h);
 
-        // a parede ocupa uma faixa vertical no lado correspondente do visor.
-        // centro horizontal da faixa: empurrado pra borda, entra mais quando perto.
-        const edgeX = rel<0 ? 0 : w;          // qual borda
-        const reach = w*(0.30 + prox*0.42);    // quanto a parede invade
-        const bandCenterX = edgeX + (rel<0 ? reach*0.5 : -reach*0.5);
-
-        x.save();
-        // recorta a faixa vertical pra rocha não vazar pro centro do visor
-        x.beginPath();
-        if(rel<0) x.rect(0,0, reach, h);
-        else x.rect(w-reach,0, reach, h);
-        x.clip();
-
-        // ===== fatias de rocha empilhadas, rolando com a profundidade =====
-        const sliceH = h*0.13;                       // altura de cada fatia
-        const scroll = (depth*6) % sliceH;           // deslocamento vertical = movimento ao descer
-        const nSlices = Math.ceil(h/sliceH)+2;
-        const baseShade = isOld ? 14 : 16;
-        for(let i=-1; i<nSlices; i++){
-          const sy = i*sliceH - scroll;
-          // seed estável por fatia (pra textura não tremular): usa índice absoluto de profundidade
-          const sidx = Math.floor(depth*6/sliceH) + i;
-          const seed = Math.sin(sidx*12.9898 + side*78.233)*43758.5453;
-          const rough = (seed - Math.floor(seed));    // 0..1 pseudo-aleatório estável
-          // perfil da rocha: quanto ela avança nesta fatia (relevo irregular)
-          const jut = reach*(0.55 + rough*0.45);
-          // luz: revela a fatia se o facho está perto dela na vertical e do lado certo
-          let lit=0;
-          if(lightOn){
-            const beamPx=beamY*h;
-            const vdist=Math.abs((sy+sliceH/2)-beamPx)/(h*0.5);
-            const sideMatch=Math.max(0,1-Math.abs(beamX-(bandCenterX/w))*2.2);
-            lit=Math.max(0,(1-vdist))*sideMatch;
-          }
-          // cor da fatia: âmbar (velho) ou cinza-frio (neurostat), mais clara sob luz
-          const sh = baseShade + rough*10 + lit*(isOld?34:50);
-          let r2,g2,b2;
-          if(isOld){ r2=Math.round(sh*1.0); g2=Math.round(sh*0.88); b2=Math.round(sh*0.66); }
-          else { r2=Math.round(sh*0.96); g2=Math.round(sh*1.02); b2=Math.round(sh*1.08); }
-          // desenha a fatia como um polígono irregular colado na borda
-          x.beginPath();
-          const xb = edgeX;                          // borda fixa
-          const xi = rel<0 ? jut : w-jut;            // ponta interna (irregular)
-          x.moveTo(xb, sy);
-          // borda interna recortada (dentes de rocha)
-          const teeth=4;
-          for(let tdex=0; tdex<=teeth; tdex++){
-            const ty=sy + (sliceH*tdex/teeth);
-            const tseed=Math.sin((sidx*7.1+tdex*3.7)+side*11.3)*9301; const tr=(tseed-Math.floor(tseed));
-            const tx = xi + (rel<0?1:-1)*tr*reach*0.28;
-            x.lineTo(tx, ty);
-          }
-          x.lineTo(xb, sy+sliceH);
-          x.closePath();
-          x.globalAlpha=(0.55+prox*0.4);
-          x.fillStyle=`rgb(${r2},${g2},${b2})`;
-          x.fill();
-          // fenda escura entre fatias (linha de sedimento)
-          x.globalAlpha=0.5*prox;
-          x.fillStyle="rgba(0,0,0,0.6)";
-          x.fillRect(rel<0?0:w-jut, sy-1, jut, 1.5);
-          // brilho úmido sob a luz (pontinhos)
-          if(lit>0.25){
-            x.globalAlpha=lit*0.4;
-            x.fillStyle=isOld?`rgb(${r2+40},${g2+34},${b2+20})`:`rgb(${r2+30},${g2+36},${b2+40})`;
-            for(let k=0;k<5;k++){
-              const px=(rel<0?1:-1)*Math.random()*jut + (rel<0?0:w);
-              x.beginPath();x.arc(px, sy+Math.random()*sliceH, Math.random()*2+0.6,0,6.28);x.fill();
-            }
-          }
+        // partículas densas e lentas perto da rocha (detrito grudado na parede), subindo ao descer
+        const n=Math.round(prox*40);
+        for(let i=0;i<n;i++){
+          const seed=Math.sin(i*12.9+side(worldBearing)*7.7)*43758.5; const rr=seed-Math.floor(seed);
+          const px=left ? rr*band*0.8 : w-rr*band*0.8;
+          // sobe com a profundidade (movimento ao descer) + leve deriva
+          const py=((rr*h + depth*7 + t*0.6)%h);
+          const sz=1+rr*2.5;
+          let lit2=0;
+          if(lightOn) lit2=Math.max(0,1-Math.abs(beamX-px/w)*2.5)*Math.max(0,1-Math.abs(beamY-py/h)*1.5);
+          const base=isOld? (lit2>0.2?`rgba(150,120,70,`:`rgba(40,32,20,`) : (lit2>0.2?`rgba(140,160,170,`:`rgba(30,40,46,`);
+          x.fillStyle=base+(0.3+prox*0.4+lit2*0.4).toFixed(2)+")";
+          x.beginPath();x.arc(px,py,sz,0,6.28);x.fill();
         }
-        x.globalAlpha=1;
-        // sombra de profundidade: escurece a junção parede-breu
-        const grd=x.createLinearGradient(edgeX, 0, rel<0?reach:w-reach, 0);
-        grd.addColorStop(0,"rgba(0,0,0,0)");
-        grd.addColorStop(1,"rgba(2,5,6,0.55)");
-        x.fillStyle=grd; x.fillRect(rel<0?0:w-reach,0,reach,h);
-        // leve desfoque geral da parede sem luz (rocha distante/escura)
-        x.restore();
       }
-      // desenha a mais distante primeiro
-      const walls=[{b:90,d:distR,s:1},{b:270,d:distL,s:2}].sort((a,b)=>b.d-a.d);
-      walls.forEach(wl=>drawWall(wl.b, wl.d, wl.s));
+      function side(b){return b===90?1:2;}
+      wallSide(90, proxR);   // margem direita (+x mundo)
+      wallSide(270, proxL);  // margem esquerda (-x mundo)
     }
 
     // AMEACA direcional
@@ -460,24 +407,30 @@
   }
   let diveAnim=null, splashActive=false;
   const splashCv=document.getElementById("splash"), sx=splashCv.getContext("2d");
-  function animateDive(){
+  function animateDive(ascending){
     if(diveAnim) return;
     const vh=VPH, vw=VPW, moonH=vh*2.2;
+    // descendo: moonpool sobe e some. subindo (puxados): moonpool desce de volta à vista.
     let startTop=-(moonH-vh)*0.55;
     let endTop=0;
     let p=0;
-    // prepara o canvas de splash
     splashCv.width=vw*DPR; splashCv.height=vh*DPR; sx.setTransform(DPR,0,0,DPR,0,0);
     splashCv.style.display="block"; splashActive=true;
-    // bolhas que sobem durante a furada
     const bubbles=[]; for(let i=0;i<60;i++)bubbles.push({x:Math.random(),y:Math.random()*1.3+0.2,r:Math.random()*4+1,v:Math.random()*0.02+0.01});
     let st=0;
     diveAnim=setInterval(()=>{
       p+=0.01; st++;
-      if(p>=1){p=1;clearInterval(diveAnim);diveAnim=null;elMoon.style.display="none";splashCv.style.display="none";splashActive=false;return;}
+      if(p>=1){p=1;clearInterval(diveAnim);diveAnim=null;splashCv.style.display="none";splashActive=false;
+        // ao fim: descendo esconde a moonpool; subindo mantém ela visível (chegou à superfície)
+        elMoon.style.display = ascending ? "block" : "none";
+        if(ascending) positionMoon();
+        return;
+      }
       // moonpool sobe (acelera) — a superfície sobe e mergulhamos
       const ease=p<0.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
-      const top=startTop+(endTop-startTop)*ease - vh*ease*0.7;
+      // descendo: vai de startTop subindo pra fora. subindo: o inverso (entra de cima).
+      const prog = ascending ? (1-ease) : ease;
+      const top=startTop+(endTop-startTop)*prog - vh*prog*0.7;
       elMoon.style.transform=`translateY(${top}px)`;
 
       // ===== efeito de água ao cruzar a superfície (pico no meio da animação) =====
@@ -681,21 +634,28 @@
 
     // reações à mudança de modo
     if(nav.mode!==lastMode){
+      const prev=lastMode;
       lastMode=nav.mode;
       document.getElementById("sub").classList.toggle("bobbing", nav.mode==="moonpool");
       if(diveAnim){clearInterval(diveAnim);diveAnim=null;}
-      updateMoonpoolByMode();
+      updateMoonpoolByMode(prev);
     }
   });
 
-  function updateMoonpoolByMode(){
-    if(nav.mode==="moonpool"){ elMoon.style.display="block"; positionMoon(); }
+  function updateMoonpoolByMode(prev){
+    if(nav.mode==="moonpool"){
+      elMoon.style.display="block"; positionMoon();
+      // voltando de submersos/reeling: toca a transição (subindo pela superfície)
+      if(prev==="reeling"||prev==="diving"){ animateDive(true); }
+    }
     else if(nav.mode==="diving"){
-      // só anima a descida da superfície se viermos da moonpool (depth baixa)
-      if(nav.depth<40){ elMoon.style.display="block"; animateDive(); }
+      // descendo a partir da moonpool: toca a transição de furar a água
+      if(prev==="moonpool"||prev==null){ elMoon.style.display="block"; animateDive(false); }
       else { elMoon.style.display="none"; }
     }
-    else { elMoon.style.display="none"; } // reeling ou outro
+    else { // reeling
+      elMoon.style.display="none";
+    }
   }
 
   // ===== escuta DM (casco, ameaça, leitura) =====
