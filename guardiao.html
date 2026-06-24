@@ -511,7 +511,7 @@
   });
   // zerar profundidade pra superfície
   document.getElementById("navSurface").addEventListener("click",()=>{
-    subRef.child("nav").update({depth:200, mode:"moonpool"});
+    subRef.child("nav").update({x:0,depth:200,heading:0,mode:"moonpool"});
   });
   // ameaça: muda state
   elSubStates.addEventListener("click",e=>{
@@ -536,7 +536,7 @@
   document.getElementById("subreset").addEventListener("click",()=>{
     if(confirm("Resetar o submarino? Desliga o visor, zera profundidade/percurso, ameaça, direção, leitura e imagem.")){
       subRef.update({online:false,state:"void",threatDir:null,readout:"",imgUrl:null,cracked:false});
-      subRef.child("nav").set({heading:0,depth:200,mode:"moonpool"});
+      subRef.child("nav").set({x:0,depth:200,heading:0,mode:"moonpool"});
     }
   });
 
