@@ -31,6 +31,7 @@
   #sub.modern #viewport{border-radius:7% / 9%}
   #abyss{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:1}
   #moonpoolLayer{position:absolute;left:0;width:100%;z-index:2;background-size:cover;background-position:center top;will-change:transform;display:none}
+  #splash{position:absolute;inset:0;width:100%;height:100%;z-index:3;display:none;pointer-events:none}
   /* vinheta escura nas bordas do visor: esconde artefatos da IA e dá profundidade */
   #viewportVignette{position:absolute;inset:0;z-index:3;pointer-events:none;
     box-shadow:inset 0 0 8vmin 2vmin rgba(0,0,0,.7), inset 0 0 2vmin rgba(0,0,0,.5)}
@@ -127,6 +128,7 @@
     <div id="viewport">
       <canvas id="abyss"></canvas>
       <div id="moonpoolLayer"></div>
+      <canvas id="splash"></canvas>
       <div id="glassCurve"></div>
       <div id="glassReflect"></div>
       <div id="viewportVignette"></div>
@@ -299,61 +301,107 @@
     }
     x.globalAlpha=1;
 
-    // ===== PAREDES DO CANYON: geometria real, ancoradas no espaço =====
-    // as margens esquerda/direita do corredor são paredes em posições do mundo.
-    // desenhamos a que estiver no campo de visão (segundo o heading), com a
-    // proximidade baseada na distância real do submarino até aquela margem.
+    // ===== PAREDES DO CANYON: superfície de rocha com profundidade e movimento =====
+    // cada margem é uma faixa vertical de rocha feita de fatias empilhadas.
+    // as fatias rolam pra cima conforme o submarino desce (usando depth como offset),
+    // então a parede "passa" por você em vez de ficar estática. relevo irregular de caverna.
     if(mode==="diving"){
       const c=corridorAt(depth);
-      // distância lateral até cada margem (no mundo)
-      const distR = (c.cx + c.hw) - nav.x;   // margem direita (mundo +x)
-      const distL = nav.x - (c.cx - c.hw);   // margem esquerda (mundo -x)
-      // ângulo no mundo de cada margem em relação ao submarino:
-      // a margem direita está em +x (mundo) => bearing 90°; esquerda => 270°.
-      // o que aparece no visor depende do heading (centro do visor = heading).
-      const fov=70; // meio-campo de visão em graus
-      function drawWall(worldBearing, dist, halfRef){
-        // posição angular relativa ao centro do visor
+      const distR = (c.cx + c.hw) - nav.x;   // distância até margem direita
+      const distL = nav.x - (c.cx - c.hw);   // distância até margem esquerda
+      const fov=70;
+      const isOld=(STATE.skin||"old").startsWith("old");
+
+      function drawWall(worldBearing, dist, side){
         let rel=((worldBearing - nav.heading +540)%360)-180;
-        if(Math.abs(rel)>fov+30) return; // fora do campo
-        // proximidade: perto da margem = parede grande/escura tomando o lado
-        const prox=Math.max(0, Math.min(1, 1 - dist/(halfRef*1.6)));
-        if(prox<=0.03) return;
-        const cx = w/2 + (rel/fov)*(w*0.5);
-        const cy = h*0.52;
-        const rw = w*(0.45+prox*0.7), rh=h*(0.8+prox*0.4);
-        // luz revela: nitidez e brilho quando o facho aponta pra perto da massa
-        let lit=0;
-        if(lightOn) lit=Math.max(0,1-Math.abs(beamX-cx/w)*2.5);
-        // cor da rocha: âmbar no casco velho, cinza no NeuroStat (luz branca)
-        const isOld=(STATE.skin||"old").startsWith("old");
-        const base=8+lit*(isOld?26:40);   // NeuroStat ilumina mais (mais cinza claro)
-        let r2,g2,b2;
-        if(isOld){ r2=Math.round(base*1.0); g2=Math.round(base*0.92); b2=Math.round(base*0.72); }
-        else { r2=Math.round(base*1.0); g2=Math.round(base*1.04); b2=Math.round(base*1.06); } // cinza-azulado frio
+        if(Math.abs(rel)>fov+25) return;
+        // proximidade 0..1 (perto = parede toma a lateral)
+        const prox=Math.max(0, Math.min(1, 1 - dist/(c.hw*1.7)));
+        if(prox<=0.02) return;
+
+        // a parede ocupa uma faixa vertical no lado correspondente do visor.
+        // centro horizontal da faixa: empurrado pra borda, entra mais quando perto.
+        const edgeX = rel<0 ? 0 : w;          // qual borda
+        const reach = w*(0.30 + prox*0.42);    // quanto a parede invade
+        const bandCenterX = edgeX + (rel<0 ? reach*0.5 : -reach*0.5);
+
         x.save();
-        x.filter=`blur(${(15-lit*10).toFixed(1)}px)`;
-        x.fillStyle=`rgba(${r2},${g2},${b2},${(0.5+prox*0.45).toFixed(2)})`;
+        // recorta a faixa vertical pra rocha não vazar pro centro do visor
         x.beginPath();
-        for(let a=0;a<6.28;a+=0.4){
-          const rr=(Math.min(rw,rh)*0.5)*(0.8+0.35*Math.sin(a*2.5+depth*0.05+worldBearing));
-          const px=cx+Math.cos(a)*rr, py=cy+Math.sin(a)*rr*1.1;
-          a===0?x.moveTo(px,py):x.lineTo(px,py);
-        }
-        x.closePath();x.fill();
-        if(lit>0.15){
-          x.filter="blur(1px)";
-          x.fillStyle=`rgba(${r2+34},${g2+36},${b2+32},${(lit*0.5).toFixed(2)})`;
-          for(let i=0;i<26;i++){
-            const a=Math.random()*6.28, rr=Math.random()*Math.min(rw,rh)*0.4;
-            x.beginPath();x.arc(cx+Math.cos(a)*rr, cy+Math.sin(a)*rr*1.1, Math.random()*3+1,0,6.28);x.fill();
+        if(rel<0) x.rect(0,0, reach, h);
+        else x.rect(w-reach,0, reach, h);
+        x.clip();
+
+        // ===== fatias de rocha empilhadas, rolando com a profundidade =====
+        const sliceH = h*0.13;                       // altura de cada fatia
+        const scroll = (depth*6) % sliceH;           // deslocamento vertical = movimento ao descer
+        const nSlices = Math.ceil(h/sliceH)+2;
+        const baseShade = isOld ? 14 : 16;
+        for(let i=-1; i<nSlices; i++){
+          const sy = i*sliceH - scroll;
+          // seed estável por fatia (pra textura não tremular): usa índice absoluto de profundidade
+          const sidx = Math.floor(depth*6/sliceH) + i;
+          const seed = Math.sin(sidx*12.9898 + side*78.233)*43758.5453;
+          const rough = (seed - Math.floor(seed));    // 0..1 pseudo-aleatório estável
+          // perfil da rocha: quanto ela avança nesta fatia (relevo irregular)
+          const jut = reach*(0.55 + rough*0.45);
+          // luz: revela a fatia se o facho está perto dela na vertical e do lado certo
+          let lit=0;
+          if(lightOn){
+            const beamPx=beamY*h;
+            const vdist=Math.abs((sy+sliceH/2)-beamPx)/(h*0.5);
+            const sideMatch=Math.max(0,1-Math.abs(beamX-(bandCenterX/w))*2.2);
+            lit=Math.max(0,(1-vdist))*sideMatch;
+          }
+          // cor da fatia: âmbar (velho) ou cinza-frio (neurostat), mais clara sob luz
+          const sh = baseShade + rough*10 + lit*(isOld?34:50);
+          let r2,g2,b2;
+          if(isOld){ r2=Math.round(sh*1.0); g2=Math.round(sh*0.88); b2=Math.round(sh*0.66); }
+          else { r2=Math.round(sh*0.96); g2=Math.round(sh*1.02); b2=Math.round(sh*1.08); }
+          // desenha a fatia como um polígono irregular colado na borda
+          x.beginPath();
+          const xb = edgeX;                          // borda fixa
+          const xi = rel<0 ? jut : w-jut;            // ponta interna (irregular)
+          x.moveTo(xb, sy);
+          // borda interna recortada (dentes de rocha)
+          const teeth=4;
+          for(let tdex=0; tdex<=teeth; tdex++){
+            const ty=sy + (sliceH*tdex/teeth);
+            const tseed=Math.sin((sidx*7.1+tdex*3.7)+side*11.3)*9301; const tr=(tseed-Math.floor(tseed));
+            const tx = xi + (rel<0?1:-1)*tr*reach*0.28;
+            x.lineTo(tx, ty);
+          }
+          x.lineTo(xb, sy+sliceH);
+          x.closePath();
+          x.globalAlpha=(0.55+prox*0.4);
+          x.fillStyle=`rgb(${r2},${g2},${b2})`;
+          x.fill();
+          // fenda escura entre fatias (linha de sedimento)
+          x.globalAlpha=0.5*prox;
+          x.fillStyle="rgba(0,0,0,0.6)";
+          x.fillRect(rel<0?0:w-jut, sy-1, jut, 1.5);
+          // brilho úmido sob a luz (pontinhos)
+          if(lit>0.25){
+            x.globalAlpha=lit*0.4;
+            x.fillStyle=isOld?`rgb(${r2+40},${g2+34},${b2+20})`:`rgb(${r2+30},${g2+36},${b2+40})`;
+            for(let k=0;k<5;k++){
+              const px=(rel<0?1:-1)*Math.random()*jut + (rel<0?0:w);
+              x.beginPath();x.arc(px, sy+Math.random()*sliceH, Math.random()*2+0.6,0,6.28);x.fill();
+            }
           }
         }
+        x.globalAlpha=1;
+        // sombra de profundidade: escurece a junção parede-breu
+        const grd=x.createLinearGradient(edgeX, 0, rel<0?reach:w-reach, 0);
+        grd.addColorStop(0,"rgba(0,0,0,0)");
+        grd.addColorStop(1,"rgba(2,5,6,0.55)");
+        x.fillStyle=grd; x.fillRect(rel<0?0:w-reach,0,reach,h);
+        // leve desfoque geral da parede sem luz (rocha distante/escura)
         x.restore();
       }
-      // desenha a mais distante primeiro pra sobrepor a mais próxima
-      const walls=[{b:90,d:distR},{b:270,d:distL}].sort((a,b)=>b.d-a.d);
-      walls.forEach(wl=>drawWall(wl.b, wl.d, c.hw));
+      // desenha a mais distante primeiro
+      const walls=[{b:90,d:distR,s:1},{b:270,d:distL,s:2}].sort((a,b)=>b.d-a.d);
+      walls.forEach(wl=>drawWall(wl.b, wl.d, wl.s));
     }
 
     // AMEACA direcional
@@ -410,19 +458,62 @@
     // mostra os ~45% de baixo da imagem (a água/linha)
     elMoon.style.transform=`translateY(${-(moonH-vh)*0.55}px)`;
   }
-  let diveAnim=null;
+  let diveAnim=null, splashActive=false;
+  const splashCv=document.getElementById("splash"), sx=splashCv.getContext("2d");
   function animateDive(){
     if(diveAnim) return;
-    const vh=VPH, moonH=vh*2.2;
+    const vh=VPH, vw=VPW, moonH=vh*2.2;
     let startTop=-(moonH-vh)*0.55;
-    let endTop=0; // rola até o topo da imagem passar
+    let endTop=0;
     let p=0;
+    // prepara o canvas de splash
+    splashCv.width=vw*DPR; splashCv.height=vh*DPR; sx.setTransform(DPR,0,0,DPR,0,0);
+    splashCv.style.display="block"; splashActive=true;
+    // bolhas que sobem durante a furada
+    const bubbles=[]; for(let i=0;i<60;i++)bubbles.push({x:Math.random(),y:Math.random()*1.3+0.2,r:Math.random()*4+1,v:Math.random()*0.02+0.01});
+    let st=0;
     diveAnim=setInterval(()=>{
-      p+=0.012;
-      if(p>=1){p=1;clearInterval(diveAnim);diveAnim=null;elMoon.style.display="none";}
+      p+=0.01; st++;
+      if(p>=1){p=1;clearInterval(diveAnim);diveAnim=null;elMoon.style.display="none";splashCv.style.display="none";splashActive=false;return;}
+      // moonpool sobe (acelera) — a superfície sobe e mergulhamos
       const ease=p<0.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
-      const top=startTop+(endTop-startTop)*ease - vh*ease*0.6; // continua subindo pra fora
+      const top=startTop+(endTop-startTop)*ease - vh*ease*0.7;
       elMoon.style.transform=`translateY(${top}px)`;
+
+      // ===== efeito de água ao cruzar a superfície (pico no meio da animação) =====
+      const w=vw,h=vh;
+      sx.clearRect(0,0,w,h);
+      // intensidade: cresce até o meio (cruzando a linha d'água) e some
+      const cross=Math.max(0, 1-Math.abs(p-0.45)/0.35); // pico em p~0.45
+      if(cross>0.01){
+        // banda de turbulência/espuma na altura da superfície que está passando
+        const surfY=h*(0.15) + (1-ease)*h*0.5 + ease*(-h*0.3); // acompanha a subida
+        // ondas (linhas senoidais claras)
+        sx.globalAlpha=cross*0.5;
+        sx.strokeStyle="rgba(180,225,235,.6)"; sx.lineWidth=2;
+        for(let l=0;l<5;l++){
+          sx.beginPath();
+          for(let px=0;px<=w;px+=6){
+            const yy=surfY+l*8+Math.sin(px*0.03+st*0.3+l)*7*cross;
+            px===0?sx.moveTo(px,yy):sx.lineTo(px,yy);
+          }
+          sx.stroke();
+        }
+        // espuma/turbulência (faixa clara translúcida)
+        sx.globalAlpha=cross*0.3;
+        const fg=sx.createLinearGradient(0,surfY-20,0,surfY+40);
+        fg.addColorStop(0,"transparent");fg.addColorStop(0.5,"rgba(200,230,235,.5)");fg.addColorStop(1,"transparent");
+        sx.fillStyle=fg; sx.fillRect(0,surfY-20,w,60);
+        // bolhas subindo
+        sx.globalAlpha=cross*0.7;
+        sx.fillStyle="rgba(200,225,230,.7)";
+        bubbles.forEach(b=>{
+          b.y-=b.v*3;
+          const px=b.x*w, py=((b.y%1.5))*h;
+          sx.beginPath();sx.arc(px,py,b.r*cross,0,6.28);sx.fill();
+        });
+      }
+      sx.globalAlpha=1;
     },16);
   }
 
