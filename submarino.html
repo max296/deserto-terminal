@@ -26,14 +26,27 @@
      #hullImg: o casco PNG por cima, com o visor recortado.
   */
   #viewport{position:absolute;overflow:hidden;background:#02060a;z-index:2}
+  /* suaviza o canto duro do recorte, mais no NeuroStat (visor menos quadrado) */
+  #sub.old #viewport{border-radius:10px}
+  #sub.modern #viewport{border-radius:7% / 9%}
   #abyss{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:1}
   #moonpoolLayer{position:absolute;left:0;width:100%;z-index:2;background-size:cover;background-position:center top;will-change:transform;display:none}
   /* vinheta escura nas bordas do visor: esconde artefatos da IA e dá profundidade */
   #viewportVignette{position:absolute;inset:0;z-index:3;pointer-events:none;
     box-shadow:inset 0 0 8vmin 2vmin rgba(0,0,0,.7), inset 0 0 2vmin rgba(0,0,0,.5)}
+  /* reflexo do vidro: brilho diagonal sutil + curvatura. Responde à luz do facho. */
+  #glassReflect{position:absolute;inset:0;z-index:3;pointer-events:none;mix-blend-mode:screen;opacity:.5;
+    background:
+      linear-gradient(135deg, rgba(170,200,210,.10) 0%, transparent 28%, transparent 72%, rgba(120,150,160,.06) 100%),
+      radial-gradient(ellipse 120% 80% at 30% 20%, rgba(180,210,220,.08) 0%, transparent 50%);}
+  /* leve curvatura/abaulamento do vidro nas bordas */
+  #glassCurve{position:absolute;inset:0;z-index:3;pointer-events:none;
+    box-shadow:inset 0 0 3vmin 1vmin rgba(120,160,170,.04);
+    background:radial-gradient(ellipse 100% 100% at 50% 50%, transparent 60%, rgba(0,0,0,.15) 100%)}
 
-  /* o casco preenche a tela */
-  #hullImg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;pointer-events:none}
+  /* o casco preenche a tela (escurecido) */
+  #hullImg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;pointer-events:none;filter:brightness(.72)}
+  #sub.old #hullImg{filter:brightness(.6)}
 
   /* escurecimento + luz piscante de cima (só no casco velho) */
   #flicker{position:absolute;inset:0;z-index:5;pointer-events:none;opacity:0;
@@ -96,6 +109,8 @@
     <div id="viewport">
       <canvas id="abyss"></canvas>
       <div id="moonpoolLayer"></div>
+      <div id="glassCurve"></div>
+      <div id="glassReflect"></div>
       <div id="viewportVignette"></div>
     </div>
 
@@ -258,6 +273,9 @@
       x.fillStyle=bg;x.beginPath();x.arc(bx,by,Math.min(w,h)*0.5,0,6.28);x.fill();
       x.restore();
     }
+    // reflexo do vidro reage à luz: mais brilho quando o facho está aceso
+    const gr=document.getElementById("glassReflect");
+    if(gr) gr.style.opacity = lightOn ? "0.8" : "0.5";
 
     // FOCO: blur de base sempre leve, focar reduz quase a zero (na frente de tudo)
     focusAmt += ((focusing?1:0)-focusAmt)*0.1;
@@ -323,7 +341,7 @@
   function move(e){
     if(!dragging)return;const p=pt(e);const dx=p.x-lastX,dy=p.y-lastY;lastX=p.x;lastY=p.y;
     if(lightMode){beamX=Math.max(0,Math.min(1,beamX+dx/VPW));beamY=Math.max(0,Math.min(1,beamY+dy/VPH));}
-    else{heading=(heading+dx*0.25+360)%360;applyHeading();}
+    else{heading=(heading+dx*0.14+360)%360;applyHeading();}
   }
   function up(){dragging=false;}
   surface.addEventListener("mousedown",down);
@@ -344,11 +362,11 @@
 
   const btnLight=document.getElementById("btnLight");
   btnLight.addEventListener("click",()=>{
-    if(!lightOn){lightOn=true;lightMode=true;}
-    else if(lightMode){lightMode=false;}
-    else{lightOn=false;}
-    btnLight.classList.toggle("active",lightMode);
-    btnLight.textContent=!lightOn?"LIGHT: OFF":(lightMode?"LIGHT: AIM":"LIGHT: ON");
+    // dois estados só: desligada <-> AIM (luz acesa + segue cursor/arrasta)
+    if(!lightOn){ lightOn=true; lightMode=true; }
+    else { lightOn=false; lightMode=false; }
+    btnLight.classList.toggle("active",lightOn);
+    btnLight.textContent=lightOn?"LIGHT: AIM":"LIGHT: OFF";
     document.getElementById("hintdrag").textContent=lightMode?"move cursor / drag to aim · SPACE to focus":"drag to look around · SPACE or button to focus";
   });
 
