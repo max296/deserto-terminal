@@ -78,7 +78,7 @@
   .hud-read .line{display:inline-block;font-size:13px;letter-spacing:.06em;color:#9cc;background:rgba(0,10,12,.66);padding:7px 16px;border:1px solid rgba(100,160,160,.3);max-width:80ch;line-height:1.5}
 
   /* medidor de profundidade, logo acima do painel */
-  #depthbox{position:absolute;bottom:13.5vh;left:50%;transform:translateX(-50%);z-index:8;
+  #depthbox{position:absolute;top:6.2vh;left:50%;transform:translateX(-50%);z-index:8;
     display:flex;align-items:baseline;gap:6px;background:rgba(0,10,12,.6);padding:6px 16px;
     border:1px solid rgba(100,160,160,.3);border-radius:4px;font-variant-numeric:tabular-nums}
   #depthbox .dlabel{font-size:9px;letter-spacing:.24em;color:#5a7a7a}
@@ -336,7 +336,7 @@
           const camX = lat*ch - fwd*sh;
           const camZ = lat*sh + fwd*ch;
           if(camZ <= 1) continue;
-          const rel = Math.atan2(camX, camZ)*180/Math.PI;
+          const rel = Math.atan2(-camX, camZ)*180/Math.PI;
           if(Math.abs(rel)>halfFov+8) continue;
           const dist = Math.hypot(lat, fwd);
           samples.push({rel, dist, camZ});
@@ -378,7 +378,7 @@
       const pch=Math.cos(-hdg), psh=Math.sin(-hdg);
       const pcamX=plat*pch-pfwd*psh, pcamZ=plat*psh+pfwd*pch;
       if(pcamZ>1){
-        const prel=Math.atan2(pcamX,pcamZ)*180/Math.PI;
+        const prel=Math.atan2(-pcamX,pcamZ)*180/Math.PI;
         if(Math.abs(prel)<halfFov+10){
           const px=w/2+(prel/halfFov)*(w/2);
           const og=x.createRadialGradient(px,h*0.46,4,px,h*0.46,w*0.30);
@@ -481,8 +481,9 @@
       // a "linha d'água" no visor = borda inferior da imagem da moonpool.
       // abaixo dela é o breu preto com partículas, que cresce conforme a moonpool sobe.
       const w=vw,h=vh;
-      const moonBottomPx = top + moonH;     // onde a imagem termina, em px do visor
-      const surfY = Math.max(0, Math.min(h, moonBottomPx));
+      const moonBottomPx = top + moonH;     // onde a imagem termina, em px do visor (linha d'água real)
+      const surfYraw = moonBottomPx;        // posição real da linha (pode estar acima/abaixo do visor)
+      const surfY = Math.max(0, Math.min(h, moonBottomPx)); // clampada (pra preencher o breu)
       sx.clearRect(0,0,w,h);
 
       // 1) região preta do breu (abaixo da linha d'água)
@@ -502,29 +503,30 @@
         sx.globalAlpha=1;
       }
 
-      // 2) ondas + espuma na linha d'água
-      if(surfY>0 && surfY<h){
+      // 2) ondas + espuma na linha d'água — seguem a borda REAL da imagem até ela sair do visor
+      if(surfYraw > -40 && surfYraw < h+40){
+        const sy=surfYraw;
         sx.globalAlpha=0.55;
         sx.strokeStyle="rgba(180,225,235,.6)"; sx.lineWidth=2;
         for(let l=0;l<5;l++){
           sx.beginPath();
           for(let px=0;px<=w;px+=6){
-            const yy=surfY+l*7+Math.sin(px*0.03+st*0.25+l)*8;
+            const yy=sy+l*7+Math.sin(px*0.03+st*0.25+l)*8;
             px===0?sx.moveTo(px,yy):sx.lineTo(px,yy);
           }
           sx.stroke();
         }
         // espuma
         sx.globalAlpha=0.4;
-        const fg=sx.createLinearGradient(0,surfY-14,0,surfY+30);
+        const fg=sx.createLinearGradient(0,sy-14,0,sy+30);
         fg.addColorStop(0,"transparent");fg.addColorStop(0.5,"rgba(200,230,235,.55)");fg.addColorStop(1,"transparent");
-        sx.fillStyle=fg; sx.fillRect(0,surfY-14,w,46);
+        sx.fillStyle=fg; sx.fillRect(0,sy-14,w,46);
         // bolhas subindo perto da superfície
         sx.globalAlpha=0.6; sx.fillStyle="rgba(200,225,230,.7)";
         bubbles.forEach(b=>{
           b.y-=b.v*0.006; if(b.y<0)b.y=1;
-          const py=surfY+(1-b.y)*120;
-          if(py>surfY-20 && py<h){ sx.beginPath();sx.arc(b.x*w,py,b.r,0,6.28);sx.fill(); }
+          const py=sy+(1-b.y)*120;
+          if(py>sy-20 && py<h){ sx.beginPath();sx.arc(b.x*w,py,b.r,0,6.28);sx.fill(); }
         });
         sx.globalAlpha=1;
       }
