@@ -46,7 +46,7 @@
 
   /* o casco preenche a tela (escurecido) */
   #hullImg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;pointer-events:none;filter:brightness(.72)}
-  #sub.old #hullImg{filter:brightness(.6)}
+  #sub.old #hullImg{filter:brightness(.85)}
 
   /* escurecimento + luz piscante de cima (só no casco velho) */
   #flicker{position:absolute;inset:0;z-index:5;pointer-events:none;opacity:0;
@@ -266,11 +266,12 @@
     if(lightOn){
       x.save();x.globalCompositeOperation="screen";
       const bx=beamX*w,by=beamY*h, isOld=(STATE.skin||"old").startsWith("old");
-      const bg=x.createRadialGradient(bx,by,4,bx,by,Math.min(w,h)*0.5);
-      if(isOld){bg.addColorStop(0,"rgba(210,180,100,.24)");bg.addColorStop(.35,"rgba(150,120,55,.08)");}
-      else{bg.addColorStop(0,"rgba(160,205,210,.24)");bg.addColorStop(.35,"rgba(120,165,170,.08)");}
+      const R=Math.min(w,h)*0.62;
+      const bg=x.createRadialGradient(bx,by,5,bx,by,R);
+      if(isOld){bg.addColorStop(0,"rgba(210,180,100,.24)");bg.addColorStop(.4,"rgba(150,120,55,.08)");}
+      else{bg.addColorStop(0,"rgba(160,205,210,.24)");bg.addColorStop(.4,"rgba(120,165,170,.08)");}
       bg.addColorStop(1,"transparent");
-      x.fillStyle=bg;x.beginPath();x.arc(bx,by,Math.min(w,h)*0.5,0,6.28);x.fill();
+      x.fillStyle=bg;x.beginPath();x.arc(bx,by,R,0,6.28);x.fill();
       x.restore();
     }
     // reflexo do vidro reage à luz: mais brilho quando o facho está aceso
