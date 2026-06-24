@@ -334,7 +334,7 @@
 
         // amostro pontos ao longo de um trecho curto à frente/atrás pra desenhar a massa
         const pts=[];
-        for(let dd=-40; dd<=100; dd+=12){
+        for(let dd=-40; dd<=100; dd+=24){
           const sampleDepth=depth+dd;
           if(sampleDepth<0) continue;
           const cc=corridorAt(sampleDepth);
@@ -363,32 +363,31 @@
         }
 
         // desenha a massa como MUITOS círculos pequenos (textura granulada de rocha)
-        // espalhados ao redor das posições projetadas, com seed estável (não tremula).
-        const spread = w*(0.10+prox*0.22);     // o quanto a massa se espalha do eixo
-        const reach  = w/2*(0.30+prox*0.55);   // quão alto/largo a massa toma
+        // poucos vultos maiores e macios (não pontilhado): legível, com leve textura.
+        const spread = w*(0.09+prox*0.20);
+        const reach  = w/2*(0.30+prox*0.55);
         for(const p of pts){
           const cxBase = w/2 + (p.rel/halfFov)*(w/2);
-          // número de grãos proporcional à proximidade
-          const grains = Math.round(6+prox*14);
+          // POUCOS grãos grandes por amostra (era 6+prox*14)
+          const grains = Math.round(2+prox*4);
           for(let i=0;i<grains;i++){
-            // seed estável por (rel, i) pra não cintilar
             const s1=Math.sin((p.rel*3.1+i*12.9)+sideSign*7.7)*43758.5; const rx=s1-Math.floor(s1);
             const s2=Math.sin((p.rel*1.7+i*7.3)+sideSign*3.1)*9301; const ry=s2-Math.floor(s2);
             const gx = cxBase + (rx-0.5)*spread*2;
-            // vertical: distribui ao longo da altura, rola levemente com a profundidade
             const gy = h*0.5 + (ry-0.5)*reach*2 + Math.sin(depth*0.02+i)*4;
             const cx=Math.max(-w*0.12,Math.min(w*1.12,gx));
             const col=rockColor(cx,gy);
-            const sz = (1.2 + rx*3.2) * (0.7+prox*0.8);   // círculos pequenos
+            // vultos maiores
+            const sz = (10 + rx*22) * (0.6+prox*0.7);
             x.save();
-            x.filter=`blur(${(3.5 - col.lit*2).toFixed(1)}px)`;  // bem menos blur que antes (mais textura)
-            x.globalAlpha=(0.28+prox*0.45+col.lit*0.3);
+            x.filter=`blur(${(11 - col.lit*5).toFixed(1)}px)`;   // macio (vulto), mais que o pontilhado
+            x.globalAlpha=(0.3+prox*0.45+col.lit*0.3);
             x.fillStyle=`rgb(${col.r},${col.g},${col.b})`;
-            x.beginPath();x.arc(cx,gy,sz,0,6.28);x.fill();
+            x.beginPath();x.ellipse(cx,gy,sz,sz*1.25,0,0,6.28);x.fill();
             x.restore();
           }
         }
-        // uma sombra de base suave atrás dos grãos, pra dar massa (não só pontilhado solto)
+        // sombra de base que dá a massa principal da parede
         const cxAvg = w/2 + (pts[Math.floor(pts.length/2)].rel/halfFov)*(w/2);
         x.save();
         x.filter="blur(22px)";
