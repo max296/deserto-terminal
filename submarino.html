@@ -76,6 +76,24 @@
   .hud-read{position:absolute;bottom:12vh;left:0;right:0;text-align:center;padding:0 12vw}
   .hud-read .line{display:inline-block;font-size:13px;letter-spacing:.06em;color:#9cc;background:rgba(0,10,12,.66);padding:7px 16px;border:1px solid rgba(100,160,160,.3);max-width:80ch;line-height:1.5}
 
+  /* medidor de profundidade, logo acima do painel */
+  #depthbox{position:absolute;bottom:13.5vh;left:50%;transform:translateX(-50%);z-index:8;
+    display:flex;align-items:baseline;gap:6px;background:rgba(0,10,12,.6);padding:6px 16px;
+    border:1px solid rgba(100,160,160,.3);border-radius:4px;font-variant-numeric:tabular-nums}
+  #depthbox .dlabel{font-size:9px;letter-spacing:.24em;color:#5a7a7a}
+  #depthbox .dval{font-size:20px;letter-spacing:.1em;color:#9cc;font-weight:600}
+  #depthbox .dunit{font-size:11px;color:#5a7a7a}
+  #sub.old #depthbox .dval{color:#ca9}
+  #sub.old #depthbox .dlabel,#sub.old #depthbox .dunit{color:#7a6030}
+  #depthbox.beyond{border-color:rgba(214,90,90,.5)}
+  #depthbox.beyond .dval{color:#e88}
+  #depthbox.beyond .dlabel{color:#d65a5a}
+
+  /* flash de colisao com a parede */
+  #wallHit{position:absolute;inset:0;z-index:7;pointer-events:none;opacity:0}
+  #wallHit.hit{animation:wallflash .4s ease}
+  @keyframes wallflash{0%{opacity:0}30%{opacity:1;box-shadow:inset 0 0 12vmin 4vmin rgba(80,15,15,.55)}100%{opacity:0}}
+
   #ctrls{position:absolute;bottom:3.5vh;left:0;right:0;z-index:9;display:flex;gap:12px;justify-content:center;align-items:center}
   .cbtn{pointer-events:auto;cursor:pointer;background:rgba(8,16,18,.82);border:1px solid rgba(100,150,150,.4);color:#8aaaaa;border-radius:5px;padding:10px 18px;font-family:inherit;font-size:11px;letter-spacing:.16em;transition:all .15s;backdrop-filter:blur(3px)}
   .cbtn:hover{border-color:#7cc;color:#bdd}
@@ -123,14 +141,21 @@
 
     <!-- blur da visão, na frente de tudo -->
     <div id="visionBlur"></div>
+    <!-- flash de colisão com parede -->
+    <div id="wallHit"></div>
 
     <div id="hud">
       <div class="hud-top"><div class="compass" id="compass">BRG 000</div></div>
       <div class="hud-state" id="hudstate">—</div>
       <div class="hud-read" id="hudread"></div>
+      <div class="depthbox" id="depthbox">
+        <span class="dlabel">DEPTH</span>
+        <span class="dval" id="depthval">0000</span>
+        <span class="dunit">m</span>
+      </div>
     </div>
 
-    <div class="hint-drag" id="hintdrag">drag to look around · hold SPACE or button to focus</div>
+    <div class="hint-drag" id="hintdrag">WASD pilot · drag look · SPACE focus · CTRL light</div>
     <div id="ctrls">
       <div class="cbtn" id="btnLight">LIGHT: OFF</div>
       <div class="cbtn" id="btnFocus">HOLD TO FOCUS</div>
@@ -153,6 +178,35 @@
   const MY_ID="inv-"+Math.random().toString(36).slice(2,8);
   const ref=sessionRef.child("submarine");
   const presenceRef=ref.child("viewers/"+MY_ID);
+
+  // ====== CANYON: rota navegável por profundidade ======
+  // gerado proceduralmente; você pode ajustar os pontos depois.
+  const MAX_DEPTH=1116, CORAL_DEPTH=600;
+  const CANYON=(function(){
+    let s=7; const rnd=()=>{s=(s*9301+49297)%233280;return s/233280;};
+    const pts=[]; let dir=45;
+    for(let d=0; d<=MAX_DEPTH; d+=60){
+      dir=(dir+(rnd()-0.5)*70+360)%360;
+      let width = d<CORAL_DEPTH ? 38-(d/CORAL_DEPTH)*12 : 24-((d-CORAL_DEPTH)/(MAX_DEPTH-CORAL_DEPTH))*14;
+      pts.push({depth:d, dir:Math.round(dir), width:Math.round(width)});
+    }
+    return pts;
+  })();
+  function canyonAt(depth){
+    return CANYON.reduce((a,b)=>Math.abs(b.depth-depth)<Math.abs(a.depth-depth)?b:a);
+  }
+  function alignment(h,d){
+    const seg=canyonAt(d);
+    let delta=((seg.dir-h+540)%360)-180;
+    return {aligned:Math.abs(delta)<=seg.width, need:seg.dir, tol:seg.width, off:delta};
+  }
+
+  // ====== navegação compartilhada ======
+  // estado autoritativo: submarine/nav = { heading, depth, mode }
+  let nav={heading:0, depth:0, mode:"moonpool"};
+  let navReady=false;
+  const keys={};
+  let lastWallHit=0;
 
   let heading=0, lightMode=false, lightOn=false, focusing=false;
   let beamX=0.5, beamY=0.5, focusAmt=0;
@@ -206,34 +260,32 @@
     const w=VPW,h=VPH;
     if(w<2){requestAnimationFrame(draw);return;}
     x.clearRect(0,0,w,h);
-    const st=STATE.state||"void";
+    const st=STATE.state||"void";              // estado de ameaça (DM)
+    const depth=nav.depth, mode=nav.mode;      // pilotagem
+    const descending = !!(keys["KeyW"]||keys["ArrowUp"]) && mode==="diving";
 
-    // fundo do breu
-    let top,bot;
-    if(st==="diving"){top="#0e1c22";bot="#02060a";}
-    else if(st==="open"){top="#081317";bot="#010406";}
-    else {top="#060f12";bot="#010305";}
+    // fundo do breu: escurece e esverdeia conforme a profundidade
+    const df = Math.min(depth/MAX_DEPTH, 1);   // 0 superfície -> 1 fundo
+    // interpola um topo/fundo mais escuro com a profundidade; além do coral puxa pro frio-doente
+    const beyond = depth>CORAL_DEPTH;
+    let top = beyond ? "#0a1410" : "#0c1a1e";
+    let bot = "#01040600";
     const g=x.createRadialGradient(w/2,h*0.42,8,w/2,h*0.5,Math.max(w,h)*0.7);
-    g.addColorStop(0,top);g.addColorStop(1,bot);
+    g.addColorStop(0, top);
+    g.addColorStop(1, beyond ? "#020604" : "#010305");
     x.fillStyle=g;x.fillRect(0,0,w,h);
+    // escurecimento extra com a profundidade
+    x.fillStyle=`rgba(0,0,0,${(df*0.4).toFixed(2)})`;
+    x.fillRect(0,0,w,h);
 
     // deslocamento horizontal pelo heading (mundo desliza ao girar)
-    const headShift = (heading/360) * w * 2; // quanto o mundo anda
+    const headShift = (nav.heading/360) * w * 2;
 
-    // diving: halo subindo
-    if(st==="diving"){
-      const sy=h*0.2-((t*1.4)%(h*0.7));
-      const gg=x.createRadialGradient(w/2,sy,8,w/2,sy,w*0.6);
-      gg.addColorStop(0,"rgba(110,165,175,.28)");gg.addColorStop(1,"transparent");
-      x.fillStyle=gg;x.fillRect(0,0,w,h);
-    }
-
-    // PARTICULAS - agora reagem ao heading (deslizam lateralmente ao girar)
-    const speed=st==="diving"?7:1;
+    // PARTICULAS - reagem ao heading (deslizam ao girar) e sobem rápido ao descer
+    const speed = descending ? 7 : (mode==="reeling"?5:1);
     for(const m of motes){
       m.y-=m.vy*speed; m.x+=m.drift+Math.sin(t*0.02+m.ph)*0.0002;
       if(m.y<0){m.y=1;m.x=Math.random();}
-      // posição com deslocamento de parallax pelo heading
       let mx=((m.x - headShift/w)%1+1)%1;
       const px=mx*w, py=m.y*h, tw=0.5+0.5*Math.sin(t*0.05+m.ph);
       x.globalAlpha=0.12+tw*0.38;
@@ -287,24 +339,7 @@
   }
   draw();
 
-  // ===== moonpool: rola conforme o estado =====
-  function updateMoonpool(){
-    const st=STATE.state||"void";
-    const onSurface = (st==="moonpool");
-    const diving = (st==="diving");
-    if(onSurface){
-      elMoon.style.display="block";
-      moonScroll=0;
-      // moonpool mostrando a parte de baixo (água) alinhada ao visor
-      positionMoon();
-    } else if(diving){
-      elMoon.style.display="block";
-      // anima a rolagem pra cima (a superfície sobe, mergulha)
-      animateDive();
-    } else {
-      elMoon.style.display="none";
-    }
-  }
+  // ===== moonpool: posicionamento e animação de descida =====
   function positionMoon(){
     // na superfície: a imagem fica posicionada mostrando água embaixo + estrutura em cima
     // top negativo = mostra parte de baixo da imagem no visor
@@ -329,11 +364,78 @@
     },16);
   }
 
-  // ===== heading =====
-  function applyHeading(){
-    document.getElementById("compass").textContent="BRG "+String(Math.round(heading)).padStart(3,"0");
-    presenceRef.update({heading:Math.round(heading),at:Date.now()});
+  // ===== navegação: heading compartilhado + W/S profundidade + colisão =====
+  const elDepthVal=document.getElementById("depthval");
+  const elDepthBox=document.getElementById("depthbox");
+  const elWallHit=document.getElementById("wallHit");
+
+  // throttle de escrita do nav no firebase (10x/s) — só quem está controlando escreve
+  let navDirty=false, lastNavWrite=0;
+  function pushNav(){
+    navDirty=true;
   }
+  setInterval(()=>{
+    if(!navDirty) return;
+    navDirty=false;
+    ref.child("nav").update({
+      heading:Math.round(nav.heading),
+      depth:Math.round(nav.depth),
+      mode:nav.mode
+    });
+  },100);
+
+  // loop de simulação local (movimento físico), ~60fps
+  let lastT=performance.now();
+  function navLoop(now){
+    const dt=Math.min((now-lastT)/1000, 0.05); lastT=now;
+
+    if(nav.mode==="diving"){
+      // virar com A/D (ou setas)
+      let turn=0;
+      if(keys["KeyA"]||keys["ArrowLeft"]) turn-=1;
+      if(keys["KeyD"]||keys["ArrowRight"]) turn+=1;
+      if(turn){ nav.heading=(nav.heading+turn*45*dt+360)%360; pushNav(); }
+
+      // avançar/recuar com W/S — só desce se alinhado ao canyon
+      let fwd=0;
+      if(keys["KeyW"]||keys["ArrowUp"]) fwd+=1;
+      if(keys["KeyS"]||keys["ArrowDown"]) fwd-=1;
+      if(fwd>0){
+        const al=alignment(nav.heading, nav.depth);
+        if(al.aligned){
+          nav.depth=Math.min(MAX_DEPTH, nav.depth + 18*dt); // desce
+          pushNav();
+        } else {
+          // bateu na parede: não desce, dá o flash (com cooldown)
+          if(now-lastWallHit>500){ lastWallHit=now; elWallHit.classList.remove("hit"); void elWallHit.offsetWidth; elWallHit.classList.add("hit"); }
+        }
+      } else if(fwd<0){
+        nav.depth=Math.max(0, nav.depth - 18*dt); // sobe (recuar é sempre permitido)
+        pushNav();
+      }
+    }
+    else if(nav.mode==="reeling"){
+      // o cabo recolhe sozinho: profundidade volta a 0 (velocidade proporcional já que é taxa fixa)
+      if(nav.depth>0){
+        nav.depth=Math.max(0, nav.depth - 22*dt);
+        pushNav();
+        if(nav.depth<=0){ nav.mode="moonpool"; pushNav(); }
+      }
+    }
+
+    // atualiza HUD local
+    heading=nav.heading;
+    document.getElementById("compass").textContent="BRG "+String(Math.round(nav.heading)).padStart(3,"0");
+    const dm=Math.round(nav.depth);
+    elDepthVal.textContent=String(dm).padStart(4,"0");
+    elDepthBox.classList.toggle("beyond", dm>CORAL_DEPTH);
+
+    // reporta presença (heading individual pro radar; aqui todos compartilham, mas mantém vivo)
+    presenceRef.update({heading:Math.round(nav.heading),depth:dm,at:Date.now()});
+
+    requestAnimationFrame(navLoop);
+  }
+  requestAnimationFrame(navLoop);
 
   let dragging=false,lastX=0,lastY=0;
   const surface=document.getElementById("sub");
@@ -342,7 +444,7 @@
   function move(e){
     if(!dragging)return;const p=pt(e);const dx=p.x-lastX,dy=p.y-lastY;lastX=p.x;lastY=p.y;
     if(lightMode){beamX=Math.max(0,Math.min(1,beamX+dx/VPW));beamY=Math.max(0,Math.min(1,beamY+dy/VPH));}
-    else{heading=(heading+dx*0.14+360)%360;applyHeading();}
+    else{ nav.heading=(nav.heading+dx*0.14+360)%360; pushNav(); }
   }
   function up(){dragging=false;}
   surface.addEventListener("mousedown",down);
@@ -362,14 +464,14 @@
   }
 
   const btnLight=document.getElementById("btnLight");
-  btnLight.addEventListener("click",()=>{
-    // dois estados só: desligada <-> AIM (luz acesa + segue cursor/arrasta)
+  function toggleLight(){
     if(!lightOn){ lightOn=true; lightMode=true; }
     else { lightOn=false; lightMode=false; }
     btnLight.classList.toggle("active",lightOn);
     btnLight.textContent=lightOn?"LIGHT: AIM":"LIGHT: OFF";
-    document.getElementById("hintdrag").textContent=lightMode?"move cursor / drag to aim · SPACE to focus":"drag to look around · SPACE or button to focus";
-  });
+    document.getElementById("hintdrag").textContent=lightMode?"move cursor / drag to aim · SPACE focus · CTRL light":"WASD pilot · drag look · SPACE focus · CTRL light";
+  }
+  btnLight.addEventListener("click",toggleLight);
 
   const btnFocus=document.getElementById("btnFocus");
   function fStart(){focusing=true;btnFocus.classList.add("active");}
@@ -378,9 +480,26 @@
   btnFocus.addEventListener("mouseup",fEnd);btnFocus.addEventListener("mouseleave",fEnd);
   btnFocus.addEventListener("touchstart",e=>{e.preventDefault();fStart();},{passive:false});
   btnFocus.addEventListener("touchend",e=>{e.preventDefault();fEnd();},{passive:false});
-  // barra de espaço também ativa o foco (segurar)
-  addEventListener("keydown",e=>{ if(e.code==="Space" && !e.repeat){ e.preventDefault(); fStart(); } });
-  addEventListener("keyup",  e=>{ if(e.code==="Space"){ e.preventDefault(); fEnd(); } });
+  // ===== teclado: WASD (pilotar), Ctrl (luz AIM), Espaço (foco) =====
+  addEventListener("keydown",e=>{
+    // foco
+    if(e.code==="Space" && !e.repeat){ e.preventDefault(); fStart(); return; }
+    // ctrl liga/desliga a luz AIM
+    if((e.code==="ControlLeft"||e.code==="ControlRight") && !e.repeat){
+      e.preventDefault(); toggleLight(); return;
+    }
+    // teclas de movimento
+    if(["KeyW","KeyA","KeyS","KeyD","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)){
+      keys[e.code]=true;
+      if(e.code.startsWith("Arrow")) e.preventDefault();
+    }
+  });
+  addEventListener("keyup",e=>{
+    if(e.code==="Space"){ e.preventDefault(); fEnd(); return; }
+    keys[e.code]=false;
+  });
+  // se a janela perde foco, solta todas as teclas (evita "tecla grudada")
+  addEventListener("blur",()=>{ for(const k in keys) keys[k]=false; });
 
   // ===== troca de casco =====
   function setHull(which){
@@ -394,46 +513,64 @@
 
   // ===== presenca =====
   presenceRef.onDisconnect().remove();
-  presenceRef.set({heading:0,at:Date.now()});
+  presenceRef.set({heading:0,depth:0,at:Date.now()});
 
-  // ===== escuta DM =====
-  let lastState=null;
+  // ===== escuta o nav compartilhado (vindo de outros clientes / DM) =====
+  let lastMode=null;
+  ref.child("nav").on("value",snap=>{
+    const n=snap.val();
+    if(!n){ navReady=true; return; }
+    // adota o estado remoto quando ESTE cliente não está mexendo nas teclas
+    const meActive = Object.values(keys).some(Boolean) || dragging;
+    if(!meActive){
+      if(typeof n.heading==="number") nav.heading=n.heading;
+      if(typeof n.depth==="number")  nav.depth=n.depth;
+    }
+    if(n.mode && n.mode!==nav.mode){ nav.mode=n.mode; }
+    navReady=true;
+
+    // reações à mudança de modo
+    if(nav.mode!==lastMode){
+      lastMode=nav.mode;
+      document.getElementById("sub").classList.toggle("bobbing", nav.mode==="moonpool");
+      if(diveAnim){clearInterval(diveAnim);diveAnim=null;}
+      updateMoonpoolByMode();
+    }
+  });
+
+  function updateMoonpoolByMode(){
+    if(nav.mode==="moonpool"){ elMoon.style.display="block"; positionMoon(); }
+    else if(nav.mode==="diving"){
+      // só anima a descida da superfície se viermos da moonpool (depth baixa)
+      if(nav.depth<40){ elMoon.style.display="block"; animateDive(); }
+      else { elMoon.style.display="none"; }
+    }
+    else { elMoon.style.display="none"; } // reeling ou outro
+  }
+
+  // ===== escuta DM (casco, ameaça, leitura) =====
   ref.on("value",snap=>{
     STATE=snap.val()||{};
     const online=!!STATE.online;
     document.getElementById("standby").style.display=online?"none":"flex";
     document.getElementById("sub").classList.toggle("on",online);
 
-    // casco: resolve qual mostrar.
-    // 'cracked' no firebase = submarino velho já rachou (permanente até reset)
     let skin=STATE.skin||"old";
-    let hull;
-    if(skin==="neurostat"){ hull="neurostat"; }
-    else { hull = STATE.cracked ? "old_cracked" : "old_intact"; }
+    let hull = skin==="neurostat" ? "neurostat" : (STATE.cracked?"old_cracked":"old_intact");
     setHull(hull);
 
-    // bobbing (tremida) só na moonpool
-    document.getElementById("sub").classList.toggle("bobbing", STATE.state==="moonpool");
+    // estado textual no HUD: usa nav.mode (pilotagem) + ameaça do DM
+    const modeLabels={moonpool:"IN MOONPOOL",diving:"DESCENDING",reeling:"REELING IN"};
+    const threatLabels={distant:"CONTACT — DISTANT",passing:"MOVEMENT",close:"CONTACT — CLOSE"};
+    const tl = threatLabels[STATE.state];
+    document.getElementById("hudstate").textContent = tl || modeLabels[nav.mode] || "—";
 
-    const labels={void:"VOID",moonpool:"IN MOONPOOL",diving:"DESCENDING",open:"OPEN WATER",distant:"CONTACT — DISTANT",passing:"MOVEMENT",close:"CONTACT — CLOSE"};
-    document.getElementById("hudstate").textContent=labels[STATE.state]||STATE.state||"—";
-
-    // imagem da ameaça
     if(STATE.imgUrl){
       if(!imgEl||imgEl.src!==STATE.imgUrl){imgReady=false;imgEl=new Image();imgEl.crossOrigin="anonymous";imgEl.onload=()=>imgReady=true;imgEl.src=STATE.imgUrl;}
     } else {imgEl=null;imgReady=false;}
 
     const read=(STATE.readout||"").trim();
     document.getElementById("hudread").innerHTML=read?`<span class="line">${esc(read)}</span>`:"";
-
-    // moonpool / mergulho — só reage quando o estado muda
-    if(STATE.state!==lastState){
-      lastState=STATE.state;
-      if(diveAnim){clearInterval(diveAnim);diveAnim=null;}
-      updateMoonpool();
-    }
   });
   function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-
-  applyHeading();
 </script></body></html>
