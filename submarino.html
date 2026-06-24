@@ -301,27 +301,91 @@
     }
     x.globalAlpha=1;
 
-    // ===== sombra lateral atmosférica (sutil) =====
-    // sem cena 3D: só um leve escurecimento de um lado quando o sub se aproxima da margem.
-    // entra/sai gradual (sem piscar). a navegação real vem dos mapas.
+    // ===== INDICAÇÃO DE CAMINHO + textura de rocha lateral =====
+    // o breu abre na direção navegável; as paredes perto ganham textura granulada
+    // (cinza), que a lanterna revela mais. dá pra tatear o caminho sem bater às cegas.
     if(mode==="diving"){
       const c=corridorAt(depth);
+      const isOld=(STATE.skin||"old").startsWith("old");
+      // direção navegável: pra onde o centro do corredor vai logo abaixo (descer)
+      const cAhead=corridorAt(depth+60);
+      // diferença lateral entre onde estou e pra onde o caminho vai
+      const pathDX = (cAhead.cx - nav.x);        // + = caminho está à direita
+      // ângulo do caminho no mundo (0 = descer reto, + = direita)
+      const pathBearing = Math.atan2(pathDX, 80)*180/Math.PI;
+      // onde isso cai no visor relativo ao heading
+      let pathRel = ((pathBearing - nav.heading +540)%360)-180;
+
+      // 1) ABERTURA na direção do caminho: clareia levemente o breu naquele ponto
+      const fov=70;
+      if(Math.abs(pathRel)<fov+20){
+        const px = w/2 + (pathRel/fov)*(w*0.5);
+        const og=x.createRadialGradient(px,h*0.46,4,px,h*0.46,w*0.32);
+        // abertura: um respiro de água um tom mais claro/fria (não é luz, é menos rocha)
+        og.addColorStop(0, isOld?"rgba(30,40,42,0.30)":"rgba(28,42,48,0.30)");
+        og.addColorStop(1,"transparent");
+        x.fillStyle=og; x.fillRect(0,0,w,h);
+      }
+
+      // 2) PAREDES laterais: proximidade a cada margem -> textura de rocha + escuridão
       const proxR=Math.max(0,Math.min(1,1-((c.cx+c.hw)-nav.x)/(c.hw*1.4)));
       const proxL=Math.max(0,Math.min(1,1-(nav.x-(c.cx-c.hw))/(c.hw*1.4)));
-      if(proxR>0.04){
-        const band=w*0.4;
-        const grd=x.createLinearGradient(w,0,w-band,0);
-        grd.addColorStop(0,`rgba(1,4,5,${(proxR*0.6).toFixed(2)})`);
+
+      function rockWall(prox, isLeft){
+        if(prox<=0.04) return;
+        const band=w*(0.26+prox*0.30);
+        const edge=isLeft?0:w, sign=isLeft?1:-1;
+        // escuridão de base da rocha (cinza muito escuro, não amarelo)
+        const grd=x.createLinearGradient(edge,0, isLeft?band:w-band,0);
+        grd.addColorStop(0,`rgba(6,9,11,${(0.55+prox*0.35).toFixed(2)})`);
         grd.addColorStop(1,"rgba(0,0,0,0)");
-        x.fillStyle=grd; x.fillRect(w-band,0,band,h);
+        x.fillStyle=grd; x.fillRect(isLeft?0:w-band,0,band,h);
+
+        // textura granulada de rocha: pontos/grãos que descem com a profundidade (movimento)
+        const grains=Math.round(prox*70);
+        const voff=(depth*9)%h;
+        for(let i=0;i<grains;i++){
+          // seed estável por grão (não tremula)
+          const s1=Math.sin(i*12.9+(isLeft?1:2)*7.7)*43758.5; const gx=s1-Math.floor(s1);
+          const s2=Math.sin(i*7.3+(isLeft?3:4)*3.1)*9301; const gy=s2-Math.floor(s2);
+          const px = isLeft ? gx*band*0.85 : w-gx*band*0.85;
+          const py = (gy*h + voff) % h;          // desce conforme afunda
+          const sz = 0.6 + gx*2.2;
+          // luz revela a rocha: grão fica cinza-claro perto do facho
+          let lit=0;
+          if(lightOn) lit=Math.max(0,1-Math.abs(beamX-px/w)*2.2)*Math.max(0,1-Math.abs(beamY-py/h)*1.6);
+          // cor da rocha = CINZA (tom levemente quente no velho só sob luz, via lanterna)
+          let shade;
+          if(lit>0.1){
+            // sob a luz: cinza claro; no casco velho a luz amarelada dá um leve quente
+            shade = isOld ? `rgba(${120+lit*60|0},${112+lit*52|0},${96+lit*40|0},` 
+                          : `rgba(${110+lit*70|0},${122+lit*74|0},${130+lit*78|0},`;
+          } else {
+            shade = `rgba(34,38,40,`; // rocha na penumbra: cinza escuro neutro
+          }
+          x.fillStyle=shade+(0.3+prox*0.4+lit*0.5).toFixed(2)+")";
+          x.beginPath();x.arc(px,py,sz,0,6.28);x.fill();
+        }
+        // contorno/quina da rocha sob a luz (uma borda mais definida)
+        if(lightOn){
+          const near = isLeft ? beamX<0.45 : beamX>0.55;
+          if(near){
+            x.globalAlpha=0.4;
+            x.strokeStyle = isOld?"rgba(140,128,100,0.5)":"rgba(130,150,160,0.5)";
+            x.lineWidth=1.5;
+            x.beginPath();
+            const ex=isLeft?band*0.7:w-band*0.7;
+            for(let yy=0;yy<=h;yy+=18){
+              const jit=Math.sin(yy*0.05+depth*0.1+(isLeft?0:3))*band*0.12;
+              yy===0?x.moveTo(ex+jit,yy):x.lineTo(ex+jit,yy);
+            }
+            x.stroke();
+            x.globalAlpha=1;
+          }
+        }
       }
-      if(proxL>0.04){
-        const band=w*0.4;
-        const grd=x.createLinearGradient(0,0,band,0);
-        grd.addColorStop(0,`rgba(1,4,5,${(proxL*0.6).toFixed(2)})`);
-        grd.addColorStop(1,"rgba(0,0,0,0)");
-        x.fillStyle=grd; x.fillRect(0,0,band,h);
-      }
+      rockWall(proxR,false);
+      rockWall(proxL,true);
     }
 
     // AMEACA direcional
@@ -394,7 +458,7 @@
     const wmotes=[]; for(let i=0;i<70;i++)wmotes.push({x:Math.random(),y:Math.random(),r:Math.random()*2+0.5,v:Math.random()*0.4+0.2});
     const bubbles=[]; for(let i=0;i<50;i++)bubbles.push({x:Math.random(),y:Math.random(),r:Math.random()*3+1,v:Math.random()*0.5+0.3});
     let st=0;
-    const SPEED=0.0045;   // bem mais lento que antes (era 0.01)
+    const SPEED=0.0036;   // ~4.6s, transição lenta e fluida
     diveAnim=setInterval(()=>{
       p+=SPEED; st++;
       if(p>=1){
@@ -405,9 +469,10 @@
         if(ascending) positionMoon();
         return;
       }
-      // easing suave
-      const ease=p<0.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
-      const prog = ascending ? (1-ease) : ease;
+      // easing orgânico de afundamento: começa lento, acelera (peso/inércia da água)
+      const prog0 = ascending ? (1-p) : p;
+      const ease = prog0<0.5 ? 4*prog0*prog0*prog0 : 1-Math.pow(-2*prog0+2,3)/2;
+      const prog = ease;
       // posição da moonpool: sobe de startTop até endTop (sai inteira de vista)
       const top = startTop + (endTop-startTop)*prog;
       elMoon.style.transform=`translateY(${top}px)`;
