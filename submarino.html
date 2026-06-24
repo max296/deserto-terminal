@@ -305,113 +305,93 @@
     }
     x.globalAlpha=1;
 
-    // ===== PAREDES POR PROJEÇÃO DE VETORES =====
-    // modelo: cada margem do corredor é uma linha vertical numa posição do mundo.
-    // projeto a posição de amostras dessa linha na "câmera" (heading) -> posição X no visor.
-    // girar muda o ângulo relativo -> o vulto desliza horizontalmente. atrás de mim -> some.
-    // descer/subir -> as amostras rolam verticalmente. vulto escuro abstrato (não rocha literal).
+    // ===== PAREDES: um vulto elíptico por margem, alongado na vertical =====
+    // proximidade vem da distância LATERAL real (não do movimento frente/ré -> sem bug do S).
+    // posição X vem da projeção do ângulo (gira certo). semente na profundidade (não pisca).
+    // elipse bem mais alta que larga: dá noção de parede vertical subindo/descendo.
     if(mode==="diving"){
       const c=corridorAt(depth);
       const isOld=(STATE.skin||"old").startsWith("old");
-      const FOVdeg=75, halfFov=FOVdeg/2;
+      const halfFov=37.5;
       const hdg=nav.heading*Math.PI/180;
-      // base de cada parede no mundo: margem esq (cx-hw) e dir (cx+hw), no eixo lateral X.
-      // o eixo "pra frente" é a profundidade. então um ponto da parede está em
-      // (worldX - nav.x) lateral e (sampleDepth - depth) à frente.
-      // projeção: ângulo = atan2(lateral_rotacionado_x, frente_rotacionada) relativo ao heading.
+      const ch=Math.cos(-hdg), sh=Math.sin(-hdg);
 
-      // amostro cada parede ao longo da profundidade e projeto no visor.
-      // CHAVE: a posição X vem da projeção (ângulo), mas o TAMANHO vem da distância
-      // lateral real da margem — senão dar ré perto de uma parede a faz crescer (bug).
-      function projectWall(worldX, sideSign){
-        const ch=Math.cos(-hdg), sh=Math.sin(-hdg);
-        // distância lateral imediata até esta margem (no mundo) — controla o tamanho/proximidade
-        const cNow=corridorAt(depth);
-        const marginNow = (sideSign<0) ? (cNow.cx-cNow.hw) : (cNow.cx+cNow.hw);
-        const lateralDist = Math.abs(marginNow - nav.x);
-        const prox = Math.max(0, Math.min(1, 1 - lateralDist/(cNow.hw*1.6)));
-        if(prox<=0.04) return;
-
-        // amostro pontos ao longo de um trecho curto à frente/atrás pra desenhar a massa
-        const pts=[];
-        for(let dd=-40; dd<=100; dd+=24){
-          const sampleDepth=depth+dd;
-          if(sampleDepth<0) continue;
-          const cc=corridorAt(sampleDepth);
-          const wx = (sideSign<0) ? (cc.cx-cc.hw) : (cc.cx+cc.hw);
-          const lat = wx - nav.x;
-          const fwd = dd;
-          const camX = lat*ch - fwd*sh;
-          const camZ = lat*sh + fwd*ch;
-          if(camZ <= 1) continue;                       // atrás da câmera -> ignora
-          const rel = Math.atan2(-camX, camZ)*180/Math.PI;
-          if(Math.abs(rel)>halfFov+8) continue;
-          pts.push({rel, camZ, sd:Math.round(sampleDepth)});
+      function drawWall(sideSign){
+        const isLeft = sideSign<0;
+        // proximidade lateral real (0 longe, 1 colado) — controla tamanho/opacidade
+        const margin = isLeft ? (c.cx-c.hw) : (c.cx+c.hw);
+        const prox = Math.max(0, Math.min(1, 1 - Math.abs(margin-nav.x)/(c.hw*1.55)));
+        if(prox<=0.05) return;
+        // posição X projetada: amostra a margem logo à frente e rotaciona pelo heading
+        const cc=corridorAt(depth+25);
+        const wx=isLeft?(cc.cx-cc.hw):(cc.cx+cc.hw);
+        const lat=wx-nav.x, fwd=25;
+        const camX=lat*ch-fwd*sh, camZ=lat*sh+fwd*ch;
+        let cx;
+        if(camZ>1){
+          const rel=Math.atan2(-camX,camZ)*180/Math.PI;
+          cx = w/2 + (rel/halfFov)*(w/2);
+        } else {
+          cx = isLeft ? 0 : w; // muito de lado: cola na borda
         }
-        if(!pts.length) return;
+        // empurra o centro do vulto pra borda do lado certo (a massa "entra" da lateral)
+        cx = isLeft ? Math.min(cx, w*0.42) : Math.max(cx, w*0.58);
+        const cy = h*0.5;
 
-        // cor base (cinza penumbra; cinza claro sob luz, quente no velho)
-        function rockColor(cx,cy){
-          let lit=0;
-          if(lightOn) lit=Math.max(0,1-Math.abs(beamX-cx/w)*2.2)*Math.max(0,1-Math.abs(beamY-cy/h)*1.4);
-          let r,g,b;
-          if(lit>0.1){ const base=64+lit*72;
-            if(isOld){ r=base*1.0|0; g=base*0.92|0; b=base*0.74|0; }
-            else { r=base*0.94|0; g=base*1.02|0; b=base*1.08|0; }
-          } else { r=18; g=22; b=24; }
-          return {r,g,b,lit};
-        }
+        // dimensões: ALTA e estreita (parede vertical), cresce com a proximidade
+        const ew = w*(0.12+prox*0.20);   // largura (estreita)
+        const eh = h*(0.62+prox*0.45);   // altura (alta — dá o eixo vertical)
 
-        // desenha a massa como MUITOS círculos pequenos (textura granulada de rocha)
-        // poucos vultos maiores e macios (não pontilhado): legível, com leve textura.
-        const spread = w*(0.09+prox*0.20);
-        const reach  = w/2*(0.30+prox*0.55);
-        for(const p of pts){
-          const cxBase = w/2 + (p.rel/halfFov)*(w/2);
-          // POUCOS grãos grandes por amostra (era 6+prox*14)
-          const grains = Math.round(2+prox*4);
-          for(let i=0;i<grains;i++){
-            // semente ancorada na PROFUNDIDADE da amostra (fixa no mundo): não re-sorteia ao girar
-            const s1=Math.sin((p.sd*0.13+i*12.9)+sideSign*7.7)*43758.5; const rx=s1-Math.floor(s1);
-            const s2=Math.sin((p.sd*0.07+i*7.3)+sideSign*3.1)*9301; const ry=s2-Math.floor(s2);
-            const gx = cxBase + (rx-0.5)*spread*2;
-            const gy = h*0.5 + (ry-0.5)*reach*2;
-            const cx=Math.max(-w*0.12,Math.min(w*1.12,gx));
-            const col=rockColor(cx,gy);
-            // vultos maiores
-            const sz = (10 + rx*22) * (0.6+prox*0.7);
-            x.save();
-            x.filter=`blur(${(11 - col.lit*5).toFixed(1)}px)`;   // macio (vulto), mais que o pontilhado
-            x.globalAlpha=(0.3+prox*0.45+col.lit*0.3);
-            x.fillStyle=`rgb(${col.r},${col.g},${col.b})`;
-            x.beginPath();x.ellipse(cx,gy,sz,sz*1.25,0,0,6.28);x.fill();
-            x.restore();
-          }
-        }
-        // sombra de base que dá a massa principal da parede
-        const cxAvg = w/2 + (pts[Math.floor(pts.length/2)].rel/halfFov)*(w/2);
+        // luz revela: clareia quando o facho aponta pra perto do vulto
+        let lit=0;
+        if(lightOn) lit=Math.max(0,1-Math.abs(beamX-cx/w)*2.2)*Math.max(0,1-Math.abs(beamY-0.5)*1.3);
+        // cor: cinza penumbra; cinza claro sob luz (leve quente no velho)
+        let r,g,b;
+        if(lit>0.1){ const base=60+lit*72;
+          if(isOld){ r=base*1.0|0; g=base*0.92|0; b=base*0.74|0; }
+          else { r=base*0.95|0; g=base*1.02|0; b=base*1.07|0; }
+        } else { r=19; g=23; b=25; }
+
+        // deslocamento vertical sutil da textura ao subir/descer (a parede "passa")
+        const vshift = (depth*6)%40;
+
         x.save();
-        x.filter="blur(22px)";
-        x.globalAlpha=0.35+prox*0.4;
-        x.fillStyle="rgb(10,13,15)";
-        x.beginPath();x.ellipse(Math.max(0,Math.min(w,cxAvg)), h*0.5, spread*1.6, reach*1.4, 0,0,6.28);x.fill();
+        // vulto principal (elipse alta, macia)
+        x.filter=`blur(${(13-prox*4-lit*3).toFixed(1)}px)`;
+        x.globalAlpha=(0.5+prox*0.4);
+        x.fillStyle=`rgb(${r},${g},${b})`;
+        x.beginPath(); x.ellipse(cx, cy, ew, eh*0.5, 0, 0, 6.28); x.fill();
+
+        // 2 ou 3 saliências verticais ao longo da elipse (relevo), ancoradas na profundidade
+        for(let k=0;k<3;k++){
+          const seed=Math.sin(k*7.3+sideSign*3.1)*9301; const rk=seed-Math.floor(seed);
+          // posição vertical estável + rolagem com a profundidade
+          const ky = ((rk*eh + vshift + k*eh*0.33) % eh) - eh*0.5 + cy;
+          const kx = cx + (rk-0.5)*ew*0.7;
+          const ksz = ew*(0.4+rk*0.4);
+          let kl=0;
+          if(lightOn) kl=Math.max(0,1-Math.abs(beamX-kx/w)*2.2)*Math.max(0,1-Math.abs(beamY-ky/h)*1.6);
+          x.filter=`blur(${(9-kl*4).toFixed(1)}px)`;
+          x.globalAlpha=(0.3+prox*0.3+kl*0.3);
+          x.fillStyle = kl>0.1 ? `rgb(${(r*1.2)|0},${(g*1.2)|0},${(b*1.2)|0})` : `rgb(${(r*0.7)|0},${(g*0.7)|0},${(b*0.7)|0})`;
+          x.beginPath(); x.ellipse(kx, ky, ksz, ksz*1.7, 0, 0, 6.28); x.fill();
+        }
         x.restore();
       }
-      projectWall(c.cx-c.hw, -1); // esquerda
-      projectWall(c.cx+c.hw, +1); // direita
+      drawWall(-1); // esquerda
+      drawWall(+1); // direita
       x.globalAlpha=1;
 
-      // dica de caminho: respiro de água mais clara na direção navegável (rotacionada pelo heading)
+      // dica de caminho: respiro de água mais clara na direção navegável (à frente)
       const cAhead=corridorAt(depth+80);
-      const plat=cAhead.cx-nav.x, pfwd=80;
-      const pch=Math.cos(-hdg), psh=Math.sin(-hdg);
-      const pcamX=plat*pch-pfwd*psh, pcamZ=plat*psh+pfwd*pch;
+      const pl=cAhead.cx-nav.x, pf=80;
+      const pcamX=pl*ch-pf*sh, pcamZ=pl*sh+pf*ch;
       if(pcamZ>1){
         const prel=Math.atan2(-pcamX,pcamZ)*180/Math.PI;
         if(Math.abs(prel)<halfFov+10){
           const px=w/2+(prel/halfFov)*(w/2);
-          const og=x.createRadialGradient(px,h*0.46,4,px,h*0.46,w*0.30);
-          og.addColorStop(0, isOld?"rgba(26,36,38,0.26)":"rgba(24,38,44,0.26)");
+          const og=x.createRadialGradient(px,h*0.46,4,px,h*0.46,w*0.28);
+          og.addColorStop(0, isOld?"rgba(26,36,38,0.24)":"rgba(24,38,44,0.24)");
           og.addColorStop(1,"transparent");
           x.fillStyle=og; x.fillRect(0,0,w,h);
         }
@@ -572,10 +552,12 @@
   function pushNav(){ navDirty=true; }
   setInterval(()=>{
     if(!navDirty) return; navDirty=false;
+    const dm=Math.round(nav.depth);
     ref.child("nav").update({
-      x:Math.round(nav.x), depth:Math.round(nav.depth),
+      x:Math.round(nav.x), depth:dm,
       heading:Math.round(nav.heading), mode:nav.mode
     });
+    presenceRef.update({heading:Math.round(nav.heading),depth:dm,at:Date.now()});
   },100);
 
   // loop de simulação local (~60fps): movimento livre Iron Lung em 2D
@@ -644,7 +626,6 @@
     elDepthVal.textContent=String(dm).padStart(4,"0");
     elDepthBox.classList.toggle("beyond", dm>CORAL_DEPTH);
 
-    presenceRef.update({heading:Math.round(nav.heading),depth:dm,at:Date.now()});
     requestAnimationFrame(navLoop);
   }
   requestAnimationFrame(navLoop);
