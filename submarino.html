@@ -290,27 +290,12 @@
     // deslocamento horizontal pelo heading (mundo desliza bastante ao girar = sensação de máquina grande)
     const headShift = (nav.heading/360) * w * 7;
 
-    // PARTICULAS - reagem ao heading (deslizam ao girar) e ao movimento (frente OU ré)
-    const speed = moving ? 7 : (mode==="reeling"?5:1);
-    const dir = goingBack ? -1 : 1;   // ré: o fluxo inverte (partículas descem)
-    for(const m of motes){
-      m.y -= m.vy*speed*dir; m.x+=m.drift+Math.sin(t*0.02+m.ph)*0.0002;
-      if(m.y<0){m.y=1;m.x=Math.random();}
-      if(m.y>1){m.y=0;m.x=Math.random();}
-      let mx=((m.x - headShift/w)%1+1)%1;
-      const px=mx*w, py=m.y*h, tw=0.5+0.5*Math.sin(t*0.05+m.ph);
-      x.globalAlpha=0.12+tw*0.38;
-      x.fillStyle="rgba(175,205,210,.7)";
-      x.beginPath();x.arc(px,py,m.r,0,6.28);x.fill();
-    }
-    x.globalAlpha=1;
-
     // ===== RAYCASTER: corredor coerente (paredes = margens do canyon) =====
     // o sub está em (nav.x, nav.depth) olhando p/ heading. as duas margens do corredor
     // são paredes. p/ cada coluna do visor lanço um raio, acho onde cruza a margem,
     // calculo a distância perpendicular (corrige fish-eye) e desenho uma tira vertical
     // de altura ∝ 1/dist com textura de rocha. perto = alta; longe = baixa.
-    if(mode==="diving"){
+    if(mode==="diving" || mode==="reeling"){
       const isOld=(STATE.skin||"old").startsWith("old");
       const FOV=Math.PI*78/180;            // campo de visão (rad)
       const hdg=nav.heading*Math.PI/180;   // 0 = descer (+depth)
@@ -319,16 +304,42 @@
       const MAXD=520;                      // alcance do raio (unidades de mundo)
       const STEP=5;                        // passo de marcha do raio
       const WALLH=h*46;                    // fator de altura da parede projetada
+      const horizon=h/2;
 
+      // ---- CHÃO e TETO em perspectiva (gradiente + linhas que convergem e rolam) ----
+      // teto (metade de cima): mais escuro, fecha o corredor por cima
+      const cg=x.createLinearGradient(0,0,0,horizon);
+      if(isOld){ cg.addColorStop(0,"#0c0f0d"); cg.addColorStop(1,"#05080a"); }
+      else { cg.addColorStop(0,"#0a0f12"); cg.addColorStop(1,"#04080b"); }
+      x.fillStyle=cg; x.fillRect(0,0,w,horizon);
+      // chão (metade de baixo): cinza levemente mais claro perto, escurece ao fundo
+      const flg=x.createLinearGradient(0,horizon,0,h);
+      if(isOld){ flg.addColorStop(0,"#05080a"); flg.addColorStop(1,"#181a16"); }
+      else { flg.addColorStop(0,"#04080b"); flg.addColorStop(1,"#141c20"); }
+      x.fillStyle=flg; x.fillRect(0,horizon,w,h-horizon);
+      // linhas de profundidade do chão e teto que rolam conforme afunda (sensação de mover)
+      const scrollF=(depth*8)%70;
+      x.lineWidth=1;
+      for(let i=0;i<11;i++){
+        const f=i/11;
+        // chão: linhas que apertam perto do horizonte (perspectiva)
+        const yF=h - (h-horizon)*Math.pow(f,1.7) - (scrollF/70)*((h-horizon)*(Math.pow((i+1)/11,1.7)-Math.pow(f,1.7)));
+        x.strokeStyle=isOld?`rgba(60,56,38,${(0.06+(1-f)*0.16).toFixed(2)})`:`rgba(52,64,72,${(0.06+(1-f)*0.15).toFixed(2)})`;
+        x.beginPath();x.moveTo(0,yF);x.lineTo(w,yF);x.stroke();
+        // teto: espelhado
+        const yC=(horizon)*Math.pow(f,1.7) + (scrollF/70)*((horizon)*(Math.pow((i+1)/11,1.7)-Math.pow(f,1.7)));
+        x.strokeStyle=isOld?`rgba(40,38,28,${(0.05+(1-f)*0.12).toFixed(2)})`:`rgba(38,46,52,${(0.05+(1-f)*0.12).toFixed(2)})`;
+        x.beginPath();x.moveTo(0,yC);x.lineTo(w,yC);x.stroke();
+      }
+
+      // ---- PAREDES (raycasting) ----
       // direção de cada raio: varre de -FOV/2 a +FOV/2 em torno do heading.
-      // no plano: eixo "frente" = profundidade (cos), eixo "lateral" = x (sin).
       for(let i=0;i<COLS;i++){
         const a = hdg + (i/(COLS-1) - 0.5)*FOV;   // ângulo absoluto do raio
         const camAng = (i/(COLS-1)-0.5)*FOV;       // ângulo relativo (p/ corrigir fish-eye)
         const dx=Math.sin(a), dd=Math.cos(a);      // passo lateral / profundidade
         // marcha o raio até sair do corredor (cruzar uma margem)
         let rx=nav.x, rd=nav.depth, dist=0, hitSide=0;
-        let prevInside=true;
         for(let s=STEP;s<=MAXD;s+=STEP){
           rx=nav.x+dx*s; rd=nav.depth+dd*s;
           const cc=corridorAt(rd);
@@ -344,7 +355,6 @@
         // sombreamento por distância: perto mais claro, longe afunda no breu
         const fog=Math.max(0, 1 - perp/MAXD);
         // textura: faixa de rocha que rola verticalmente com a profundidade + ruído por coluna
-        // posição "ao longo da parede" pra textura (usa rd, fixo no mundo -> não cintila)
         const wallU = (hitSide<0 ? rd : rd*1.0);
         const tex = 0.5 + 0.5*Math.sin(wallU*0.18 + i*0.4) * Math.sin(wallU*0.05+ i*0.13);
         // luz do facho: clareia a coluna se o facho aponta perto dela (x e y)
@@ -369,6 +379,24 @@
         x.fillRect(colX-colW/2-0.5, y1-Math.max(1,sh2*0.06), colW+1, Math.max(1,sh2*0.06));
       }
     }
+
+    // ===== PARTICULAS (por cima das paredes) - reagem ao giro e ao movimento =====
+    {
+      const speed = moving ? 7 : (mode==="reeling"?5:1);
+      const dir = goingBack ? -1 : (mode==="reeling"? -1 : 1);  // reeling sobe -> partículas descem
+      for(const m of motes){
+        m.y -= m.vy*speed*dir; m.x+=m.drift+Math.sin(t*0.02+m.ph)*0.0002;
+        if(m.y<0){m.y=1;m.x=Math.random();}
+        if(m.y>1){m.y=0;m.x=Math.random();}
+        let mx=((m.x - headShift/w)%1+1)%1;
+        const px=mx*w, py=m.y*h, tw=0.5+0.5*Math.sin(t*0.05+m.ph);
+        x.globalAlpha=0.10+tw*0.30;   // um pouco mais sutil já que ficam por cima da rocha
+        x.fillStyle="rgba(175,205,210,.7)";
+        x.beginPath();x.arc(px,py,m.r,0,6.28);x.fill();
+      }
+      x.globalAlpha=1;
+    }
+
 
     // AMEACA direcional
     if(["distant","passing","close"].includes(st)){
@@ -581,13 +609,23 @@
       }
     }
     else if(nav.mode==="reeling"){
-      // cabo recolhe: recentra no corredor e sobe até a entrada
-      if(nav.depth>START_DEPTH){
-        nav.depth=Math.max(START_DEPTH, nav.depth-26*dt);
-        const c=corridorAt(nav.depth);
-        nav.x += (c.cx-nav.x)*Math.min(1,dt*1.5);
+      // o cabo recolhe pela LINHA CENTRAL do corredor (caminho garantidamente livre).
+      const c=corridorAt(nav.depth);
+      // segurança: se por algum motivo estiver além da margem, traz pra dentro já.
+      if(nav.x < c.cx-c.hw) nav.x=c.cx-c.hw+1;
+      if(nav.x > c.cx+c.hw) nav.x=c.cx+c.hw-1;
+      const offCenter=Math.abs(nav.x-c.cx);
+      if(offCenter>2){
+        nav.x += (c.cx-nav.x)*Math.min(1, dt*5);
+        nav.depth=Math.max(START_DEPTH, nav.depth-8*dt);
         pushNav();
-        if(nav.depth<=START_DEPTH){ nav.mode="moonpool"; pushNav(); }
+      } else if(nav.depth>START_DEPTH){
+        nav.x=c.cx;
+        nav.depth=Math.max(START_DEPTH, nav.depth-26*dt);
+        pushNav();
+        if(nav.depth<=START_DEPTH){ nav.x=corridorAt(START_DEPTH).cx; nav.mode="moonpool"; pushNav(); }
+      } else {
+        nav.x=corridorAt(START_DEPTH).cx; nav.mode="moonpool"; pushNav();
       }
     }
 
