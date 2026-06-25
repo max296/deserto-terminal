@@ -308,78 +308,80 @@
 
       // ---- CHÃO (sempre) e TETO (só na caverna, passando o coral) em perspectiva ----
       const inCave = depth>CORAL_DEPTH;   // teto só fecha quando entra na caverna/fenda
-      // CHÃO: tom de rocha (cinza-âmbar no velho, cinza frio no neurostat), escurece ao fundo.
+      // CHÃO: tom de rocha, mais OPACO. escurece ao fundo.
       const flg=x.createLinearGradient(0,horizon,0,h);
-      if(isOld){ flg.addColorStop(0,"rgba(28,24,16,0)"); flg.addColorStop(0.35,"#241f15"); flg.addColorStop(1,"#3a3120"); }
-      else { flg.addColorStop(0,"rgba(26,28,28,0)"); flg.addColorStop(0.35,"#222420"); flg.addColorStop(1,"#34362e"); }
+      if(isOld){ flg.addColorStop(0,"rgba(34,28,18,0)"); flg.addColorStop(0.3,"#2e271a"); flg.addColorStop(1,"#473a26"); }
+      else { flg.addColorStop(0,"rgba(30,32,30,0)"); flg.addColorStop(0.3,"#2a2c26"); flg.addColorStop(1,"#3e4036"); }
       x.fillStyle=flg; x.fillRect(0,horizon,w,h-horizon);
 
-      // linhas TRANSVERSAIS do chão: cada uma é uma distância no mundo (uniforme) projetada,
-      // então apertam perto do horizonte (perspectiva CORRETA). rolam ao afundar. rabiscadas.
-      const scrollF=(depth*0.5)%1;        // fase de rolagem (0..1) — move as linhas ao descer
+      // rolagem MAIS LENTA (proporcional ao avanço real, não exagerada)
+      const scrollF=(depth*0.12)%1;
       const floorH=h-horizon;
-      x.lineWidth=1.3;
+      // curvatura de caverna: quanto a linha "afunda" no centro (chão) ou "sobe" no centro (teto)
+      const CURVE=h*0.10;
+
+      // linhas TRANSVERSAIS do chão (perspectiva correta, rabiscadas, leve curva côncava)
+      x.lineWidth=1.5;
       for(let i=1;i<=14;i++){
-        // distância no mundo desta linha (com rolagem); perspectiva: y = horizon + k/dist
-        const d = i - scrollF;            // distância crescente
+        const d = i - scrollF;
         const yF = horizon + floorH*(1.2/(d*0.9+0.6));
         if(yF<horizon || yF>h+2) continue;
         const fog = Math.max(0, Math.min(1, (yF-horizon)/floorH)); // 0 longe, 1 perto
         x.strokeStyle = isOld
-          ? `rgba(120,104,68,${(0.10+fog*0.34).toFixed(2)})`
-          : `rgba(96,110,118,${(0.10+fog*0.30).toFixed(2)})`;
-        // rabiscada: a linha sobe e desce em pequenos dentes (rocha irregular), não reta
+          ? `rgba(140,120,80,${(0.16+fog*0.40).toFixed(2)})`
+          : `rgba(110,124,132,${(0.16+fog*0.36).toFixed(2)})`;
         x.beginPath();
-        const amp = 1.5 + fog*5;          // mais irregular perto (onde se vê detalhe)
-        const segs = 16;
+        const amp = 1.5 + fog*5;
+        const curveAmt = CURVE*fog;       // curva mais visível perto
+        const segs = 18;
         for(let sx=0; sx<=segs; sx++){
-          const px=(sx/segs)*w;
-          // ruído estável por (linha, segmento): não cintila, mas varia ao rolar
+          const u=sx/segs, px=u*w;
           const n=Math.sin(i*23.1 + sx*1.7)*0.5 + Math.sin(i*5.3 + sx*4.1)*0.5;
-          const py=yF + n*amp;
+          // curva côncava: centro do chão levemente mais baixo (afasta), bordas sobem
+          const curve = -curveAmt*(1 - 4*Math.pow(u-0.5,2));  // parábola: 0 nas bordas, -1 no centro
+          const py=yF + n*amp + curve;
           sx===0?x.moveTo(px,py):x.lineTo(px,py);
         }
         x.stroke();
       }
 
-      // linhas LONGITUDINAIS convergindo pro ponto de fuga (reforça a perspectiva), rabiscadas
-      x.strokeStyle=isOld?"rgba(110,96,62,0.14)":"rgba(88,102,112,0.13)";
+      // linhas LONGITUDINAIS convergindo pro ponto de fuga, rabiscadas
+      x.strokeStyle=isOld?"rgba(128,108,72,0.18)":"rgba(98,112,122,0.16)";
       x.lineWidth=1;
       for(let k=-4;k<=4;k++){
-        const baseX=w/2 + k*w*0.16;       // na base (perto), espalhadas
-        const topX=w/2 + k*w*0.03;        // no horizonte, quase juntas (fuga)
+        const baseX=w/2 + k*w*0.16, topX=w/2 + k*w*0.03;
         x.beginPath();
         const segs=10;
         for(let sx=0;sx<=segs;sx++){
-          const f=sx/segs;
-          const px=baseX+(topX-baseX)*f;
-          const py=h+(horizon-h)*f;
-          const n=Math.sin(k*7.7+sx*2.3)*1.5*(1-f);  // rabisco que some no horizonte
+          const f=sx/segs, px=baseX+(topX-baseX)*f, py=h+(horizon-h)*f;
+          const n=Math.sin(k*7.7+sx*2.3)*1.5*(1-f);
           sx===0?x.moveTo(px+n,py):x.lineTo(px+n,py);
         }
         x.stroke();
       }
-      // TETO: só na caverna. fecha o corredor por cima com gradiente escuro + linhas.
+
+      // TETO: só na caverna. espelha o chão (mesma perspectiva/rabisco) + CURVATURA de abóbada.
       if(inCave){
-        // entra gradualmente nos primeiros metros da caverna
         const caveF=Math.min(1,(depth-CORAL_DEPTH)/120);
         const cg=x.createLinearGradient(0,0,0,horizon);
-        if(isOld){ cg.addColorStop(0,`rgba(24,20,14,${(caveF*0.95).toFixed(2)})`); cg.addColorStop(1,"rgba(8,11,10,0)"); }
-        else { cg.addColorStop(0,`rgba(18,22,24,${(caveF*0.95).toFixed(2)})`); cg.addColorStop(1,"rgba(6,10,12,0)"); }
+        if(isOld){ cg.addColorStop(0,`rgba(40,33,21,${(caveF*0.98).toFixed(2)})`); cg.addColorStop(1,"rgba(12,14,12,0)"); }
+        else { cg.addColorStop(0,`rgba(34,37,33,${(caveF*0.98).toFixed(2)})`); cg.addColorStop(1,"rgba(10,13,14,0)"); }
         x.fillStyle=cg; x.fillRect(0,0,w,horizon);
-        x.lineWidth=1.3;
+        x.lineWidth=1.5;
         for(let i=1;i<=14;i++){
           const d=i-scrollF;
           const yC=horizon - horizon*(1.2/(d*0.9+0.6));
           if(yC>horizon || yC<-2) continue;
           const fog=Math.max(0,Math.min(1,(horizon-yC)/horizon));
-          x.strokeStyle=isOld?`rgba(96,84,56,${(caveF*(0.08+fog*0.24)).toFixed(2)})`:`rgba(76,88,96,${(caveF*(0.08+fog*0.22)).toFixed(2)})`;
+          x.strokeStyle=isOld?`rgba(140,120,80,${(caveF*(0.14+fog*0.34)).toFixed(2)})`:`rgba(110,124,132,${(caveF*(0.14+fog*0.30)).toFixed(2)})`;
           x.beginPath();
-          const amp=1.5+fog*5, segs=16;
+          const amp=1.5+fog*5, curveAmt=CURVE*fog*1.4, segs=18;  // abóbada mais pronunciada que o chão
           for(let sx=0;sx<=segs;sx++){
-            const px=(sx/segs)*w;
+            const u=sx/segs, px=u*w;
             const n=Math.sin(i*19.3+sx*1.9)*0.5+Math.sin(i*6.1+sx*3.7)*0.5;
-            const py=yC+n*amp;
+            // parábola INVERTIDA: centro do teto SOBE (abóbada), bordas descem pras paredes
+            const curve = curveAmt*(1 - 4*Math.pow(u-0.5,2));   // +no centro, 0 nas bordas
+            const py=yC + n*amp - curve;
             sx===0?x.moveTo(px,py):x.lineTo(px,py);
           }
           x.stroke();
