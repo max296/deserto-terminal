@@ -347,16 +347,15 @@
         return Math.max(0,Math.min(1,(n+1.9)/3.8));
       }
 
-      // CHÃO: do horizonte até a base. escurece com a distância (some no breu).
-      const GRID=16;          // tamanho da célula do mundo (linhas do chão)
-      const SIGHT=13;         // alcance de visão (unidades de mundo) — além disso é breu total
+      // CHÃO (sempre) via floor casting (técnica lodev). escurece com a distância (breu).
+      const GRID=16;
+      const SIGHT=13;
       for(let y=Math.floor(horizon)+1; y<h; y+=ROWH){
         const p = y - horizon;
         const rowDist = (h*0.5) / p;
-        // FOG: visibilidade cai com a distância. perto=1 (vê), longe=0 (breu)
         const vis = Math.max(0, Math.min(1, 1 - rowDist/SIGHT));
-        const vis2 = vis*vis;   // queda mais acentuada (escurece rápido ao longe)
-        if(vis2<=0.01) continue; // longe demais: deixa o breu (fundo já é escuro)
+        const vis2 = vis*vis;
+        if(vis2<=0.01) continue;
         const wx0 = posX + rowDist*(dirX - planeX);
         const wy0 = posY + rowDist*(dirY - planeY);
         const wx1 = posX + rowDist*(dirX + planeX);
@@ -365,13 +364,11 @@
           const t2=cxi/COLN;
           const wx=wx0+(wx1-wx0)*t2, wy=wy0+(wy1-wy0)*t2;
           const sh=rockShade(wx,wy);
-          // linha de grade: bem sutil, só um leve realce nas bordas de célula
           const gx=Math.abs(((wx%GRID)+GRID)%GRID - GRID/2);
           const gy=Math.abs(((wy%GRID)+GRID)%GRID - GRID/2);
           const onLine = Math.min(gx,gy) < 0.7;
-          // cor de rocha escura, modulada pela textura, e MULTIPLICADA pela visibilidade (fog)
           let base = (22 + sh*30) * vis2;
-          if(onLine) base += 12*vis2;   // linha: leve clareada, some junto no fog
+          if(onLine) base += 12*vis2;
           let r,g,b;
           if(isOld){ r=(base*1.0)|0; g=(base*0.86)|0; b=(base*0.6)|0; }
           else { r=(base*0.85)|0; g=(base*0.97)|0; b=(base*1.04)|0; }
@@ -379,14 +376,11 @@
           x.fillRect(cxi*cstep, y, cstep+1, ROWH+1);
         }
       }
-
-      // BOCA DA CAVERNA: arco escuro no fundo do corredor que cresce conforme você chega,
-      // igual ver a entrada de um túnel no fim do caminho. a escala vem da DISTÂNCIA à boca
-      // (CAVE_MOUTH - depth): longe = arquinho no horizonte; perto = abertura tomando o fundo;
-      // ao cruzar, vira a caverna (teto sólido logo acima de você).
-      // (protótipo: boca no coral ~600m. no mapa real vai pra ~2000m numa bifurcação.)
-      // OBS: desenhada DEPOIS das paredes (mais abaixo) — marcador aqui só documenta a ordem.
+      // limiar da caverna (protótipo: coral ~600m). o TETO é desenhado no raycaster de paredes,
+      // coluna a coluna: cada raio acha ONDE cruza este limiar e desenha o teto projetado por
+      // aquela distância — então a caverna cresce de longe pela perspectiva, igual paredes.
       const CAVE_MOUTH=CORAL_DEPTH;
+
 
       // ---- PAREDES (raycasting) ----
       // direção de cada raio: varre de -FOV/2 a +FOV/2 em torno do heading.
@@ -396,8 +390,11 @@
         const dx=Math.sin(a), dd=Math.cos(a);      // passo lateral / profundidade
         // marcha o raio até bater em algo: margem do corredor, parede de fundo, ou pilar.
         let rx=nav.x, rd=nav.depth, dist=0, hitSide=0, hitKind="wall";
+        let caveDist=0;   // distância onde o raio cruza o limiar da caverna (0 = não cruza)
         for(let s=STEP;s<=MAXD;s+=STEP){
           rx=nav.x+dx*s; rd=nav.depth+dd*s;
+          // registra o primeiro cruzamento do limiar da caverna (pra desenhar o teto descendo de lá)
+          if(!caveDist && rd>=CAVE_MOUTH) caveDist=s;
           // parede sólida no FUNDO do canyon
           if(rd>=MAX_DEPTH){ dist=s; hitSide=0; hitKind="floor_end"; break; }
           // parede de fundo da estrutura da petroleira (atrás dos pilares)
@@ -408,7 +405,33 @@
           if(rx < cc.cx-cc.hw){ dist=s; hitSide=-1; break; }   // margem esquerda
           if(rx > cc.cx+cc.hw){ dist=s; hitSide=1;  break; }   // margem direita
         }
-        if(!dist) continue;  // caminho aberto à frente
+        // ---- TETO DA CAVERNA nesta coluna: se o raio cruzou o limiar, desenha o teto descendo
+        // do topo da tela até a altura projetada pela DISTÂNCIA do cruzamento. longe = teto fino
+        // lá no topo; perto = teto desce e toma a tela. cresce pela perspectiva, igual paredes.
+        if(caveDist){
+          const perpC=Math.max(8, caveDist*Math.cos(camAng));
+          const shC2=Math.min(h*1.4, WALLH/perpC);   // "altura" projetada do teto àquela distância
+          const cy1=h/2 - shC2/2;                     // borda inferior do teto (desce conforme chega)
+          const fogC=Math.max(0,Math.min(1,1-caveDist/520));
+          const colXc=(i+0.5)*colW;
+          if(cy1>0){
+            // teto de rocha do topo (0) até cy1
+            const cseg=Math.max(2,Math.floor(cy1/4));
+            for(let yy=0; yy<cy1; yy+=4){
+              const wy2=nav.depth+dd*caveDist;     // profundidade do mundo no cruzamento
+              const sh=rockShade(nav.x+dx*caveDist+yy*0.1, wy2+yy*0.3);
+              let cl=0;
+              if(lightOn) cl=Math.max(0,1-Math.abs(beamX-colXc/w)*2.2)*Math.max(0,1-Math.abs(beamY-(yy/h))*1.4);
+              let base=(14+sh*26)*(0.4+fogC*0.6)+cl*(isOld?60:80);
+              base=Math.min(180,base);
+              let r,g,b;
+              if(isOld){ r=base*1.0|0; g=base*0.85|0; b=base*0.6|0; } else { r=base*0.85|0; g=base*0.96|0; b=base*1.02|0; }
+              x.fillStyle=`rgb(${r},${g},${b})`;
+              x.fillRect(colXc-colW/2-0.5, yy, colW+1, 5);
+            }
+          }
+        }
+        if(!dist) continue;  // sem parede à frente: caminho aberto (mas o teto acima já foi tratado)
         // corrige distorção fish-eye: distância perpendicular
         const perp=Math.max(8, dist*Math.cos(camAng));
         // altura da tira (perto = alta)
@@ -449,47 +472,6 @@
         x.fillStyle=`rgba(0,0,0,${(0.3*fog+0.2).toFixed(2)})`;
         x.fillRect(colX-colW/2-0.5, y0, colW+1, Math.max(1,sh2*0.06));
         x.fillRect(colX-colW/2-0.5, y1-Math.max(1,sh2*0.06), colW+1, Math.max(1,sh2*0.06));
-      }
-
-      // ===== BOCA DA CAVERNA: arco escuro no fundo do corredor, cresce ao se aproximar =====
-      // distância à frente até a boca. >0 = ainda não chegou; <=0 = já dentro.
-      const distToMouth = CAVE_MOUTH - depth;
-      if(distToMouth > -40 && distToMouth < 700){
-        // ponto de fuga: pra onde o corredor aponta lá adiante, projetado no visor.
-        // pego o centro do corredor na profundidade da boca e projeto pelo heading.
-        const cM=corridorAt(Math.max(depth+1,CAVE_MOUTH));
-        const lat=cM.cx-nav.x, fwd=Math.max(20,distToMouth);
-        const camX=lat*Math.cos(-hdg)-fwd*Math.sin(-hdg);
-        const camZ=lat*Math.sin(-hdg)+fwd*Math.cos(-hdg);
-        let vx=w/2;
-        if(camZ>1){ const rel=Math.atan2(-camX,camZ)*180/Math.PI; vx=w/2+(rel/(FOV*90/Math.PI))*(w/2); }
-        // tamanho do arco: inversamente proporcional à distância (perto = grande).
-        // quando distToMouth<=0 já estamos dentro -> arco enorme (teto tomado).
-        const d=Math.max(8,distToMouth);
-        const archW=Math.min(w*1.3, (w*0.5)*(120/d) + (distToMouth<=0?w:0));
-        const archH=Math.min(h*1.1, (h*0.42)*(120/d) + (distToMouth<=0?h:0));
-        const cy=h*0.46;  // centrado um pouco acima do meio (boca alta)
-        // névoa: a boca escura ganha nitidez conforme chega
-        const near=Math.max(0,Math.min(1,1-d/400));
-        // gradiente radial: centro preto (abertura), bordas esfumando pra rocha
-        const g=x.createRadialGradient(vx,cy,archW*0.1, vx,cy,archW*0.62);
-        g.addColorStop(0,`rgba(2,4,5,${(0.7+near*0.3).toFixed(2)})`);
-        g.addColorStop(0.7,`rgba(4,7,8,${(0.5+near*0.3).toFixed(2)})`);
-        g.addColorStop(1,"rgba(6,10,11,0)");
-        x.save();
-        x.beginPath();
-        // arco: meia-elipse (boca arredondada em cima, base no "chão" do corredor)
-        x.ellipse(vx,cy,archW*0.5,archH*0.5,0,0,6.28);
-        x.fillStyle=g; x.fill();
-        // contorno de rocha ao redor da boca quando perto (a borda da abertura)
-        if(near>0.2){
-          x.globalAlpha=near*0.5;
-          x.strokeStyle=isOld?"rgba(40,34,22,0.7)":"rgba(34,40,44,0.7)";
-          x.lineWidth=2+near*4;
-          x.beginPath();x.ellipse(vx,cy,archW*0.5,archH*0.5,0,0,6.28);x.stroke();
-        }
-        x.restore();
-        x.globalAlpha=1;
       }
     }
 
