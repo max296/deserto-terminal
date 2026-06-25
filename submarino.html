@@ -380,46 +380,13 @@
         }
       }
 
-      // TETO da caverna: vem DA DISTÂNCIA, não de cima de você. cada ponto do teto decide
-      // se existe pela SUA profundidade no mundo (wy): pontos fundos (>limiar) têm teto,
-      // pontos rasos não. então a boca da caverna aparece à frente e você entra nela.
-      // aproximação: a caverna se forma ao longo de ~200m antes do coral (400m->600m).
-      // os primeiros ~200m da descida (200->400) são mar aberto, SEM teto.
-      const CAVE_APPROACH=200;
-      const ceilStart=CORAL_DEPTH-CAVE_APPROACH;   // teto começa a existir a partir daqui (400m)
-      // só processa se há chance de ver teto à frente (você ou o que está à frente passou de ceilStart)
-      if(depth+SIGHT > ceilStart){
-        for(let y=Math.floor(horizon)-1; y>=0; y-=ROWH){
-          const p = horizon - y;
-          const rowDist = (h*0.5)/p;
-          const vis = Math.max(0, Math.min(1, 1 - rowDist/SIGHT));
-          if(vis<=0.05) continue;
-          const wx0 = posX + rowDist*(dirX - planeX);
-          const wy0 = posY + rowDist*(dirY - planeY);
-          const wx1 = posX + rowDist*(dirX + planeX);
-          const wy1 = posY + rowDist*(dirY + planeY);
-          for(let cxi=0; cxi<COLN; cxi++){
-            const t2=cxi/COLN;
-            const wx=wx0+(wx1-wx0)*t2, wy=wy0+(wy1-wy0)*t2;
-            // ESTE ponto do mundo tem teto? depende da profundidade DELE (wy), não do sub.
-            // caveF=0 antes do limiar, sobe gradual ao longo de CAVE_APPROACH até 1 no coral.
-            const caveF=Math.max(0, Math.min(1, (wy-ceilStart)/CAVE_APPROACH));
-            const vis2=vis*vis*caveF;
-            if(vis2<=0.01) continue;
-            const sh=rockShade(wx+500,wy+500);
-            const gx=Math.abs(((wx%GRID)+GRID)%GRID - GRID/2);
-            const gy=Math.abs(((wy%GRID)+GRID)%GRID - GRID/2);
-            const onLine=Math.min(gx,gy) < 0.7;
-            let base=(20+sh*28)*vis2;
-            if(onLine) base+=10*vis2;
-            let r,g,b;
-            if(isOld){ r=(base*1.0)|0; g=(base*0.84)|0; b=(base*0.58)|0; }
-            else { r=(base*0.82)|0; g=(base*0.95)|0; b=(base*1.02)|0; }
-            x.fillStyle=`rgb(${r},${g},${b})`;
-            x.fillRect(cxi*cstep, y, cstep+1, ROWH+1);
-          }
-        }
-      }
+      // BOCA DA CAVERNA: arco escuro no fundo do corredor que cresce conforme você chega,
+      // igual ver a entrada de um túnel no fim do caminho. a escala vem da DISTÂNCIA à boca
+      // (CAVE_MOUTH - depth): longe = arquinho no horizonte; perto = abertura tomando o fundo;
+      // ao cruzar, vira a caverna (teto sólido logo acima de você).
+      // (protótipo: boca no coral ~600m. no mapa real vai pra ~2000m numa bifurcação.)
+      // OBS: desenhada DEPOIS das paredes (mais abaixo) — marcador aqui só documenta a ordem.
+      const CAVE_MOUTH=CORAL_DEPTH;
 
       // ---- PAREDES (raycasting) ----
       // direção de cada raio: varre de -FOV/2 a +FOV/2 em torno do heading.
@@ -482,6 +449,47 @@
         x.fillStyle=`rgba(0,0,0,${(0.3*fog+0.2).toFixed(2)})`;
         x.fillRect(colX-colW/2-0.5, y0, colW+1, Math.max(1,sh2*0.06));
         x.fillRect(colX-colW/2-0.5, y1-Math.max(1,sh2*0.06), colW+1, Math.max(1,sh2*0.06));
+      }
+
+      // ===== BOCA DA CAVERNA: arco escuro no fundo do corredor, cresce ao se aproximar =====
+      // distância à frente até a boca. >0 = ainda não chegou; <=0 = já dentro.
+      const distToMouth = CAVE_MOUTH - depth;
+      if(distToMouth > -40 && distToMouth < 700){
+        // ponto de fuga: pra onde o corredor aponta lá adiante, projetado no visor.
+        // pego o centro do corredor na profundidade da boca e projeto pelo heading.
+        const cM=corridorAt(Math.max(depth+1,CAVE_MOUTH));
+        const lat=cM.cx-nav.x, fwd=Math.max(20,distToMouth);
+        const camX=lat*Math.cos(-hdg)-fwd*Math.sin(-hdg);
+        const camZ=lat*Math.sin(-hdg)+fwd*Math.cos(-hdg);
+        let vx=w/2;
+        if(camZ>1){ const rel=Math.atan2(-camX,camZ)*180/Math.PI; vx=w/2+(rel/(FOV*90/Math.PI))*(w/2); }
+        // tamanho do arco: inversamente proporcional à distância (perto = grande).
+        // quando distToMouth<=0 já estamos dentro -> arco enorme (teto tomado).
+        const d=Math.max(8,distToMouth);
+        const archW=Math.min(w*1.3, (w*0.5)*(120/d) + (distToMouth<=0?w:0));
+        const archH=Math.min(h*1.1, (h*0.42)*(120/d) + (distToMouth<=0?h:0));
+        const cy=h*0.46;  // centrado um pouco acima do meio (boca alta)
+        // névoa: a boca escura ganha nitidez conforme chega
+        const near=Math.max(0,Math.min(1,1-d/400));
+        // gradiente radial: centro preto (abertura), bordas esfumando pra rocha
+        const g=x.createRadialGradient(vx,cy,archW*0.1, vx,cy,archW*0.62);
+        g.addColorStop(0,`rgba(2,4,5,${(0.7+near*0.3).toFixed(2)})`);
+        g.addColorStop(0.7,`rgba(4,7,8,${(0.5+near*0.3).toFixed(2)})`);
+        g.addColorStop(1,"rgba(6,10,11,0)");
+        x.save();
+        x.beginPath();
+        // arco: meia-elipse (boca arredondada em cima, base no "chão" do corredor)
+        x.ellipse(vx,cy,archW*0.5,archH*0.5,0,0,6.28);
+        x.fillStyle=g; x.fill();
+        // contorno de rocha ao redor da boca quando perto (a borda da abertura)
+        if(near>0.2){
+          x.globalAlpha=near*0.5;
+          x.strokeStyle=isOld?"rgba(40,34,22,0.7)":"rgba(34,40,44,0.7)";
+          x.lineWidth=2+near*4;
+          x.beginPath();x.ellipse(vx,cy,archW*0.5,archH*0.5,0,0,6.28);x.stroke();
+        }
+        x.restore();
+        x.globalAlpha=1;
       }
     }
 
