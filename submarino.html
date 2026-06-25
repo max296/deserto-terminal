@@ -206,21 +206,24 @@
       hw: CANYON[i].hw+(CANYON[j].hw-CANYON[i].hw)*f
     };
   }
-  // estrutura da petroleira no começo do canyon: DOIS pilares grossos + parede no fundo atrás.
+  // estrutura da petroleira: DOIS pilares grossos + parede no fundo, ACIMA do ponto de partida.
+  // você começa a 200m; a estação fica entre a moonpool (100m) e o início (200m), então
+  // ela está ATRÁS/ACIMA de você — descer (pra frente) é o canyon aberto. olhar pra cima = estação.
   // MESMA fórmula usada no raycaster, pra colisão e visual baterem exatamente.
+  const STATION_TOP=120, STATION_PILLARS_LO=150, STATION_PILLARS_HI=195;
   function isPillar(x, depth){
-    if(depth>START_DEPTH+70 || depth<START_DEPTH-10) return false;
+    if(depth>STATION_PILLARS_HI || depth<STATION_PILLARS_LO) return false;
     const c=corridorAt(depth);
-    // dois pilares grossos, posicionados a ~40% de cada lado do centro do corredor
+    // dois pilares grossos, posicionados a ~45% de cada lado do centro do corredor
     const halfGap=c.hw*0.45;       // distância de cada pilar ao centro
     const pillarR=c.hw*0.28;       // raio (grossura) de cada pilar
     const dxL=Math.abs(x-(c.cx-halfGap));
     const dxR=Math.abs(x-(c.cx+halfGap));
     return (dxL<pillarR || dxR<pillarR);
   }
-  // parede no fundo da estrutura da petroleira (logo atrás dos pilares)
+  // parede/teto da estrutura da petroleira (no topo, acima dos pilares) — fecha o começo por cima
   function isStationBackWall(depth){
-    return depth>=START_DEPTH+62 && depth<=START_DEPTH+70;
+    return depth>=STATION_TOP && depth<STATION_TOP+10;
   }
 
   // ====== navegação compartilhada ======
@@ -380,9 +383,10 @@
       // TETO da caverna: vem DA DISTÂNCIA, não de cima de você. cada ponto do teto decide
       // se existe pela SUA profundidade no mundo (wy): pontos fundos (>limiar) têm teto,
       // pontos rasos não. então a boca da caverna aparece à frente e você entra nela.
-      // aproximação LONGA: o teto se forma ao longo de ~400m antes do coral.
-      const CAVE_APPROACH=400;
-      const ceilStart=CORAL_DEPTH-CAVE_APPROACH;   // teto começa a existir a partir daqui
+      // aproximação: a caverna se forma ao longo de ~200m antes do coral (400m->600m).
+      // os primeiros ~200m da descida (200->400) são mar aberto, SEM teto.
+      const CAVE_APPROACH=200;
+      const ceilStart=CORAL_DEPTH-CAVE_APPROACH;   // teto começa a existir a partir daqui (400m)
       // só processa se há chance de ver teto à frente (você ou o que está à frente passou de ceilStart)
       if(depth+SIGHT > ceilStart){
         for(let y=Math.floor(horizon)-1; y>=0; y-=ROWH){
@@ -689,9 +693,10 @@
         const stepX = Math.sin(rad)*SPEED*dt*drive;
         const stepD = Math.cos(rad)*SPEED*dt*drive;
 
-        // limites de profundidade (sem falso "impacto": só trava a componente vertical)
+        // limite de profundidade: pode subir até o topo da estação (lá a parede/pilares barram).
+        // o fundo é MAX_DEPTH. assim a estrutura da petroleira fica visível acima do início.
         let nd = nav.depth + stepD;
-        nd = Math.max(START_DEPTH, Math.min(MAX_DEPTH, nd));
+        nd = Math.max(STATION_TOP, Math.min(MAX_DEPTH, nd));
 
         // colisão lateral checada NA profundidade de destino, eixo X separado:
         // tenta mover X; se sair do corredor, encosta na parede (desliza, não trava tudo).
