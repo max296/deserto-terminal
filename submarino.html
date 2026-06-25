@@ -306,30 +306,45 @@
       const WALLH=h*46;                    // fator de altura da parede projetada
       const horizon=h/2;
 
-      // ---- CHÃO e TETO em perspectiva (gradiente + linhas que convergem e rolam) ----
-      // teto (metade de cima): mais escuro, fecha o corredor por cima
-      const cg=x.createLinearGradient(0,0,0,horizon);
-      if(isOld){ cg.addColorStop(0,"#0c0f0d"); cg.addColorStop(1,"#05080a"); }
-      else { cg.addColorStop(0,"#0a0f12"); cg.addColorStop(1,"#04080b"); }
-      x.fillStyle=cg; x.fillRect(0,0,w,horizon);
-      // chão (metade de baixo): cinza levemente mais claro perto, escurece ao fundo
+      // ---- CHÃO (sempre) e TETO (só na caverna, passando o coral) em perspectiva ----
+      const inCave = depth>CORAL_DEPTH;   // teto só fecha quando entra na caverna/fenda
+      // CHÃO: cinza nitidamente mais claro que o breu, escurece ao fundo. perspectiva.
       const flg=x.createLinearGradient(0,horizon,0,h);
-      if(isOld){ flg.addColorStop(0,"#05080a"); flg.addColorStop(1,"#181a16"); }
-      else { flg.addColorStop(0,"#04080b"); flg.addColorStop(1,"#141c20"); }
+      if(isOld){ flg.addColorStop(0,"rgba(20,24,20,0)"); flg.addColorStop(0.35,"#1c2018"); flg.addColorStop(1,"#2c3022"); }
+      else { flg.addColorStop(0,"rgba(18,26,30,0)"); flg.addColorStop(0.35,"#1a242a"); flg.addColorStop(1,"#28343c"); }
       x.fillStyle=flg; x.fillRect(0,horizon,w,h-horizon);
-      // linhas de profundidade do chão e teto que rolam conforme afunda (sensação de mover)
+      // linhas de profundidade do chão (apertam perto do horizonte) que rolam ao afundar
       const scrollF=(depth*8)%70;
-      x.lineWidth=1;
-      for(let i=0;i<11;i++){
-        const f=i/11;
-        // chão: linhas que apertam perto do horizonte (perspectiva)
-        const yF=h - (h-horizon)*Math.pow(f,1.7) - (scrollF/70)*((h-horizon)*(Math.pow((i+1)/11,1.7)-Math.pow(f,1.7)));
-        x.strokeStyle=isOld?`rgba(60,56,38,${(0.06+(1-f)*0.16).toFixed(2)})`:`rgba(52,64,72,${(0.06+(1-f)*0.15).toFixed(2)})`;
+      x.lineWidth=1.5;
+      for(let i=0;i<12;i++){
+        const f=i/12;
+        const yF=h - (h-horizon)*Math.pow(f,1.7) - (scrollF/70)*((h-horizon)*(Math.pow((i+1)/12,1.7)-Math.pow(f,1.7)));
+        x.strokeStyle=isOld?`rgba(90,82,54,${(0.12+(1-f)*0.30).toFixed(2)})`:`rgba(80,98,108,${(0.12+(1-f)*0.28).toFixed(2)})`;
         x.beginPath();x.moveTo(0,yF);x.lineTo(w,yF);x.stroke();
-        // teto: espelhado
-        const yC=(horizon)*Math.pow(f,1.7) + (scrollF/70)*((horizon)*(Math.pow((i+1)/11,1.7)-Math.pow(f,1.7)));
-        x.strokeStyle=isOld?`rgba(40,38,28,${(0.05+(1-f)*0.12).toFixed(2)})`:`rgba(38,46,52,${(0.05+(1-f)*0.12).toFixed(2)})`;
-        x.beginPath();x.moveTo(0,yC);x.lineTo(w,yC);x.stroke();
+      }
+      // linhas longitudinais do chão convergindo pro ponto de fuga (reforça perspectiva)
+      const vanish=w/2 - (headShift%w);
+      x.strokeStyle=isOld?"rgba(80,72,48,0.16)":"rgba(72,88,98,0.15)";
+      x.lineWidth=1;
+      for(let k=-3;k<=3;k++){
+        const fx=w/2 + k*w*0.18;
+        x.beginPath();x.moveTo(fx,h);x.lineTo(w/2 + k*w*0.04, horizon);x.stroke();
+      }
+      // TETO: só na caverna. fecha o corredor por cima com gradiente escuro + linhas.
+      if(inCave){
+        // entra gradualmente nos primeiros metros da caverna
+        const caveF=Math.min(1,(depth-CORAL_DEPTH)/120);
+        const cg=x.createLinearGradient(0,0,0,horizon);
+        if(isOld){ cg.addColorStop(0,`rgba(18,20,16,${(caveF*0.95).toFixed(2)})`); cg.addColorStop(1,"rgba(8,11,10,0)"); }
+        else { cg.addColorStop(0,`rgba(16,22,26,${(caveF*0.95).toFixed(2)})`); cg.addColorStop(1,"rgba(6,10,12,0)"); }
+        x.fillStyle=cg; x.fillRect(0,0,w,horizon);
+        x.lineWidth=1.5;
+        for(let i=0;i<12;i++){
+          const f=i/12;
+          const yC=(horizon)*Math.pow(f,1.7) + (scrollF/70)*((horizon)*(Math.pow((i+1)/12,1.7)-Math.pow(f,1.7)));
+          x.strokeStyle=isOld?`rgba(70,64,44,${(caveF*(0.10+(1-f)*0.22)).toFixed(2)})`:`rgba(62,76,86,${(caveF*(0.10+(1-f)*0.20)).toFixed(2)})`;
+          x.beginPath();x.moveTo(0,yC);x.lineTo(w,yC);x.stroke();
+        }
       }
 
       // ---- PAREDES (raycasting) ----
