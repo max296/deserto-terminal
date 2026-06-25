@@ -206,6 +206,13 @@
       hw: CANYON[i].hw+(CANYON[j].hw-CANYON[i].hw)*f
     };
   }
+  // pilares da estação no começo do canyon: grade esparsa de colunas sólidas.
+  // MESMA fórmula usada no raycaster, pra colisão e visual baterem exatamente.
+  function isPillar(x, depth){
+    if(depth>START_DEPTH+90 || depth<START_DEPTH-10) return false;
+    const px=((x%26)+26)%26, pz=((depth%30)+30)%30;
+    return (px<9 && pz<11);
+  }
 
   // ====== navegação compartilhada ======
   // estado autoritativo: submarine/nav = { x, depth, heading, mode }
@@ -320,18 +327,24 @@
       const COLN=Math.max(40, Math.floor(w/8));                // resolução horizontal do chão
       const cstep=w/COLN;
 
-      // textura de rocha: ruído estável nas coordenadas do mundo (não desliza, gira certo)
+      // textura de rocha: ruído quebrado nas coords do mundo (sem listras alinhadas)
       function rockShade(wx,wy){
-        const n = Math.sin(wx*0.05)*Math.sin(wy*0.05) + 0.5*Math.sin(wx*0.13+wy*0.07) + 0.5*Math.sin(wy*0.11);
-        return (n+2)/4; // 0..1
+        const n = Math.sin(wx*0.21+wy*0.13)*Math.sin(wy*0.17-wx*0.09)
+                + 0.5*Math.sin(wx*0.41-wy*0.37)
+                + 0.4*Math.sin((wx+wy)*0.29);
+        return Math.max(0,Math.min(1,(n+1.9)/3.8));
       }
 
-      // CHÃO: do horizonte até a base. mais escuro, com linhas de grid do mundo.
-      const GRID=14;   // tamanho da célula do mundo (onde as linhas do chão aparecem)
+      // CHÃO: do horizonte até a base. escurece com a distância (some no breu).
+      const GRID=16;          // tamanho da célula do mundo (linhas do chão)
+      const SIGHT=13;         // alcance de visão (unidades de mundo) — além disso é breu total
       for(let y=Math.floor(horizon)+1; y<h; y+=ROWH){
-        const p = y - horizon;                  // distância vertical do horizonte
-        const rowDist = (h*0.5) / p;            // distância no mundo desta fileira (perspectiva)
-        const fog = Math.max(0, Math.min(1, 1 - rowDist/16)); // perto=1, longe=0
+        const p = y - horizon;
+        const rowDist = (h*0.5) / p;
+        // FOG: visibilidade cai com a distância. perto=1 (vê), longe=0 (breu)
+        const vis = Math.max(0, Math.min(1, 1 - rowDist/SIGHT));
+        const vis2 = vis*vis;   // queda mais acentuada (escurece rápido ao longe)
+        if(vis2<=0.01) continue; // longe demais: deixa o breu (fundo já é escuro)
         const wx0 = posX + rowDist*(dirX - planeX);
         const wy0 = posY + rowDist*(dirY - planeY);
         const wx1 = posX + rowDist*(dirX + planeX);
@@ -340,23 +353,16 @@
           const t2=cxi/COLN;
           const wx=wx0+(wx1-wx0)*t2, wy=wy0+(wy1-wy0)*t2;
           const sh=rockShade(wx,wy);
-          // detecção de borda de célula do mundo: perto de uma linha de grade -> linha do chão.
-          // distância à linha de grade mais próxima em x e y (no mundo)
+          // linha de grade: bem sutil, só um leve realce nas bordas de célula
           const gx=Math.abs(((wx%GRID)+GRID)%GRID - GRID/2);
           const gy=Math.abs(((wy%GRID)+GRID)%GRID - GRID/2);
-          const edge=Math.min(gx,gy);            // 0 = em cima da linha
-          const onLine = edge < (0.5 + rowDist*0.06);  // linha mais "grossa" ao longe (constância visual)
-          // cor base de rocha, MAIS ESCURA que antes
-          const lum=(0.07 + fog*0.36)*(0.5+sh*0.6);
+          const onLine = Math.min(gx,gy) < 0.7;
+          // cor de rocha escura, modulada pela textura, e MULTIPLICADA pela visibilidade (fog)
+          let base = (22 + sh*30) * vis2;
+          if(onLine) base += 12*vis2;   // linha: leve clareada, some junto no fog
           let r,g,b;
-          if(isOld){ r=(58*lum)|0; g=(50*lum)|0; b=(33*lum)|0; r+=9;g+=7;b+=4; }
-          else { r=(48*lum)|0; g=(55*lum)|0; b=(59*lum)|0; r+=8;g+=9;b+=9; }
-          // linha de grade: tom próximo ao chão, levemente mais claro (rabiscado pelo ruído)
-          if(onLine){
-            const lf=(0.5+fog*0.5)*(0.8+sh*0.4);
-            if(isOld){ r=(95*lf)|0; g=(82*lf)|0; b=(54*lf)|0; }
-            else { r=(78*lf)|0; g=(90*lf)|0; b=(98*lf)|0; }
-          }
+          if(isOld){ r=(base*1.0)|0; g=(base*0.86)|0; b=(base*0.6)|0; }
+          else { r=(base*0.85)|0; g=(base*0.97)|0; b=(base*1.04)|0; }
           x.fillStyle=`rgb(${r},${g},${b})`;
           x.fillRect(cxi*cstep, y, cstep+1, ROWH+1);
         }
@@ -364,16 +370,16 @@
 
       // TETO: começa a se aproximar ANTES do coral (você vê a caverna chegando) e fecha
       // gradualmente. de 450m até 600m ele desce do breu; passando 600m está fechado.
-      const CAVE_APPROACH=150;  // metros antes do coral em que o teto começa a aparecer
+      const CAVE_APPROACH=150;
       const ceilStart=CORAL_DEPTH-CAVE_APPROACH;
       if(depth>ceilStart){
-        // 0 ao começar a aproximação, 1 já fechado (no coral em diante)
         const caveF=Math.min(1,(depth-ceilStart)/CAVE_APPROACH);
         for(let y=Math.floor(horizon)-1; y>=0; y-=ROWH){
           const p = horizon - y;
           const rowDist = (h*0.5)/p;
-          const fog = Math.max(0, Math.min(1, 1 - rowDist/16))*caveF;
-          if(fog<=0.01) continue;
+          const vis = Math.max(0, Math.min(1, 1 - rowDist/SIGHT));
+          const vis2 = vis*vis*caveF;     // fog + aproximação gradual da caverna
+          if(vis2<=0.01) continue;
           const wx0 = posX + rowDist*(dirX - planeX);
           const wy0 = posY + rowDist*(dirY - planeY);
           const wx1 = posX + rowDist*(dirX + planeX);
@@ -384,16 +390,12 @@
             const sh=rockShade(wx+500,wy+500);
             const gx=Math.abs(((wx%GRID)+GRID)%GRID - GRID/2);
             const gy=Math.abs(((wy%GRID)+GRID)%GRID - GRID/2);
-            const onLine=Math.min(gx,gy) < (0.5 + rowDist*0.06);
-            const lum=(0.06+fog*0.30)*(0.5+sh*0.6);
+            const onLine=Math.min(gx,gy) < 0.7;
+            let base=(20+sh*28)*vis2;
+            if(onLine) base+=10*vis2;
             let r,g,b;
-            if(isOld){ r=(52*lum)|0; g=(44*lum)|0; b=(30*lum)|0; r+=8;g+=6;b+=4; }
-            else { r=(42*lum)|0; g=(49*lum)|0; b=(53*lum)|0; r+=7;g+=8;b+=8; }
-            if(onLine){
-              const lf=(0.5+fog*0.5)*(0.8+sh*0.4);
-              if(isOld){ r=(82*lf)|0; g=(70*lf)|0; b=(46*lf)|0; }
-              else { r=(66*lf)|0; g=(78*lf)|0; b=(86*lf)|0; }
-            }
+            if(isOld){ r=(base*1.0)|0; g=(base*0.84)|0; b=(base*0.58)|0; }
+            else { r=(base*0.82)|0; g=(base*0.95)|0; b=(base*1.02)|0; }
             x.fillStyle=`rgb(${r},${g},${b})`;
             x.fillRect(cxi*cstep, y, cstep+1, ROWH+1);
           }
@@ -412,12 +414,8 @@
           rx=nav.x+dx*s; rd=nav.depth+dd*s;
           // parede sólida no FUNDO do canyon
           if(rd>=MAX_DEPTH){ dist=s; hitSide=0; hitKind="floor_end"; break; }
-          // PILARES da estação/plataforma perto do começo (faixa START_DEPTH..START_DEPTH+90)
-          if(rd<=START_DEPTH+90 && rd>=START_DEPTH-10){
-            // pilares em grade esparsa: colunas sólidas a cada ~26u em x, ~30u em profundidade
-            const px=((rx%26)+26)%26, pz=((rd%30)+30)%30;
-            if(px<9 && pz<11){ dist=s; hitSide=0; hitKind="pillar"; break; }
-          }
+          // PILARES da estação/plataforma perto do começo (fonte única: isPillar)
+          if(isPillar(rx,rd)){ dist=s; hitSide=0; hitKind="pillar"; break; }
           const cc=corridorAt(rd);
           if(rx < cc.cx-cc.hw){ dist=s; hitSide=-1; break; }   // margem esquerda
           if(rx > cc.cx+cc.hw){ dist=s; hitSide=1;  break; }   // margem direita
@@ -428,8 +426,10 @@
         // altura da tira (perto = alta)
         const sh2=Math.min(h*1.4, WALLH/perp);
         const y0=h/2 - sh2/2, y1=h/2 + sh2/2;
-        // sombreamento por distância: perto mais claro, longe afunda no breu
-        const fog=Math.max(0, 1 - perp/MAXD);
+        // sombreamento por distância: visão limitada, longe some no breu (mesmo princípio do chão)
+        const WALL_SIGHT=210;   // alcance de visão das paredes (unidades de mundo)
+        const fog=Math.max(0, Math.min(1, 1 - dist/WALL_SIGHT));
+        const fog2=fog*fog;     // queda acentuada
         // textura: faixa de rocha que rola verticalmente com a profundidade + ruído por coluna
         const wallU = (hitSide<0 ? rd : rd*1.0);
         const tex = 0.5 + 0.5*Math.sin(wallU*0.18 + i*0.4) * Math.sin(wallU*0.05+ i*0.13);
@@ -442,16 +442,16 @@
         }
         // cor base cinza; margem esquerda levemente mais escura (sombreamento direcional)
         const sideShade = hitSide<0 ? 0.82 : 1.0;
-        let base = (16 + tex*26)*sideShade*(0.45+fog*0.55) + lit*((isOld?70:90));
+        let base = ((16 + tex*26)*sideShade*fog2 + lit*fog*(isOld?70:90));
         base=Math.min(190,base);
         let r,g,b;
         if(hitKind==="pillar"){
           // pilares da estação: metálico, mais frio e liso (estrutura, não rocha)
-          const pb=Math.min(200,(28+tex*18)*(0.5+fog*0.5)+lit*95);
+          const pb=Math.min(200,(30+tex*18)*fog2+lit*fog*95);
           r=pb*0.82|0; g=pb*0.88|0; b=pb*0.96|0;
         } else if(hitKind==="floor_end"){
           // parede de fundo: rocha maciça mais escura, fechando o canyon
-          const fb=Math.min(170,(12+tex*20)*(0.4+fog*0.5)+lit*(isOld?60:78));
+          const fb=Math.min(170,(14+tex*20)*fog2+lit*fog*(isOld?60:78));
           if(isOld){ r=fb*0.95|0; g=fb*0.85|0; b=fb*0.66|0; } else { r=fb*0.88|0; g=fb*0.96|0; b=fb*1.0|0; }
         } else if(isOld){ r=base*1.0|0; g=base*0.9|0; b=base*0.72|0; }   // luz quente do velho
         else { r=base*0.92|0; g=base*1.0|0; b=base*1.06|0; }      // luz fria neurostat
@@ -680,6 +680,14 @@
         let hitWall=false;
         if(nx < leftWall){ nx = leftWall; hitWall=true; }
         else if(nx > rightWall){ nx = rightWall; hitWall=true; }
+
+        // colisão com PILARES: se o destino cai num pilar, não entra (testa eixos separados
+        // pra deslizar ao redor em vez de travar de vez).
+        if(isPillar(nx, nd)){
+          if(!isPillar(nav.x, nd)){ nx=nav.x; hitWall=true; }      // bloqueia X, mantém profundidade
+          else if(!isPillar(nx, nav.depth)){ nd=nav.depth; hitWall=true; } // bloqueia profundidade
+          else { nx=nav.x; nd=nav.depth; hitWall=true; }            // encurralado: para
+        }
 
         // aplica: a profundidade sempre avança (dentro dos limites), o X desliza preso à parede
         nav.x = nx;
