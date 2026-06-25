@@ -206,12 +206,21 @@
       hw: CANYON[i].hw+(CANYON[j].hw-CANYON[i].hw)*f
     };
   }
-  // pilares da estação no começo do canyon: grade esparsa de colunas sólidas.
+  // estrutura da petroleira no começo do canyon: DOIS pilares grossos + parede no fundo atrás.
   // MESMA fórmula usada no raycaster, pra colisão e visual baterem exatamente.
   function isPillar(x, depth){
-    if(depth>START_DEPTH+90 || depth<START_DEPTH-10) return false;
-    const px=((x%26)+26)%26, pz=((depth%30)+30)%30;
-    return (px<9 && pz<11);
+    if(depth>START_DEPTH+70 || depth<START_DEPTH-10) return false;
+    const c=corridorAt(depth);
+    // dois pilares grossos, posicionados a ~40% de cada lado do centro do corredor
+    const halfGap=c.hw*0.45;       // distância de cada pilar ao centro
+    const pillarR=c.hw*0.28;       // raio (grossura) de cada pilar
+    const dxL=Math.abs(x-(c.cx-halfGap));
+    const dxR=Math.abs(x-(c.cx+halfGap));
+    return (dxL<pillarR || dxR<pillarR);
+  }
+  // parede no fundo da estrutura da petroleira (logo atrás dos pilares)
+  function isStationBackWall(depth){
+    return depth>=START_DEPTH+62 && depth<=START_DEPTH+70;
   }
 
   // ====== navegação compartilhada ======
@@ -368,18 +377,19 @@
         }
       }
 
-      // TETO: começa a se aproximar ANTES do coral (você vê a caverna chegando) e fecha
-      // gradualmente. de 450m até 600m ele desce do breu; passando 600m está fechado.
-      const CAVE_APPROACH=150;
-      const ceilStart=CORAL_DEPTH-CAVE_APPROACH;
-      if(depth>ceilStart){
-        const caveF=Math.min(1,(depth-ceilStart)/CAVE_APPROACH);
+      // TETO da caverna: vem DA DISTÂNCIA, não de cima de você. cada ponto do teto decide
+      // se existe pela SUA profundidade no mundo (wy): pontos fundos (>limiar) têm teto,
+      // pontos rasos não. então a boca da caverna aparece à frente e você entra nela.
+      // aproximação LONGA: o teto se forma ao longo de ~400m antes do coral.
+      const CAVE_APPROACH=400;
+      const ceilStart=CORAL_DEPTH-CAVE_APPROACH;   // teto começa a existir a partir daqui
+      // só processa se há chance de ver teto à frente (você ou o que está à frente passou de ceilStart)
+      if(depth+SIGHT > ceilStart){
         for(let y=Math.floor(horizon)-1; y>=0; y-=ROWH){
           const p = horizon - y;
           const rowDist = (h*0.5)/p;
           const vis = Math.max(0, Math.min(1, 1 - rowDist/SIGHT));
-          const vis2 = vis*vis*caveF;     // fog + aproximação gradual da caverna
-          if(vis2<=0.01) continue;
+          if(vis<=0.05) continue;
           const wx0 = posX + rowDist*(dirX - planeX);
           const wy0 = posY + rowDist*(dirY - planeY);
           const wx1 = posX + rowDist*(dirX + planeX);
@@ -387,6 +397,11 @@
           for(let cxi=0; cxi<COLN; cxi++){
             const t2=cxi/COLN;
             const wx=wx0+(wx1-wx0)*t2, wy=wy0+(wy1-wy0)*t2;
+            // ESTE ponto do mundo tem teto? depende da profundidade DELE (wy), não do sub.
+            // caveF=0 antes do limiar, sobe gradual ao longo de CAVE_APPROACH até 1 no coral.
+            const caveF=Math.max(0, Math.min(1, (wy-ceilStart)/CAVE_APPROACH));
+            const vis2=vis*vis*caveF;
+            if(vis2<=0.01) continue;
             const sh=rockShade(wx+500,wy+500);
             const gx=Math.abs(((wx%GRID)+GRID)%GRID - GRID/2);
             const gy=Math.abs(((wy%GRID)+GRID)%GRID - GRID/2);
@@ -414,7 +429,9 @@
           rx=nav.x+dx*s; rd=nav.depth+dd*s;
           // parede sólida no FUNDO do canyon
           if(rd>=MAX_DEPTH){ dist=s; hitSide=0; hitKind="floor_end"; break; }
-          // PILARES da estação/plataforma perto do começo (fonte única: isPillar)
+          // parede de fundo da estrutura da petroleira (atrás dos pilares)
+          if(isStationBackWall(rd)){ dist=s; hitSide=0; hitKind="station_wall"; break; }
+          // PILARES grossos da petroleira perto do começo (fonte única: isPillar)
           if(isPillar(rx,rd)){ dist=s; hitSide=0; hitKind="pillar"; break; }
           const cc=corridorAt(rd);
           if(rx < cc.cx-cc.hw){ dist=s; hitSide=-1; break; }   // margem esquerda
@@ -449,8 +466,8 @@
           // pilares da estação: metálico, mais frio e liso (estrutura, não rocha)
           const pb=Math.min(200,(30+tex*18)*fog2+lit*fog*95);
           r=pb*0.82|0; g=pb*0.88|0; b=pb*0.96|0;
-        } else if(hitKind==="floor_end"){
-          // parede de fundo: rocha maciça mais escura, fechando o canyon
+        } else if(hitKind==="floor_end" || hitKind==="station_wall"){
+          // parede de rocha maciça mais escura (fundo do canyon ou fundo da estação)
           const fb=Math.min(170,(14+tex*20)*fog2+lit*fog*(isOld?60:78));
           if(isOld){ r=fb*0.95|0; g=fb*0.85|0; b=fb*0.66|0; } else { r=fb*0.88|0; g=fb*0.96|0; b=fb*1.0|0; }
         } else if(isOld){ r=base*1.0|0; g=base*0.9|0; b=base*0.72|0; }   // luz quente do velho
@@ -552,12 +569,17 @@
     const wmotes=[]; for(let i=0;i<70;i++)wmotes.push({x:Math.random(),y:Math.random(),r:Math.random()*2+0.5,v:Math.random()*0.4+0.2});
     const bubbles=[]; for(let i=0;i<50;i++)bubbles.push({x:Math.random(),y:Math.random(),r:Math.random()*3+1,v:Math.random()*0.5+0.3});
     let st=0;
-    const SPEED=0.0036;   // ~4.6s, transição lenta e fluida
+    const SPEED=0.0022;   // ~7.5s, transição mais longa e fluida
+    const MOON_DEPTH=100, DIVE_DEPTH=START_DEPTH;  // superfície a 100m, submerso a 200m
     diveAnim=setInterval(()=>{
       p+=SPEED; st++;
+      // anima o depth junto: descendo 100->200, subindo 200->100
+      const depthProg = ascending ? (1-p) : p;
+      nav.depth = MOON_DEPTH + (DIVE_DEPTH-MOON_DEPTH)*Math.max(0,Math.min(1,depthProg));
       if(p>=1){
         p=1; clearInterval(diveAnim); diveAnim=null;
         splashCv.style.display="none"; splashActive=false;
+        nav.depth = ascending ? MOON_DEPTH : DIVE_DEPTH;
         // moonpool já saiu de vista: descendo mostra o breu; subindo mantém a moonpool
         elMoon.style.display = ascending ? "block" : "none";
         if(ascending) positionMoon();
@@ -687,6 +709,10 @@
           if(!isPillar(nav.x, nd)){ nx=nav.x; hitWall=true; }      // bloqueia X, mantém profundidade
           else if(!isPillar(nx, nav.depth)){ nd=nav.depth; hitWall=true; } // bloqueia profundidade
           else { nx=nav.x; nd=nav.depth; hitWall=true; }            // encurralado: para
+        }
+        // colisão com a parede de fundo da estação: não atravessa em direção à moonpool
+        if(isStationBackWall(nd) && !isStationBackWall(nav.depth)){
+          nd=nav.depth; hitWall=true;
         }
 
         // aplica: a profundidade sempre avança (dentro dos limites), o X desliza preso à parede
