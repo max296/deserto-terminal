@@ -405,30 +405,26 @@
           if(rx < cc.cx-cc.hw){ dist=s; hitSide=-1; break; }   // margem esquerda
           if(rx > cc.cx+cc.hw){ dist=s; hitSide=1;  break; }   // margem direita
         }
-        // ---- TETO DA CAVERNA: vem DO FUNDO (horizonte) até você. quando a caverna está longe,
-        // o teto é uma faixa fina colada ao HORIZONTE (lá no fundo do corredor). conforme você
-        // se aproxima, a borda inferior desce do horizonte e o teto cresce pra cima, te envolvendo.
+        // ---- TETO DA CAVERNA: superfície de rocha cobrindo o TOPO (de y=0 até a borda inferior),
+        // igual o chão cobre de baixo. vem do fundo: longe, a borda fica alta (só uma fresta de teto
+        // no topo, fechando lá no fundo); conforme você chega, a borda DESCE e o teto cobre mais,
+        // até envolver o topo inteiro quando você entra na caverna.
         const CAVE_VIS_RANGE=200;   // alcance em que a caverna fica visível
         if(caveDist && caveDist<CAVE_VIS_RANGE){
-          // proximidade: 0 longe (no limite do alcance) -> 1 perto (chegando na boca)
-          const near=Math.max(0, Math.min(1, 1 - caveDist/CAVE_VIS_RANGE));
-          // o teto desce do horizonte: longe = só lambe o horizonte; perto = desce até ~meio da tela.
-          const drop=horizon*near*near;            // quanto o teto desceu abaixo do horizonte
-          const cyBottom=horizon - drop;           // borda inferior do teto (parte do horizonte e sobe)
-          // mas pra "vir do fundo", quando longe o teto fica FINO no horizonte: limita o topo.
-          // a borda SUPERIOR do teto sobe até o topo da tela conforme você chega.
-          const cyTop=horizon*(1-near);            // longe: começa perto do horizonte (faixa fina);
-                                                    // perto: começa no topo (teto cheio)
-          const fogC=Math.max(0,Math.min(1,1-caveDist/CAVE_VIS_RANGE));
+          const near=Math.max(0, Math.min(1, 1 - caveDist/CAVE_VIS_RANGE));  // 0 longe -> 1 perto
+          // borda inferior do teto: longe = bem alta (fresta no topo); perto = desce até ~horizonte.
+          // de uma fração pequena do topo (longe) até a linha do horizonte (dentro da caverna).
+          const cyBottom = horizon * (0.12 + 0.88*near*near);   // sobe suave do topo até o horizonte
+          const fogC=Math.max(0,Math.min(1,0.4+near*0.6));
           const colXc=(i+0.5)*colW;
           const wyCross=nav.depth+dd*caveDist;
           const wxCross=nav.x+dx*caveDist;
-          for(let yy=Math.floor(cyTop); yy<cyBottom; yy+=ROWH){
-            if(yy<0) continue;
+          // preenche o teto do TOPO da tela até a borda inferior (cobre tudo acima)
+          for(let yy=0; yy<cyBottom; yy+=ROWH){
             const sh=rockShade(wxCross*0.6 + yy*0.7, wyCross*0.6 - yy*0.5);
             let cl=0;
             if(lightOn) cl=Math.max(0,1-Math.abs(beamX-colXc/w)*2.2)*Math.max(0,1-Math.abs(beamY-(yy/h))*1.4);
-            let base=(14+sh*24)*(0.35+fogC*0.55)+cl*(isOld?55:72);
+            let base=(14+sh*24)*fogC+cl*(isOld?55:72);
             base=Math.min(170,base);
             let r,g,b;
             if(isOld){ r=base*1.0|0; g=base*0.85|0; b=base*0.6|0; } else { r=base*0.85|0; g=base*0.96|0; b=base*1.02|0; }
