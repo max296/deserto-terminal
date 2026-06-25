@@ -306,85 +306,73 @@
       const WALLH=h*46;                    // fator de altura da parede projetada
       const horizon=h/2;
 
-      // ---- CHÃO (sempre) e TETO (só na caverna, passando o coral) em perspectiva ----
-      const inCave = depth>CORAL_DEPTH;   // teto só fecha quando entra na caverna/fenda
-      // CHÃO: tom de rocha, mais OPACO. escurece ao fundo.
-      const flg=x.createLinearGradient(0,horizon,0,h);
-      if(isOld){ flg.addColorStop(0,"rgba(34,28,18,0)"); flg.addColorStop(0.3,"#2e271a"); flg.addColorStop(1,"#473a26"); }
-      else { flg.addColorStop(0,"rgba(30,32,30,0)"); flg.addColorStop(0.3,"#2a2c26"); flg.addColorStop(1,"#3e4036"); }
-      x.fillStyle=flg; x.fillRect(0,horizon,w,h-horizon);
+      // ---- CHÃO (sempre) e TETO (só na caverna) via FLOOR CASTING (gira com o heading) ----
+      // técnica lodev: pra cada linha y abaixo do horizonte, a distância é posZ/(y-horizon),
+      // e o ponto no mundo = pos + dist*rayDir, com rayDir interpolando entre os vetores
+      // (dir - plane) e (dir + plane), que GIRAM com o heading. textura por ruído no mundo.
+      const inCave = depth>CORAL_DEPTH;
+      // vetores de câmera (giram com o heading): dir = pra onde olha, plane = perpendicular (FOV)
+      const dirX=Math.sin(hdg), dirY=Math.cos(hdg);            // direção (no plano x,profundidade)
+      const planeMag=Math.tan(FOV/2);
+      const planeX=Math.cos(hdg)*planeMag, planeY=-Math.sin(hdg)*planeMag;  // plano de câmera
+      const posX=nav.x, posY=depth;                            // posição no mundo
+      const ROWH=3;                                            // resolução vertical (blocos de 3px)
+      const COLN=Math.max(40, Math.floor(w/8));                // resolução horizontal do chão
+      const cstep=w/COLN;
 
-      // rolagem MAIS LENTA (proporcional ao avanço real, não exagerada)
-      const scrollF=(depth*0.12)%1;
-      const floorH=h-horizon;
-      // curvatura de caverna: quanto a linha "afunda" no centro (chão) ou "sobe" no centro (teto)
-      const CURVE=h*0.10;
-
-      // linhas TRANSVERSAIS do chão (perspectiva correta, rabiscadas, leve curva côncava)
-      x.lineWidth=1.5;
-      for(let i=1;i<=14;i++){
-        const d = i - scrollF;
-        const yF = horizon + floorH*(1.2/(d*0.9+0.6));
-        if(yF<horizon || yF>h+2) continue;
-        const fog = Math.max(0, Math.min(1, (yF-horizon)/floorH)); // 0 longe, 1 perto
-        x.strokeStyle = isOld
-          ? `rgba(140,120,80,${(0.16+fog*0.40).toFixed(2)})`
-          : `rgba(110,124,132,${(0.16+fog*0.36).toFixed(2)})`;
-        x.beginPath();
-        const amp = 1.5 + fog*5;
-        const curveAmt = CURVE*fog;       // curva mais visível perto
-        const segs = 18;
-        for(let sx=0; sx<=segs; sx++){
-          const u=sx/segs, px=u*w;
-          const n=Math.sin(i*23.1 + sx*1.7)*0.5 + Math.sin(i*5.3 + sx*4.1)*0.5;
-          // curva côncava: centro do chão levemente mais baixo (afasta), bordas sobem
-          const curve = -curveAmt*(1 - 4*Math.pow(u-0.5,2));  // parábola: 0 nas bordas, -1 no centro
-          const py=yF + n*amp + curve;
-          sx===0?x.moveTo(px,py):x.lineTo(px,py);
-        }
-        x.stroke();
+      // textura de rocha: ruído estável nas coordenadas do mundo (não desliza, gira certo)
+      function rockShade(wx,wy){
+        const n = Math.sin(wx*0.05)*Math.sin(wy*0.05) + 0.5*Math.sin(wx*0.13+wy*0.07) + 0.5*Math.sin(wy*0.11);
+        return (n+2)/4; // 0..1
       }
 
-      // linhas LONGITUDINAIS convergindo pro ponto de fuga, rabiscadas
-      x.strokeStyle=isOld?"rgba(128,108,72,0.18)":"rgba(98,112,122,0.16)";
-      x.lineWidth=1;
-      for(let k=-4;k<=4;k++){
-        const baseX=w/2 + k*w*0.16, topX=w/2 + k*w*0.03;
-        x.beginPath();
-        const segs=10;
-        for(let sx=0;sx<=segs;sx++){
-          const f=sx/segs, px=baseX+(topX-baseX)*f, py=h+(horizon-h)*f;
-          const n=Math.sin(k*7.7+sx*2.3)*1.5*(1-f);
-          sx===0?x.moveTo(px+n,py):x.lineTo(px+n,py);
+      // CHÃO: do horizonte até a base
+      for(let y=Math.floor(horizon)+1; y<h; y+=ROWH){
+        const p = y - horizon;                  // distância vertical do horizonte
+        const rowDist = (h*0.5) / p;            // distância no mundo desta fileira (perspectiva)
+        const fog = Math.max(0, Math.min(1, 1 - rowDist/16)); // perto=1, longe=0
+        // pontos do mundo nas pontas esquerda e direita da scanline
+        const wx0 = posX + rowDist*(dirX - planeX);
+        const wy0 = posY + rowDist*(dirY - planeY);
+        const wx1 = posX + rowDist*(dirX + planeX);
+        const wy1 = posY + rowDist*(dirY + planeY);
+        for(let cxi=0; cxi<COLN; cxi++){
+          const t2=cxi/COLN;
+          const wx=wx0+(wx1-wx0)*t2, wy=wy0+(wy1-wy0)*t2;
+          const sh=rockShade(wx,wy);
+          // cor: tom de rocha (quente no velho, frio no neurostat), escurece com distância
+          const lum=(0.10 + fog*0.5)*(0.5+sh*0.7);
+          let r,g,b;
+          if(isOld){ r=(70*lum)|0; g=(60*lum)|0; b=(40*lum)|0; r+=14;g+=11;b+=7; }
+          else { r=(58*lum)|0; g=(66*lum)|0; b=(70*lum)|0; r+=12;g+=13;b+=12; }
+          x.fillStyle=`rgb(${r},${g},${b})`;
+          x.fillRect(cxi*cstep, y, cstep+1, ROWH+1);
         }
-        x.stroke();
       }
 
-      // TETO: só na caverna. espelha o chão (mesma perspectiva/rabisco) + CURVATURA de abóbada.
+      // TETO: só na caverna, espelhado (com curvatura de abóbada via deslocamento vertical)
       if(inCave){
         const caveF=Math.min(1,(depth-CORAL_DEPTH)/120);
-        const cg=x.createLinearGradient(0,0,0,horizon);
-        if(isOld){ cg.addColorStop(0,`rgba(40,33,21,${(caveF*0.98).toFixed(2)})`); cg.addColorStop(1,"rgba(12,14,12,0)"); }
-        else { cg.addColorStop(0,`rgba(34,37,33,${(caveF*0.98).toFixed(2)})`); cg.addColorStop(1,"rgba(10,13,14,0)"); }
-        x.fillStyle=cg; x.fillRect(0,0,w,horizon);
-        x.lineWidth=1.5;
-        for(let i=1;i<=14;i++){
-          const d=i-scrollF;
-          const yC=horizon - horizon*(1.2/(d*0.9+0.6));
-          if(yC>horizon || yC<-2) continue;
-          const fog=Math.max(0,Math.min(1,(horizon-yC)/horizon));
-          x.strokeStyle=isOld?`rgba(140,120,80,${(caveF*(0.14+fog*0.34)).toFixed(2)})`:`rgba(110,124,132,${(caveF*(0.14+fog*0.30)).toFixed(2)})`;
-          x.beginPath();
-          const amp=1.5+fog*5, curveAmt=CURVE*fog*1.4, segs=18;  // abóbada mais pronunciada que o chão
-          for(let sx=0;sx<=segs;sx++){
-            const u=sx/segs, px=u*w;
-            const n=Math.sin(i*19.3+sx*1.9)*0.5+Math.sin(i*6.1+sx*3.7)*0.5;
-            // parábola INVERTIDA: centro do teto SOBE (abóbada), bordas descem pras paredes
-            const curve = curveAmt*(1 - 4*Math.pow(u-0.5,2));   // +no centro, 0 nas bordas
-            const py=yC + n*amp - curve;
-            sx===0?x.moveTo(px,py):x.lineTo(px,py);
+        for(let y=Math.floor(horizon)-1; y>=0; y-=ROWH){
+          const p = horizon - y;
+          const rowDist = (h*0.5)/p;
+          const fog = Math.max(0, Math.min(1, 1 - rowDist/16))*caveF;
+          if(fog<=0.01) continue;
+          const wx0 = posX + rowDist*(dirX - planeX);
+          const wy0 = posY + rowDist*(dirY - planeY);
+          const wx1 = posX + rowDist*(dirX + planeX);
+          const wy1 = posY + rowDist*(dirY + planeY);
+          for(let cxi=0; cxi<COLN; cxi++){
+            const t2=cxi/COLN;
+            const wx=wx0+(wx1-wx0)*t2, wy=wy0+(wy1-wy0)*t2;
+            const sh=rockShade(wx+500,wy+500); // offset pra textura do teto diferir do chão
+            const lum=(0.08+fog*0.42)*(0.5+sh*0.7);
+            let r,g,b;
+            if(isOld){ r=(66*lum)|0; g=(56*lum)|0; b=(38*lum)|0; r+=12;g+=10;b+=6; }
+            else { r=(54*lum)|0; g=(62*lum)|0; b=(66*lum)|0; r+=10;g+=11;b+=11; }
+            x.fillStyle=`rgb(${r},${g},${b})`;
+            x.fillRect(cxi*cstep, y, cstep+1, ROWH+1);
           }
-          x.stroke();
         }
       }
 
