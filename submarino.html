@@ -405,29 +405,29 @@
           if(rx < cc.cx-cc.hw){ dist=s; hitSide=-1; break; }   // margem esquerda
           if(rx > cc.cx+cc.hw){ dist=s; hitSide=1;  break; }   // margem direita
         }
-        // ---- TETO DA CAVERNA nesta coluna: se o raio cruzou o limiar, desenha o teto descendo
-        // do topo da tela até a altura projetada pela DISTÂNCIA do cruzamento. longe = teto fino
-        // lá no topo; perto = teto desce e toma a tela. cresce pela perspectiva, igual paredes.
-        if(caveDist){
-          const perpC=Math.max(8, caveDist*Math.cos(camAng));
-          const shC2=Math.min(h*1.4, WALLH/perpC);   // "altura" projetada do teto àquela distância
-          const cy1=h/2 - shC2/2;                     // borda inferior do teto (desce conforme chega)
-          const fogC=Math.max(0,Math.min(1,1-caveDist/520));
+        // ---- TETO DA CAVERNA nesta coluna: se o raio cruzou o limiar DENTRO do alcance de visão.
+        // a caverna só fica visível a partir de ~180m de distância (senão apareceria longe demais,
+        // virando um bloco central). dentro disso, a borda desce pela distância -> cresce suave.
+        const CAVE_VIS_RANGE=180;   // só vê a caverna a até 180m de distância
+        if(caveDist && caveDist<CAVE_VIS_RANGE){
+          // borda inferior do teto: longe (180m) = bem fino no topo; perto (~40m) = enche.
+          const ceilFrac=Math.max(0, Math.min(1, 1 - (caveDist-40)/(CAVE_VIS_RANGE-40)));
+          const cy1=horizon*ceilFrac;
+          const fogC=Math.max(0,Math.min(1,1-caveDist/CAVE_VIS_RANGE));
           const colXc=(i+0.5)*colW;
-          if(cy1>0){
-            // teto de rocha do topo (0) até cy1
-            const cseg=Math.max(2,Math.floor(cy1/4));
-            for(let yy=0; yy<cy1; yy+=4){
-              const wy2=nav.depth+dd*caveDist;     // profundidade do mundo no cruzamento
-              const sh=rockShade(nav.x+dx*caveDist+yy*0.1, wy2+yy*0.3);
+          const wyCross=nav.depth+dd*caveDist;
+          const wxCross=nav.x+dx*caveDist;
+          if(cy1>1){
+            for(let yy=0; yy<cy1; yy+=ROWH){
+              const sh=rockShade(wxCross*0.6 + yy*0.7, wyCross*0.6 - yy*0.5);
               let cl=0;
               if(lightOn) cl=Math.max(0,1-Math.abs(beamX-colXc/w)*2.2)*Math.max(0,1-Math.abs(beamY-(yy/h))*1.4);
-              let base=(14+sh*26)*(0.4+fogC*0.6)+cl*(isOld?60:80);
-              base=Math.min(180,base);
+              let base=(14+sh*24)*(0.35+fogC*0.55)+cl*(isOld?55:72);
+              base=Math.min(170,base);
               let r,g,b;
               if(isOld){ r=base*1.0|0; g=base*0.85|0; b=base*0.6|0; } else { r=base*0.85|0; g=base*0.96|0; b=base*1.02|0; }
               x.fillStyle=`rgb(${r},${g},${b})`;
-              x.fillRect(colXc-colW/2-0.5, yy, colW+1, 5);
+              x.fillRect(colXc-colW/2-0.5, yy, colW+1, ROWH+1);
             }
           }
         }
