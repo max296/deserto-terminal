@@ -279,6 +279,17 @@
   // particulas
   const motes=[];
   for(let i=0;i<120;i++)motes.push({x:Math.random(),y:Math.random(),r:Math.random()*1.8+.3,vy:Math.random()*.0006+.0002,drift:(Math.random()-.5)*.0003,ph:Math.random()*6.28});
+  // PLÂNCTON: partículas suspensas FIXAS no espaço do mundo (x lateral, profundidade, altura).
+  // só ficam visíveis onde a lanterna ilumina — como sujeira/plâncton brilhando no facho.
+  // distribuídas num volume ao redor do submarino; recicladas quando ficam pra trás.
+  const plankton=[];
+  for(let i=0;i<260;i++)plankton.push({
+    ox:(Math.random()-0.5)*220,        // deslocamento lateral em relação ao sub (mundo)
+    od:Math.random()*180+10,           // distância à frente (profundidade relativa)
+    oy:(Math.random()-0.5)*1.6,        // altura (-1 teto .. +1 chão), 0 = linha do olho
+    r:Math.random()*1.6+0.4,
+    ph:Math.random()*6.28
+  });
 
   let t=0;
   function draw(){
@@ -376,11 +387,6 @@
           x.fillRect(cxi*cstep, y, cstep+1, ROWH+1);
         }
       }
-      // limiar da caverna (protótipo: coral ~600m). o TETO é desenhado no raycaster de paredes,
-      // coluna a coluna: cada raio acha ONDE cruza este limiar e desenha o teto projetado por
-      // aquela distância — então a caverna cresce de longe pela perspectiva, igual paredes.
-      const CAVE_MOUTH=CORAL_DEPTH;
-
 
       // ---- PAREDES (raycasting) ----
       // direção de cada raio: varre de -FOV/2 a +FOV/2 em torno do heading.
@@ -390,11 +396,8 @@
         const dx=Math.sin(a), dd=Math.cos(a);      // passo lateral / profundidade
         // marcha o raio até bater em algo: margem do corredor, parede de fundo, ou pilar.
         let rx=nav.x, rd=nav.depth, dist=0, hitSide=0, hitKind="wall";
-        let caveDist=0;   // distância onde o raio cruza o limiar da caverna (0 = não cruza)
         for(let s=STEP;s<=MAXD;s+=STEP){
           rx=nav.x+dx*s; rd=nav.depth+dd*s;
-          // registra o primeiro cruzamento do limiar da caverna (pra desenhar o teto descendo de lá)
-          if(!caveDist && rd>=CAVE_MOUTH) caveDist=s;
           // parede sólida no FUNDO do canyon
           if(rd>=MAX_DEPTH){ dist=s; hitSide=0; hitKind="floor_end"; break; }
           // parede de fundo da estrutura da petroleira (atrás dos pilares)
@@ -405,34 +408,7 @@
           if(rx < cc.cx-cc.hw){ dist=s; hitSide=-1; break; }   // margem esquerda
           if(rx > cc.cx+cc.hw){ dist=s; hitSide=1;  break; }   // margem direita
         }
-        // ---- TETO DA CAVERNA: superfície de rocha cobrindo o TOPO (de y=0 até a borda inferior),
-        // igual o chão cobre de baixo. vem do fundo: longe, a borda fica alta (só uma fresta de teto
-        // no topo, fechando lá no fundo); conforme você chega, a borda DESCE e o teto cobre mais,
-        // até envolver o topo inteiro quando você entra na caverna.
-        const CAVE_VIS_RANGE=200;   // alcance em que a caverna fica visível
-        if(caveDist && caveDist<CAVE_VIS_RANGE){
-          const near=Math.max(0, Math.min(1, 1 - caveDist/CAVE_VIS_RANGE));  // 0 longe -> 1 perto
-          // borda inferior do teto: longe = bem alta (fresta no topo); perto = desce até ~horizonte.
-          // de uma fração pequena do topo (longe) até a linha do horizonte (dentro da caverna).
-          const cyBottom = horizon * (0.12 + 0.88*near*near);   // sobe suave do topo até o horizonte
-          const fogC=Math.max(0,Math.min(1,0.4+near*0.6));
-          const colXc=(i+0.5)*colW;
-          const wyCross=nav.depth+dd*caveDist;
-          const wxCross=nav.x+dx*caveDist;
-          // preenche o teto do TOPO da tela até a borda inferior (cobre tudo acima)
-          for(let yy=0; yy<cyBottom; yy+=ROWH){
-            const sh=rockShade(wxCross*0.6 + yy*0.7, wyCross*0.6 - yy*0.5);
-            let cl=0;
-            if(lightOn) cl=Math.max(0,1-Math.abs(beamX-colXc/w)*2.2)*Math.max(0,1-Math.abs(beamY-(yy/h))*1.4);
-            let base=(14+sh*24)*fogC+cl*(isOld?55:72);
-            base=Math.min(170,base);
-            let r,g,b;
-            if(isOld){ r=base*1.0|0; g=base*0.85|0; b=base*0.6|0; } else { r=base*0.85|0; g=base*0.96|0; b=base*1.02|0; }
-            x.fillStyle=`rgb(${r},${g},${b})`;
-            x.fillRect(colXc-colW/2-0.5, yy, colW+1, ROWH+1);
-          }
-        }
-        if(!dist) continue;  // sem parede à frente: caminho aberto (mas o teto acima já foi tratado)
+        if(!dist) continue;  // sem parede à frente: caminho aberto
         // corrige distorção fish-eye: distância perpendicular
         const perp=Math.max(8, dist*Math.cos(camAng));
         // altura da tira (perto = alta)
@@ -511,6 +487,60 @@
           for(let a=0;a<6.28;a+=0.3){const rr=R*(0.78+0.32*Math.sin(a*3+t*0.018));const px=cx+Math.cos(a)*rr,py=cy+Math.sin(a)*rr*1.25;a===0?x.moveTo(px,py):x.lineTo(px,py);}
           x.closePath();x.fill();x.restore();
         }
+      }
+    }
+
+    // ===== NÉVOA: camada que fecha a visão gradualmente ao longe (densa no horizonte) =====
+    if(mode==="diving" || mode==="reeling"){
+      const isOld=(STATE.skin||"old").startsWith("old");
+      const hz=h/2;
+      const fg=x.createLinearGradient(0,hz-h*0.18,0,hz+h*0.18);
+      // a névoa é mais densa na faixa do horizonte (o "longe") e rala perto (topo/base = perto)
+      const fogcol = isOld ? "20,24,26" : "16,22,26";
+      fg.addColorStop(0,`rgba(${fogcol},0)`);
+      fg.addColorStop(0.5,`rgba(${fogcol},0.5)`);
+      fg.addColorStop(1,`rgba(${fogcol},0)`);
+      x.fillStyle=fg; x.fillRect(0,hz-h*0.18,w,h*0.36);
+
+      // ===== PLÂNCTON iluminado: partículas suspensas que só brilham sob o facho da lanterna =====
+      if(lightOn){
+        const hdg=nav.heading*Math.PI/180;
+        const ch=Math.cos(-hdg), sh=Math.sin(-hdg);
+        const FOV=Math.PI*78/180, halfFov=FOV/2;
+        const bxw=beamX*w, byh=beamY*h;
+        for(const pk of plankton){
+          // recicla: conforme o sub desce, a profundidade relativa diminui; quando passa, reposiciona
+          pk.od -= (nav.depth - (pk._lastDepth??nav.depth));
+          pk._lastDepth = nav.depth;
+          if(pk.od < 6){ pk.od += 180; pk.ox=(Math.random()-0.5)*220; pk.oy=(Math.random()-0.5)*1.6; }
+          if(pk.od > 200){ pk.od -= 180; }
+          // posição no mundo relativa ao sub: lateral ox, frente od. rotaciona pelo heading.
+          const lat=pk.ox, fwd=pk.od;
+          const camX=lat*ch - fwd*sh;
+          const camZ=lat*sh + fwd*ch;
+          if(camZ<=4) continue;                       // atrás/perto demais
+          const rel=Math.atan2(-camX,camZ);
+          if(Math.abs(rel)>halfFov*1.05) continue;    // fora do campo de visão
+          // projeta na tela: x pelo ângulo (igual paredes), y pela altura/distância (perspectiva)
+          const sx2=w/2 + (rel/halfFov)*(w/2);
+          const scale=Math.min(2.4, 40/camZ);
+          const py=h/2 + pk.oy*(h*0.42)*scale;
+          // só brilha se estiver perto do facho (na tela) — simula a luz batendo na partícula
+          const distBeam=Math.hypot(sx2-bxw, py-byh);
+          const R=Math.min(w,h)*0.55;
+          if(distBeam>R) continue;
+          const litByBeam=Math.max(0,1-distBeam/R);
+          // mais fundo na água = mais fraco; cintila levemente
+          const depthFade=Math.max(0,Math.min(1,1-camZ/200));
+          const tw=0.6+0.4*Math.sin(t*0.06+pk.ph);
+          const alpha=litByBeam*litByBeam*depthFade*tw*0.9;
+          if(alpha<0.02) continue;
+          const sz=pk.r*scale;
+          x.globalAlpha=alpha;
+          x.fillStyle = isOld ? "rgba(225,205,150,1)" : "rgba(200,225,235,1)";
+          x.beginPath();x.arc(sx2,py,sz,0,6.28);x.fill();
+        }
+        x.globalAlpha=1;
       }
     }
 
