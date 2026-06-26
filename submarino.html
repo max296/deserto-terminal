@@ -450,11 +450,11 @@
         // corrige distorção fish-eye: distância perpendicular
         const perp=Math.max(8, dist*Math.cos(camAng));
         const colX=(i+0.5)*colW;
-        // PAREDE DE ESCURIDÃO: parede preta sólida na distância máxima de visão. cobre do topo
-        // até a base projetada dela (abaixo fica o chão imediato, entre você e a parede).
+        // PAREDE DE ESCURIDÃO: parede preta sólida na distância máxima de visão, com a MESMA
+        // altura projetada de uma parede do corredor naquela distância (fecha o corredor ao fundo).
         if(hitKind==="dark"){
           const shD=Math.min(h*1.4, WALLH/perp);
-          const yb=h/2 + shD/2;   // base da parede de escuridão projetada
+          const y0d=h/2 - shD/2, y1d=h/2 + shD/2;
           let litDark=0;
           if(lightOn){
             const bxw=beamX*w, byh=beamY*h;
@@ -462,7 +462,7 @@
           }
           const dv=Math.round(litDark*litDark*16);
           x.fillStyle=`rgb(${dv},${dv+1},${dv+2})`;
-          x.fillRect(colX-colW/2-0.5, 0, colW+1, yb);
+          x.fillRect(colX-colW/2-0.5, y0d, colW+1, y1d-y0d);
           continue;
         }
         // altura da tira (perto = alta)
