@@ -294,39 +294,39 @@
   });
 
   // move e desenha as partículas suspensas conforme o movimento REAL do submarino.
-  // guarda o último estado pra calcular o delta de movimento entre frames.
+  // eixos: depth = vertical do mundo (descer faz partículas DESCEREM na tela e vice-versa);
+  // avanço no plano + giro = deslizamento horizontal. movimento leve, não dominam a tela.
   let _pLastD=null, _pLastX=null, _pLastH=null;
   function drawParticles(w,h,depth){
     const dDepth = depth - (_pLastD ?? depth);
     const dX     = nav.x  - (_pLastX ?? nav.x);
     let dHead    = nav.heading - (_pLastH ?? nav.heading);
-    if(dHead>180)dHead-=360; if(dHead<-180)dHead+=360;   // normaliza giro
+    if(dHead>180)dHead-=360; if(dHead<-180)dHead+=360;
     _pLastD=depth; _pLastX=nav.x; _pLastH=nav.heading;
     const hdg=nav.heading*Math.PI/180;
-    // movimento decomposto: "pra frente" (na direção do heading) e "lateral"
+    // avanço "para frente" no plano (pra escoamento radial leve = sensação de atravessar a água)
     const fwdMove = dDepth*Math.cos(hdg) + dX*Math.sin(hdg);
-    const latMove = dX*Math.cos(hdg) - dDepth*Math.sin(hdg);
     for(const m of motes){
-      // avançar aproxima as partículas (pz cresce); recuar afasta
-      m.pz += fwdMove*0.012;
-      if(m.pz>1){ m.pz-=1; m.sx=Math.random(); m.sy=Math.random(); }
-      if(m.pz<0){ m.pz+=1; m.sx=Math.random(); m.sy=Math.random(); }
-      // escoamento radial: quanto mais perto (pz alto), mais a partícula se afasta do centro
-      const spread=0.35+m.pz*0.75;
+      // escoamento radial leve do centro pras bordas conforme avança (vêm em tua direção)
+      m.pz += Math.abs(fwdMove)*0.010;
+      if(m.pz>1) m.pz-=1;
+      const spread=0.4+m.pz*0.7;
       let px=(m.sx-0.5)*w*spread + w/2;
       let py=(m.sy-0.5)*h*spread + h/2;
-      // giro e deslocamento lateral deslizam as partículas horizontalmente
-      px -= (latMove*2.2 + dHead*4.0);
-      // subir/descer: o componente vertical do movimento escoa as partículas no eixo Y.
-      // (quando o heading aponta "pra cima/baixo", parte do fwdMove vira deslocamento vertical visual)
-      py += dDepth*0.9;
-      px=((px%w)+w)%w;                         // wrap horizontal
-      if(py<0)py+=h; if(py>h)py-=h;            // wrap vertical
-      // tamanho cresce SÓ um pouco com a proximidade (não dominar a tela)
-      const sz=m.r*(0.7+m.pz*0.6);
+      // DESLIZAMENTO VERTICAL pela mudança de profundidade: descer (dDepth>0) -> partículas DESCEM.
+      // este é o sinal claro de subir/descer que faltava.
+      m.scrollY = (m.scrollY||0) + dDepth*3.0;
+      // DESLIZAMENTO HORIZONTAL por giro e movimento lateral
+      m.scrollX = (m.scrollX||0) - (dX*2.2 + dHead*4.0);
+      px += m.scrollX;
+      py += m.scrollY;
+      // wrap nos dois eixos (campo contínuo de partículas)
+      px=((px%w)+w)%w;
+      py=((py%h)+h)%h;
+      const sz=m.r*(0.7+m.pz*0.5);
       const tw=0.5+0.5*Math.sin(t*0.05+m.ph);
-      x.globalAlpha=(0.05+m.pz*0.26)*(0.5+tw*0.5);
-      x.fillStyle="rgba(175,205,210,.7)";
+      x.globalAlpha=(0.06+m.pz*0.24)*(0.5+tw*0.5);
+      x.fillStyle="rgba(180,210,215,.7)";
       x.beginPath();x.arc(px,py,sz,0,6.28);x.fill();
     }
     x.globalAlpha=1;
@@ -341,18 +341,16 @@
     const st=STATE.state||"void";              // estado de ameaça (DM)
     const depth=nav.depth, mode=nav.mode;      // pilotagem
 
-    // ===== ILUMINAÇÃO AMBIENTE: decai com a profundidade (mais clara a 200m, escurece ao fundo).
-    // na twilight zone a luz some; aqui modela isso pra a cena ficar progressivamente mais escura.
-    // ambLight: 1 perto da superfície -> ~0.15 no fundo.
+    // ===== ILUMINAÇÃO AMBIENTE: decai com a profundidade. clara a 200m, escurece ao fundo.
     const depthN = Math.max(0, Math.min(1, (depth-START_DEPTH)/(MAX_DEPTH-START_DEPTH)));
-    const ambLight = 1 - depthN*0.85;          // 1 (200m) -> 0.15 (fundo)
+    const ambLight = 1 - depthN*0.8;            // 1 (200m) -> 0.2 (fundo)
     const beyond = depth>CORAL_DEPTH;
-    // fundo do breu: tom esverdeado/frio, brilho modulado pela luz ambiente
-    const baseTop = beyond ? [10,20,16] : [12,26,30];
-    const tb = baseTop.map(c=>Math.round(c*(0.4+ambLight*0.6)));
-    const g=x.createRadialGradient(w/2,h*0.45,8,w/2,h*0.5,Math.max(w,h)*0.7);
+    // fundo do breu: tom esverdeado/frio; a 200m bem mais claro, escurecendo com a profundidade
+    const baseTop = beyond ? [26,44,40] : [34,58,64];
+    const tb = baseTop.map(c=>Math.round(c*(0.25+ambLight*0.95)));
+    const g=x.createRadialGradient(w/2,h*0.45,8,w/2,h*0.5,Math.max(w,h)*0.75);
     g.addColorStop(0, `rgb(${tb[0]},${tb[1]},${tb[2]})`);
-    g.addColorStop(1, beyond ? "#020604" : "#010305");
+    g.addColorStop(1, beyond ? `rgb(${Math.round(4*(0.3+ambLight))},${Math.round(8*(0.3+ambLight))},${Math.round(7*(0.3+ambLight))})` : `rgb(${Math.round(6*(0.3+ambLight))},${Math.round(12*(0.3+ambLight))},${Math.round(14*(0.3+ambLight))})`);
     x.fillStyle=g;x.fillRect(0,0,w,h);
 
     // ===== RAYCASTER: corredor coerente (paredes = margens do canyon) =====
@@ -413,8 +411,8 @@
           const gx=Math.abs(((wx%GRID)+GRID)%GRID - GRID/2);
           const gy=Math.abs(((wy%GRID)+GRID)%GRID - GRID/2);
           const onLine = Math.min(gx,gy) < 0.7;
-          let base = (22 + sh*30) * vis2;
-          if(onLine) base += 12*vis2;
+          let base = (22 + sh*30) * vis2 * (0.45+ambLight*0.7);
+          if(onLine) base += 12*vis2*(0.45+ambLight*0.7);
           let r,g,b;
           if(isOld){ r=(base*1.0)|0; g=(base*0.86)|0; b=(base*0.6)|0; }
           else { r=(base*0.85)|0; g=(base*0.97)|0; b=(base*1.04)|0; }
@@ -463,9 +461,10 @@
           const bxw=beamX*w, byh=beamY*h;
           lit=Math.max(0,1-Math.abs(bxw-colX)/(w*0.42))*Math.max(0,1-Math.abs(byh-h/2)/(h*0.6));
         }
-        // cor base cinza; margem esquerda levemente mais escura (sombreamento direcional)
+        // cor base cinza; margem esquerda levemente mais escura (sombreamento direcional).
+        // a base (luz ambiente) decai com a profundidade; o termo da lanterna (lit) NÃO.
         const sideShade = hitSide<0 ? 0.82 : 1.0;
-        let base = ((16 + tex*26)*sideShade*fog2 + lit*fog*(isOld?70:90));
+        let base = ((16 + tex*26)*sideShade*fog2*(0.4+ambLight*0.75) + lit*fog*(isOld?70:90));
         base=Math.min(190,base);
         let r,g,b;
         if(hitKind==="pillar"){
@@ -514,18 +513,16 @@
       }
     }
 
-    // ===== NÉVOA: camada que fecha a visão gradualmente ao longe (densa no horizonte) =====
+    // ===== NÉVOA: funde o PONTO DE FUGA com o fundo, escondendo o "quadrado" distante e o que
+    // renderiza em tempo real lá longe. usa a COR DO FUNDO (tb) pra fundir sem criar buraco escuro.
     if(mode==="diving" || mode==="reeling"){
-      const isOld=(STATE.skin||"old").startsWith("old");
       const hz=h*0.5;
-      // névoa concentrada no PONTO DE FUGA (centro/horizonte): esconde o "quadrado" distante e
-      // o que renderiza em tempo real lá longe. densidade sobe com a profundidade (vê-se menos fundo).
-      const fogcol = beyond ? "6,12,11" : "9,17,19";
-      const dens = 0.6 + depthN*0.35;     // mais fundo -> névoa mais densa
-      const fg=x.createRadialGradient(w/2,hz,4, w/2,hz, Math.min(w,h)*0.62);
-      fg.addColorStop(0,`rgba(${fogcol},${dens.toFixed(2)})`);
-      fg.addColorStop(0.4,`rgba(${fogcol},${(dens*0.6).toFixed(2)})`);
-      fg.addColorStop(1,`rgba(${fogcol},0)`);
+      const fc=`${tb[0]},${tb[1]},${tb[2]}`;     // mesma cor do fundo -> o longe "vira" o fundo
+      const fg=x.createRadialGradient(w/2,hz,2, w/2,hz, Math.min(w,h)*0.78);
+      fg.addColorStop(0,`rgba(${fc},0.98)`);     // centro: quase totalmente coberto
+      fg.addColorStop(0.28,`rgba(${fc},0.85)`);
+      fg.addColorStop(0.6,`rgba(${fc},0.4)`);
+      fg.addColorStop(1,`rgba(${fc},0)`);
       x.fillStyle=fg; x.fillRect(0,0,w,h);
 
       // ===== PLÂNCTON iluminado: partículas suspensas que só brilham sob o facho da lanterna =====
