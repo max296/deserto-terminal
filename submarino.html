@@ -427,7 +427,10 @@
         const a = hdg + (i/(COLS-1) - 0.5)*FOV;   // ângulo absoluto do raio
         const camAng = (i/(COLS-1)-0.5)*FOV;       // ângulo relativo (p/ corrigir fish-eye)
         const dx=Math.sin(a), dd=Math.cos(a);      // passo lateral / profundidade
-        // marcha o raio até bater em algo: margem do corredor, parede de fundo, ou pilar.
+        // distância máxima de visão: além disso é breu (parede de escuridão que acompanha o sub).
+        // encolhe com a profundidade — vê-se menos longe no fundo da twilight zone.
+        const VIS_WALL = 150 - depthN*70;          // ~150u perto da superfície -> ~80u no fundo
+        // marcha o raio até bater em algo: margem do corredor, parede de fundo, pilar, ou escuridão.
         let rx=nav.x, rd=nav.depth, dist=0, hitSide=0, hitKind="wall";
         for(let s=STEP;s<=MAXD;s+=STEP){
           rx=nav.x+dx*s; rd=nav.depth+dd*s;
@@ -440,10 +443,28 @@
           const cc=corridorAt(rd);
           if(rx < cc.cx-cc.hw){ dist=s; hitSide=-1; break; }   // margem esquerda
           if(rx > cc.cx+cc.hw){ dist=s; hitSide=1;  break; }   // margem direita
+          // nada bateu ainda: ao atingir a distância máxima de visão, vira PAREDE DE ESCURIDÃO
+          if(s>=VIS_WALL){ dist=s; hitSide=0; hitKind="dark"; break; }
         }
-        if(!dist) continue;  // sem parede à frente: caminho aberto
+        if(!dist) continue;  // (não deve ocorrer — a escuridão sempre fecha)
         // corrige distorção fish-eye: distância perpendicular
         const perp=Math.max(8, dist*Math.cos(camAng));
+        const colX=(i+0.5)*colW;
+        // PAREDE DE ESCURIDÃO: parede preta sólida na distância máxima de visão. cobre do topo
+        // até a base projetada dela (abaixo fica o chão imediato, entre você e a parede).
+        if(hitKind==="dark"){
+          const shD=Math.min(h*1.4, WALLH/perp);
+          const yb=h/2 + shD/2;   // base da parede de escuridão projetada
+          let litDark=0;
+          if(lightOn){
+            const bxw=beamX*w, byh=beamY*h;
+            litDark=Math.max(0,1-Math.abs(bxw-colX)/(w*0.5))*Math.max(0,1-Math.abs(byh-h/2)/(h*0.7));
+          }
+          const dv=Math.round(litDark*litDark*16);
+          x.fillStyle=`rgb(${dv},${dv+1},${dv+2})`;
+          x.fillRect(colX-colW/2-0.5, 0, colW+1, yb);
+          continue;
+        }
         // altura da tira (perto = alta)
         const sh2=Math.min(h*1.4, WALLH/perp);
         const y0=h/2 - sh2/2, y1=h/2 + sh2/2;
@@ -455,7 +476,6 @@
         const wallU = (hitSide<0 ? rd : rd*1.0);
         const tex = 0.5 + 0.5*Math.sin(wallU*0.18 + i*0.4) * Math.sin(wallU*0.05+ i*0.13);
         // luz do facho: clareia a coluna se o facho aponta perto dela (x e y)
-        const colX=(i+0.5)*colW;
         let lit=0;
         if(lightOn){
           const bxw=beamX*w, byh=beamY*h;
@@ -513,22 +533,8 @@
       }
     }
 
-    // ===== PAREDE DE ESCURIDÃO: o fundo/distância vira breu. perto fica LIVRE (jogadores veem
-    // à frente), e a partir de certa distância fecha rápido numa parede escura. não dá pra ver
-    // longe na twilight zone num canyon. escurece pro preto, mais denso e mais rápido com a profundidade.
+    // (a parede de escuridão é uma superfície sólida no mundo, tratada pelo raycaster — ver acima)
     if(mode==="diving" || mode==="reeling"){
-      const hz=h*0.5;
-      // cor da escuridão: breu bem escuro (não a cor clara do fundo) -> forma a "parede"
-      const dk = beyond ? "2,5,4" : "3,7,8";
-      // raio do "buraco livre" no centro: encolhe com a profundidade (vê-se menos longe no fundo)
-      const fullR  = Math.min(w,h)*0.62;
-      const clearFrac = Math.max(0.12, Math.min(0.6, (0.42 - depthN*0.16))); // fração livre central
-      const fg=x.createRadialGradient(w/2,hz,2, w/2,hz, fullR);
-      fg.addColorStop(0,`rgba(${dk},0)`);                       // centro: livre
-      fg.addColorStop(clearFrac,`rgba(${dk},0)`);               // ainda livre até aqui
-      fg.addColorStop(Math.min(0.97,clearFrac+0.18),`rgba(${dk},0.7)`); // fecha rápido (parede)
-      fg.addColorStop(1,`rgba(${dk},1)`);                       // breu total ao fundo
-      x.fillStyle=fg; x.fillRect(0,0,w,h);
 
       // ===== PLÂNCTON iluminado: partículas suspensas que só brilham sob o facho da lanterna =====
       if(lightOn){
