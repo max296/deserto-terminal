@@ -429,7 +429,7 @@
         const dx=Math.sin(a), dd=Math.cos(a);      // passo lateral / profundidade
         // distância máxima de visão: além disso é breu (parede de escuridão que acompanha o sub).
         // encolhe com a profundidade — vê-se menos longe no fundo da twilight zone.
-        const VIS_WALL = 150 - depthN*70;          // ~150u perto da superfície -> ~80u no fundo
+        const VIS_WALL = 320 - depthN*120;          // ~320u perto da superfície -> ~200u no fundo
         // marcha o raio até bater em algo: margem do corredor, parede de fundo, pilar, ou escuridão.
         let rx=nav.x, rd=nav.depth, dist=0, hitSide=0, hitKind="wall";
         for(let s=STEP;s<=MAXD;s+=STEP){
@@ -469,7 +469,7 @@
         const sh2=Math.min(h*1.4, WALLH/perp);
         const y0=h/2 - sh2/2, y1=h/2 + sh2/2;
         // sombreamento por distância: visão limitada, longe some no breu (mesmo princípio do chão)
-        const WALL_SIGHT=210;   // alcance de visão das paredes (unidades de mundo)
+        const WALL_SIGHT=340;   // alcance de visão das paredes (acompanha a parede de escuridão)
         const fog=Math.max(0, Math.min(1, 1 - dist/WALL_SIGHT));
         const fog2=fog*fog;     // queda acentuada
         // textura: faixa de rocha que rola verticalmente com a profundidade + ruído por coluna
