@@ -340,6 +340,7 @@
     x.clearRect(0,0,w,h);
     const st=STATE.state||"void";              // estado de ameaça (DM)
     const depth=nav.depth, mode=nav.mode;      // pilotagem
+    const isOld=(STATE.skin||"old").startsWith("old");   // skin do casco (escopo do draw inteiro)
 
     // ===== ILUMINAÇÃO AMBIENTE: decai com a profundidade. clara a 200m, escurece ao fundo.
     const depthN = Math.max(0, Math.min(1, (depth-START_DEPTH)/(MAX_DEPTH-START_DEPTH)));
@@ -359,7 +360,6 @@
     // calculo a distância perpendicular (corrige fish-eye) e desenho uma tira vertical
     // de altura ∝ 1/dist com textura de rocha. perto = alta; longe = baixa.
     if(mode==="diving" || mode==="reeling"){
-      const isOld=(STATE.skin||"old").startsWith("old");
       const FOV=Math.PI*78/180;            // campo de visão (rad)
       const hdg=nav.heading*Math.PI/180;   // 0 = descer (+depth)
       const COLS=Math.max(60, Math.floor(w/4)); // colunas do raycaster (resolução)
@@ -570,7 +570,7 @@
     // FACHO
     if(lightOn){
       x.save();x.globalCompositeOperation="screen";
-      const bx=beamX*w,by=beamY*h, isOld=(STATE.skin||"old").startsWith("old");
+      const bx=beamX*w,by=beamY*h;
       const R=Math.min(w,h)*0.62;
       const bg=x.createRadialGradient(bx,by,5,bx,by,R);
       if(isOld){bg.addColorStop(0,"rgba(210,180,100,.24)");bg.addColorStop(.4,"rgba(150,120,55,.08)");}
