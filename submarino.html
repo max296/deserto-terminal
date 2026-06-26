@@ -313,9 +313,9 @@
       const spread=0.4+m.pz*0.7;
       let px=(m.sx-0.5)*w*spread + w/2;
       let py=(m.sy-0.5)*h*spread + h/2;
-      // DESLIZAMENTO VERTICAL pela mudança de profundidade: descer (dDepth>0) -> partículas DESCEM.
-      // este é o sinal claro de subir/descer que faltava.
-      m.scrollY = (m.scrollY||0) + dDepth*3.0;
+      // DESLIZAMENTO VERTICAL pela mudança de profundidade: descer (dDepth>0) -> as partículas
+      // ficam pra trás/acima -> SOBEM na tela. subir (dDepth<0) -> descem. (sinal invertido)
+      m.scrollY = (m.scrollY||0) - dDepth*3.0;
       // DESLIZAMENTO HORIZONTAL por giro e movimento lateral
       m.scrollX = (m.scrollX||0) - (dX*2.2 + dHead*4.0);
       px += m.scrollX;
@@ -513,16 +513,21 @@
       }
     }
 
-    // ===== NÉVOA: funde o PONTO DE FUGA com o fundo, escondendo o "quadrado" distante e o que
-    // renderiza em tempo real lá longe. usa a COR DO FUNDO (tb) pra fundir sem criar buraco escuro.
+    // ===== PAREDE DE ESCURIDÃO: o fundo/distância vira breu. perto fica LIVRE (jogadores veem
+    // à frente), e a partir de certa distância fecha rápido numa parede escura. não dá pra ver
+    // longe na twilight zone num canyon. escurece pro preto, mais denso e mais rápido com a profundidade.
     if(mode==="diving" || mode==="reeling"){
       const hz=h*0.5;
-      const fc=`${tb[0]},${tb[1]},${tb[2]}`;     // mesma cor do fundo -> o longe "vira" o fundo
-      const fg=x.createRadialGradient(w/2,hz,2, w/2,hz, Math.min(w,h)*0.78);
-      fg.addColorStop(0,`rgba(${fc},0.98)`);     // centro: quase totalmente coberto
-      fg.addColorStop(0.28,`rgba(${fc},0.85)`);
-      fg.addColorStop(0.6,`rgba(${fc},0.4)`);
-      fg.addColorStop(1,`rgba(${fc},0)`);
+      // cor da escuridão: breu bem escuro (não a cor clara do fundo) -> forma a "parede"
+      const dk = beyond ? "2,5,4" : "3,7,8";
+      // raio do "buraco livre" no centro: encolhe com a profundidade (vê-se menos longe no fundo)
+      const fullR  = Math.min(w,h)*0.62;
+      const clearFrac = Math.max(0.12, Math.min(0.6, (0.42 - depthN*0.16))); // fração livre central
+      const fg=x.createRadialGradient(w/2,hz,2, w/2,hz, fullR);
+      fg.addColorStop(0,`rgba(${dk},0)`);                       // centro: livre
+      fg.addColorStop(clearFrac,`rgba(${dk},0)`);               // ainda livre até aqui
+      fg.addColorStop(Math.min(0.97,clearFrac+0.18),`rgba(${dk},0.7)`); // fecha rápido (parede)
+      fg.addColorStop(1,`rgba(${dk},1)`);                       // breu total ao fundo
       x.fillStyle=fg; x.fillRect(0,0,w,h);
 
       // ===== PLÂNCTON iluminado: partículas suspensas que só brilham sob o facho da lanterna =====
