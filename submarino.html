@@ -452,16 +452,11 @@
         const colX=(i+0.5)*colW;
         // PAREDE DE ESCURIDÃO: parede preta sólida na distância máxima de visão, com a MESMA
         // altura projetada de uma parede do corredor naquela distância (fecha o corredor ao fundo).
+        // é escuridão ABSOLUTA — a lanterna não a alcança (preto puro), pra não parecer parede.
         if(hitKind==="dark"){
           const shD=Math.min(h*1.4, WALLH/perp);
           const y0d=h/2 - shD/2, y1d=h/2 + shD/2;
-          let litDark=0;
-          if(lightOn){
-            const bxw=beamX*w, byh=beamY*h;
-            litDark=Math.max(0,1-Math.abs(bxw-colX)/(w*0.5))*Math.max(0,1-Math.abs(byh-h/2)/(h*0.7));
-          }
-          const dv=Math.round(litDark*litDark*16);
-          x.fillStyle=`rgb(${dv},${dv+1},${dv+2})`;
+          x.fillStyle="#000";
           x.fillRect(colX-colW/2-0.5, y0d, colW+1, y1d-y0d);
           continue;
         }
