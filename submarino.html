@@ -325,6 +325,50 @@
   }
   window.addEventListener("resize",layoutViewport);
 
+  // ===== MANCHAS DE FUNDO =====
+  // silhuetas grandes e borradas que derivam atrás das paredes (acima da linha do horizonte)
+  const _BLOBS = Array.from({length: 24}, (_,i) => {
+    const r = n => Math.abs(Math.sin(i*13.7+n)*0.5+Math.sin(i*7.3+n*2.1)*0.5);
+    return {
+      angle: r(1)*Math.PI*2,          // ângulo no mundo (rad)
+      dist:  120 + r(2)*550,           // distância pseudo (wu) — afeta tamanho
+      sizeW: 50  + r(3)*200,           // largura base (wu) — manchas longas
+      sizeH: 5   + r(4)*18,            // altura base (wu)
+      speed: (r(5)-0.5)*0.012,         // deriva angular (rad/s) — lentas
+      yFrac: 0.04 + r(6)*0.56,         // posição vertical no céu (0=topo,1=horizonte)
+      alpha: 0.022 + r(7)*0.055,       // opacidade base
+      blur:  2.5 + r(8)*5,             // raio de blur
+    };
+  });
+  let _blobsLastT = null;
+  function drawBlobs(w, h, heading, ambLight, beyond){
+    const FOV=Math.PI*78/180, halfFov=FOV/2;
+    const now=performance.now()/1000;
+    const dt=_blobsLastT!==null ? Math.min(0.1,now-_blobsLastT) : 0;
+    _blobsLastT=now;
+    x.save();
+    for(const b of _BLOBS){
+      b.angle += b.speed*dt;
+      let rel=b.angle - heading*Math.PI/180;
+      while(rel>Math.PI) rel-=Math.PI*2;
+      while(rel<-Math.PI) rel+=Math.PI*2;
+      if(Math.abs(rel)>halfFov*1.35) continue;
+      const scale=110/b.dist;
+      const screenX=w/2+(rel/halfFov)*(w/2);
+      const blobW=Math.max(6, (Math.atan2(b.sizeW*scale,2)/halfFov)*w);
+      const blobH=Math.max(1.5, b.sizeH*scale*(h*0.007));
+      const screenY=h*0.5*b.yFrac;
+      const alpha=b.alpha*Math.min(1.8,scale)*(0.25+ambLight*0.75);
+      if(alpha<0.004) continue;
+      const blurPx=Math.max(1.2,(b.blur*(0.4+scale))).toFixed(1);
+      x.filter=`blur(${blurPx}px)`;
+      x.globalAlpha=alpha;
+      x.fillStyle=beyond?'#04100c':'#050f15';
+      x.beginPath();x.ellipse(screenX,screenY,blobW/2,blobH/2,0,0,Math.PI*2);x.fill();
+    }
+    x.filter='none'; x.globalAlpha=1; x.restore();
+  }
+
   // particulas
   // partículas suspensas "na cena": sx,sy = posição base na tela (0..1); pz = profundidade
   // na cena (0 longe .. 1 perto). o movimento do sub as translada (ver drawParticles).
@@ -403,6 +447,9 @@
     g.addColorStop(1, beyond ? `rgb(${Math.round(4*(0.3+ambLight))},${Math.round(8*(0.3+ambLight))},${Math.round(7*(0.3+ambLight))})` : `rgb(${Math.round(6*(0.3+ambLight))},${Math.round(12*(0.3+ambLight))},${Math.round(14*(0.3+ambLight))})`);
     x.fillStyle=g;x.fillRect(0,0,w,h);
 
+    // manchas de fundo derivando atrás das paredes (sky area)
+    if(mode==="diving"||mode==="reeling") drawBlobs(w,h,nav.heading,ambLight,beyond);
+
     // ===== RAYCASTER: corredor coerente (paredes = margens do canyon) =====
     // o sub está em (nav.x, nav.depth) olhando p/ heading. as duas margens do corredor
     // são paredes. p/ cada coluna do visor lanço um raio, acho onde cruza a margem,
@@ -479,7 +526,7 @@
         const dx=Math.sin(a), dd=Math.cos(a);      // passo lateral / profundidade
         // distância máxima de visão: além disso é breu (parede de escuridão que acompanha o sub).
         // encolhe com a profundidade — vê-se menos longe no fundo da twilight zone.
-        const VIS_WALL = 320 - depthN*120;          // ~320u perto da superfície -> ~200u no fundo
+        const VIS_WALL = Math.max(180, 580 - depthN*400); // 580u superfície -> 180u no fundo
         // marcha o raio até bater em algo: margem do corredor, parede de fundo, pilar, ou escuridão.
         let rx=nav.x, rd=nav.depth, dist=0, hitSide=0, hitKind="wall";
         for(let s=STEP;s<=MAXD;s+=STEP){
@@ -512,7 +559,7 @@
         const sh2=Math.min(h*1.4, WALLH/perp);
         const y0=h/2 - sh2/2, y1=h/2 + sh2/2;
         // sombreamento por distância: visão limitada, longe some no breu (mesmo princípio do chão)
-        const WALL_SIGHT=340;   // alcance de visão das paredes (acompanha a parede de escuridão)
+        const WALL_SIGHT=VIS_WALL*0.9; // fog das paredes acompanha o limite de visão
         const fog=Math.max(0, Math.min(1, 1 - dist/WALL_SIGHT));
         const fog2=fog*fog;     // queda acentuada
         // textura: faixa de rocha que rola verticalmente com a profundidade + ruído por coluna
@@ -613,6 +660,16 @@
       x.fillStyle=bg;x.beginPath();x.arc(bx,by,R,0,6.28);x.fill();
       x.restore();
     }
+    // névoa radial de distância: escurece bordas simulando dificuldade de ver longe em todas as direções
+    if(mode==="diving"||mode==="reeling"){
+      const fs=0.28+depthN*0.32;
+      const fg=x.createRadialGradient(w/2,h/2,w*0.06,w/2,h*0.52,w*0.7);
+      fg.addColorStop(0,'rgba(0,0,0,0)');
+      fg.addColorStop(0.5,`rgba(0,0,0,${(fs*0.28).toFixed(3)})`);
+      fg.addColorStop(1,`rgba(0,0,0,${fs.toFixed(3)})`);
+      x.fillStyle=fg; x.fillRect(0,0,w,h);
+    }
+
     // reflexo do vidro reage à luz: mais brilho quando o facho está aceso
     const gr=document.getElementById("glassReflect");
     if(gr) gr.style.opacity = lightOn ? "0.8" : "0.5";
