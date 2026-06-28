@@ -208,6 +208,15 @@
             </div>
           </div>
           <div>
+            <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">SHUTTER (visor do sub)</div>
+            <div style="display:flex;gap:6px">
+              <button class="btn" id="shutterAuto" style="flex:1;font-size:10px">AUTO</button>
+              <button class="btn" id="shutterOpen" style="flex:1;font-size:10px;color:#7dff7d">FORÇAR ABRIR</button>
+              <button class="btn" id="shutterClose" style="flex:1;font-size:10px;color:var(--danger)">FORÇAR FECHAR</button>
+            </div>
+            <div id="shutterStatus" style="font-size:10px;color:var(--ink-dim);margin-top:5px;letter-spacing:.08em">modo: auto</div>
+          </div>
+          <div>
             <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">LEITURA / LEGENDA (HUD)</div>
             <div style="display:flex;gap:8px">
               <input type="text" id="subReadout" placeholder="ex: sonar — massa biológica, 40m, descendo"
@@ -516,6 +525,18 @@
       else subRef.child("cracked").set(false);
     });
   });
+  // shutter override
+  const elShutterStatus=document.getElementById("shutterStatus");
+  const SHUTTER_LABELS={"auto":"modo: auto","force_open":"modo: FORÇADO ABERTO","force_closed":"modo: FORÇADO FECHADO"};
+  function setShutter(v){ subRef.child("shutter").set(v); elShutterStatus.textContent=SHUTTER_LABELS[v]||""; }
+  document.getElementById("shutterAuto").addEventListener("click",()=>setShutter("auto"));
+  document.getElementById("shutterOpen").addEventListener("click",()=>setShutter("force_open"));
+  document.getElementById("shutterClose").addEventListener("click",()=>setShutter("force_closed"));
+  subRef.child("shutter").on("value",snap=>{
+    const v=snap.val()||"auto";
+    elShutterStatus.textContent=SHUTTER_LABELS[v]||"modo: auto";
+  });
+
   elSubModes.addEventListener("click",e=>{const b=e.target.closest(".submode");if(b) subRef.child("nav/mode").set(b.dataset.mode);});
   document.getElementById("navSurface").addEventListener("click",()=>subRef.child("nav").update({x:0,depth:200,heading:0,mode:"moonpool"}));
   const elSubReadout=document.getElementById("subReadout");
