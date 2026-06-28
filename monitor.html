@@ -180,7 +180,13 @@
 
       <div class="panel" style="flex:1">
         <div class="panel-lbl">SENSOR DE MOVIMENTO</div>
-        <div id="sensorList"><div class="sensor-empty">nenhuma leitura</div></div>
+        <div style="display:flex;justify-content:center;margin-bottom:6px">
+          <canvas id="monSonarCv" width="260" height="260"
+            style="display:block;border:1px solid var(--border);image-rendering:pixelated"></canvas>
+        </div>
+        <div id="monSonarStatus" style="font-size:10px;color:var(--ink-dim);letter-spacing:.08em;text-align:center">
+          nenhum movimento detectado
+        </div>
       </div>
 
     </div>
@@ -215,11 +221,12 @@
   })();
 
   // ===== ESTADO =====
+  const UNITS_PER_M=10;
   const DEPTH_SHUTTER = 10000; // 1000m wu
   const HULL_WARN=20, HULL_CRIT=30;
   const CELL_W=14, CELL_H=4;
-  // raio de visibilidade em linhas de tile acima e abaixo do sub
-  const VIS_ABOVE=15, VIS_BELOW=25;
+  // raio de visibilidade simétrico: sub no centro do mapa
+  const VIS_ABOVE=40, VIS_BELOW=40;
 
   let nav={x:0, depth:2000, heading:0, mode:"moonpool"};
   let hullDamage=0;
@@ -363,28 +370,99 @@
     document.getElementById("shutterWrap").style.display=depthOk?"flex":"none";
     document.getElementById("monShutterStatus").textContent=SHUTTER_LABELS[shutterVal]||"—";
 
-    // sensor de movimento
-    const moving=Object.entries(entities).filter(([,e])=>e&&e.visible!==false&&e.mode==="approach"&&typeof e.wx==="number");
-    const list=document.getElementById("sensorList");
-    if(!moving.length){
-      list.innerHTML='<div class="sensor-empty">nenhuma leitura</div>';
-    } else {
-      list.innerHTML=moving.map(([,e])=>{
-        const dx=e.wx-nav.x, dd=e.wd-nav.depth;
-        const dist=Math.round(Math.hypot(dx,dd)/UNITS_PER_M);
-        const brg=((Math.round(Math.atan2(dx,dd)*180/Math.PI)%360)+360)%360;
-        const col=e.color||'#ff4040';
-        return `<div class="sensor-ent">
-          <div class="sensor-blip" style="background:${col};box-shadow:0 0 5px ${col}"></div>
-          <span style="color:var(--ink-dim)">BRG ${String(brg).padStart(3,"0")}°</span>
-          <span class="sensor-dist">${dist}m</span>
-        </div>`;
-      }).join("");
-    }
   }
 
+  // ===== SONAR DE MOVIMENTO (verde, estilo jogadores) =====
+  const MS_W=260, MS_H=260, MS_CX=130, MS_CY=130;
+  const MS_SCALE=1.3; // 100m = 130px = MS_CX
+
+  let entityBlipsM={}, sonarScanMT=0;
+
+  function rotForMonitor(dx,dy){
+    const α=(nav.heading||0)*Math.PI/180-Math.PI;
+    const ca=Math.cos(α),sa=Math.sin(α);
+    return {dx:dx*ca-dy*sa, dy:dx*sa+dy*ca};
+  }
+
+  function drawMonBlip(ctx,bx,by,alpha){
+    const g=ctx.createRadialGradient(bx,by,0,bx,by,14);
+    g.addColorStop(0,`rgba(0,255,100,${alpha*0.65})`); g.addColorStop(1,"rgba(0,255,100,0)");
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(bx,by,14,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=`rgba(120,255,160,${alpha})`;
+    ctx.beginPath(); ctx.arc(bx,by,3,0,Math.PI*2); ctx.fill();
+  }
+
+  function drawMonitorSonar(){
+    const cv2=document.getElementById("monSonarCv");
+    const ctx=cv2.getContext("2d");
+    const CX=MS_CX, CY=MS_CY;
+    ctx.fillStyle="#040a04"; ctx.fillRect(0,0,MS_W,MS_H);
+
+    // círculos de alcance
+    ctx.strokeStyle="#081808"; ctx.lineWidth=1;
+    [25,50,75,100].forEach(m=>{
+      ctx.beginPath(); ctx.arc(CX,CY,m*MS_SCALE,0,Math.PI*2); ctx.stroke();
+    });
+    ctx.strokeStyle="#0a200a"; ctx.lineWidth=0.5;
+    ctx.beginPath(); ctx.moveTo(CX,3); ctx.lineTo(CX,MS_H-3);
+    ctx.moveTo(3,CY); ctx.lineTo(MS_W-3,CY); ctx.stroke();
+    ctx.fillStyle="#0d280d"; ctx.font="8px monospace"; ctx.textAlign="left";
+    [25,50,75].forEach(m=>ctx.fillText(m+"m",CX+m*MS_SCALE+2,CY-2));
+
+    // anel de varredura
+    const ringAge=(Date.now()-sonarScanMT)/2000;
+    if(ringAge<1){
+      ctx.strokeStyle=`rgba(0,220,80,${(1-ringAge)*0.45})`; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.arc(CX,CY,ringAge*CX,0,Math.PI*2); ctx.stroke();
+    }
+
+    // blips (entidades approach visíveis)
+    const tnow=Date.now(),tsec=tnow/1000;
+    let idx=0;
+    Object.entries(entityBlipsM).forEach(([,eb])=>{
+      if(!eb||!eb.pos) return;
+      const pa=Math.max(0.12,1-(tnow-eb.born)/2000*0.85);
+      const j={dx:Math.sin(tsec*0.83+idx)*0.9+Math.sin(tsec*2.07+idx)*0.5,
+               dy:Math.sin(tsec*1.13+idx+1.2)*0.8+Math.sin(tsec*0.67+idx+2.4)*0.6};
+      const rp=rotForMonitor(eb.pos.dx,eb.pos.dy);
+      const rx=(rp.dx+j.dx)/UNITS_PER_M*MS_SCALE;
+      const ry=(rp.dy+j.dy)/UNITS_PER_M*MS_SCALE;
+      if(CX+rx<4||CX+rx>MS_W-4||CY+ry<4||CY+ry>MS_H-4){idx++;return;}
+      drawMonBlip(ctx,CX+rx,CY+ry,pa);
+      idx++;
+    });
+
+    // sub no centro
+    const sg=ctx.createRadialGradient(CX,CY,0,CX,CY,8);
+    sg.addColorStop(0,"rgba(0,220,255,.5)"); sg.addColorStop(1,"rgba(0,220,255,0)");
+    ctx.fillStyle=sg; ctx.beginPath(); ctx.arc(CX,CY,8,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="#00c8ff"; ctx.beginPath(); ctx.arc(CX,CY,3,0,Math.PI*2); ctx.fill();
+
+    const n=Object.keys(entityBlipsM).length;
+    document.getElementById("monSonarStatus").textContent=
+      n?`${n} objeto${n>1?"s":""} detectado${n>1?"s":""}`:"nenhum movimento detectado";
+  }
+
+  function sonarTickM(){
+    const t=Date.now();
+    Object.entries(entities).forEach(([id,ent])=>{
+      if(!ent||ent.visible===false||ent.mode!=="approach"||typeof ent.wx!=="number"){
+        delete entityBlipsM[id]; return;
+      }
+      entityBlipsM[id]={pos:{dx:ent.wx-nav.x, dy:ent.wd-nav.depth}, born:t};
+    });
+    Object.keys(entityBlipsM).forEach(id=>{
+      const e=entities[id];
+      if(!e||e.visible===false||e.mode!=="approach") delete entityBlipsM[id];
+    });
+    sonarScanMT=t;
+  }
+
+  setInterval(sonarTickM,2000);
+  sonarTickM();
+
   // ===== LOOP =====
-  function loop(){ drawMap(); updateHUD(); requestAnimationFrame(loop); }
+  function loop(){ drawMap(); updateHUD(); drawMonitorSonar(); requestAnimationFrame(loop); }
 
   // ===== FIREBASE =====
   firebase.database().ref(".info/connected").on("value",s=>{
