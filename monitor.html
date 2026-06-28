@@ -6,26 +6,27 @@
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     :root{
-      --bg:#04090f;
-      --panel:#070f19;
-      --border:#0c2236;
-      --live:#00c8ff;
-      --live-dim:#007aaa;
-      --dim:#004460;
-      --ink:#7ab8d4;
-      --ink-dim:#3a6880;
-      --danger:#ff4040;
-      --warn:#ffb020;
+      --bg:#0b0d12;
+      --panel:#0f1520;
+      --border:#1c2b3d;
+      --live:#4c8fc8;
+      --live-dim:#2c5578;
+      --dim:#182e46;
+      --ink:#7aa0bc;
+      --ink-dim:#3d5c78;
+      --danger:#c04040;
+      --warn:#b07828;
       --font:'Courier New',monospace;
     }
     html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--font);overflow:hidden}
     #app{display:flex;flex-direction:column;height:100%}
 
+    /* HEADER */
     #header{
       display:flex;align-items:center;justify-content:space-between;
-      padding:7px 16px;border-bottom:1px solid var(--border);
-      font-size:11px;letter-spacing:.2em;flex-shrink:0;
-      background:rgba(0,50,80,.18);
+      padding:6px 16px;border-bottom:1px solid var(--border);
+      font-size:10px;letter-spacing:.2em;flex-shrink:0;
+      background:rgba(20,40,70,.18);
     }
     #header .title{color:var(--ink-dim)}
     #header .title b{color:var(--live)}
@@ -33,42 +34,48 @@
     #connDot.on{background:var(--live);animation:none}
     @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
 
+    /* MAIN: mapa à esquerda + sonar à direita */
     #main{display:flex;flex:1;min-height:0}
 
-    /* === MAP === */
     #mapWrap{
-      display:flex;flex-direction:column;align-items:center;
-      background:#030810;border-right:1px solid var(--border);
-      padding:10px 8px;flex-shrink:0;
+      flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+      background:#090c11;border-right:1px solid var(--border);padding:10px 12px;
     }
-    #mapLbl{font-size:9px;letter-spacing:.18em;color:var(--ink-dim);margin-bottom:6px}
-    #mapCv{
-      display:block;image-rendering:pixelated;
-      border:1px solid var(--border);
-      box-shadow:0 0 20px rgba(0,150,200,.08);
-    }
+    #mapLbl{font-size:8px;letter-spacing:.18em;color:var(--ink-dim);margin-bottom:6px}
+    #mapCv{display:block;image-rendering:pixelated;border:1px solid var(--border);}
     #mapFooter{font-size:8px;color:var(--ink-dim);margin-top:5px;text-align:center;letter-spacing:.06em;line-height:1.6}
-    /* vignette nas bordas do mapa */
-    #mapVignette{
-      position:relative;pointer-events:none;
-    }
+    #mapVignette{position:relative;pointer-events:none}
     #mapVignette::before,#mapVignette::after{
-      content:'';position:absolute;left:0;right:0;height:28px;z-index:2;
+      content:'';position:absolute;left:0;right:0;height:24px;z-index:2;
     }
-    #mapVignette::before{top:0;background:linear-gradient(to bottom,#030810,transparent)}
-    #mapVignette::after{bottom:0;background:linear-gradient(to top,#030810,transparent)}
+    #mapVignette::before{top:0;background:linear-gradient(to bottom,#090c11,transparent)}
+    #mapVignette::after{bottom:0;background:linear-gradient(to top,#090c11,transparent)}
 
-    /* === SIDEBAR === */
-    #sidebar{
-      flex:1;min-width:220px;max-width:280px;
-      display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;
+    /* SONAR */
+    #sonarWrap{
+      width:300px;flex-shrink:0;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;
+      padding:14px 14px;border-left:1px solid var(--border);background:var(--panel);
     }
-    .panel{border-bottom:1px solid var(--border);padding:11px 14px;flex-shrink:0}
-    .panel-lbl{font-size:9px;letter-spacing:.2em;color:var(--ink-dim);margin-bottom:9px}
+    .panel-lbl{font-size:8px;letter-spacing:.2em;color:var(--ink-dim);margin-bottom:10px}
+    #monSonarCv{display:block;border:1px solid var(--border);image-rendering:pixelated}
+    #monSonarStatus{font-size:9px;color:var(--ink-dim);letter-spacing:.08em;text-align:center;margin-top:8px}
 
-    /* estado */
+    /* BOTTOM BAR: strip horizontal de controles */
+    #bottomBar{
+      display:flex;flex-shrink:0;height:116px;
+      border-top:1px solid var(--border);background:rgba(9,14,24,.7);
+    }
+    .bp{
+      flex:1;padding:10px 16px;border-right:1px solid var(--border);
+      display:flex;flex-direction:column;justify-content:center;
+    }
+    .bp:last-child{border-right:none}
+    .bp-lbl{font-size:8px;letter-spacing:.2em;color:var(--ink-dim);margin-bottom:8px}
+
+    /* casco */
     #subStatus{
-      font-size:16px;letter-spacing:.22em;font-weight:bold;padding:6px 0 4px;
+      font-size:15px;letter-spacing:.22em;font-weight:bold;padding:2px 0;
       transition:color .4s;
     }
     #subStatus.intacto{color:var(--live)}
@@ -79,118 +86,106 @@
     .state-fill{height:100%;border-radius:2px;width:0%;transition:width .5s,background .5s}
 
     /* telemetria */
-    .tele-row{display:flex;align-items:baseline;gap:6px;margin-bottom:5px}
-    .tele-k{font-size:9px;color:var(--ink-dim);letter-spacing:.16em;min-width:44px}
-    .tele-v{font-size:16px;letter-spacing:.1em;color:var(--live);min-width:52px;text-align:right}
-    .tele-u{font-size:9px;color:var(--dim);letter-spacing:.08em}
+    .tele-row{display:flex;align-items:baseline;gap:6px;margin-bottom:4px}
+    .tele-k{font-size:8px;color:var(--ink-dim);letter-spacing:.16em;min-width:42px}
+    .tele-v{font-size:15px;letter-spacing:.08em;color:var(--live);min-width:50px;text-align:right}
+    .tele-u{font-size:8px;color:var(--dim);letter-spacing:.08em}
 
     /* botões */
     .btn-mon{
-      width:100%;padding:8px 0;font-family:var(--font);font-size:10px;letter-spacing:.16em;
+      width:100%;padding:6px 0;font-family:var(--font);font-size:9px;letter-spacing:.14em;
       border:1px solid var(--border);background:var(--panel);color:var(--ink);
-      cursor:pointer;border-radius:3px;margin-bottom:5px;transition:background .15s,border-color .15s;
+      cursor:pointer;border-radius:2px;margin-bottom:4px;transition:background .15s,border-color .15s;
     }
-    .btn-mon:hover:not(:disabled){background:rgba(0,150,200,.12);border-color:var(--live-dim)}
+    .btn-mon:last-child{margin-bottom:0}
+    .btn-mon:hover:not(:disabled){background:rgba(76,143,200,.1);border-color:var(--live-dim)}
     .btn-mon:disabled{opacity:.3;cursor:default}
     .btn-reel{color:var(--live);border-color:var(--live-dim)}
-    .btn-reel:hover:not(:disabled){background:rgba(0,200,255,.1)!important}
-    .btn-open{color:#80ffa0;border-color:#0a3a1a}
-    .btn-open:hover:not(:disabled){background:rgba(0,200,80,.08)!important}
-    .btn-close{color:var(--danger);border-color:#3a0a0a}
-    .btn-close:hover:not(:disabled){background:rgba(255,40,40,.08)!important}
+    .btn-reel:hover:not(:disabled){background:rgba(76,143,200,.12)!important}
+    .btn-open{color:#6ec882;border-color:#0a3020}
+    .btn-open:hover:not(:disabled){background:rgba(0,180,80,.08)!important}
+    .btn-close{color:var(--danger);border-color:#3a1010}
+    .btn-close:hover:not(:disabled){background:rgba(200,40,40,.08)!important}
 
-    #monShutterDenied{
-      font-size:9px;color:var(--danger);letter-spacing:.04em;line-height:1.7;
-      padding:6px 8px;border:1px solid #3a0a0a;border-radius:3px;margin-bottom:6px;
-    }
-    .stat-txt{font-size:10px;color:var(--ink-dim);letter-spacing:.06em;margin-top:4px}
-
-    /* sensor */
-    #sensorList{display:flex;flex-direction:column;gap:5px}
-    .sensor-empty{font-size:10px;color:var(--ink-dim);letter-spacing:.08em;padding:4px 0}
-    .sensor-ent{
-      display:flex;align-items:center;gap:8px;padding:5px 7px;
-      border:1px solid var(--border);border-radius:3px;background:var(--panel);font-size:10px;letter-spacing:.06em;
-    }
-    .sensor-blip{width:8px;height:8px;border-radius:50%;flex-shrink:0;animation:spulse .9s ease-in-out infinite alternate}
-    @keyframes spulse{from{opacity:1;box-shadow:0 0 5px currentColor}to{opacity:.25;box-shadow:none}}
-    .sensor-dist{color:var(--live);min-width:44px;text-align:right}
+    .stat-txt{font-size:9px;color:var(--ink-dim);letter-spacing:.06em;margin-top:4px}
   </style>
 </head>
 <body>
 <div id="app">
+
   <div id="header">
     <span class="title">MONITOR // <b>PLATAFORMA "O DESERTO"</b></span>
-    <span><span id="connDot"></span><span id="connTxt" style="font-size:10px;letter-spacing:.1em;color:var(--ink-dim)">CONECTANDO</span></span>
+    <span>
+      <span id="connDot"></span>
+      <span id="connTxt" style="font-size:10px;letter-spacing:.1em;color:var(--ink-dim)">CONECTANDO</span>
+    </span>
   </div>
+
   <div id="main">
 
     <div id="mapWrap">
       <div id="mapLbl">POSIÇÃO — SENSOR LOCAL</div>
-      <div id="mapVignette">
-        <canvas id="mapCv"></canvas>
-      </div>
+      <div id="mapVignette"><canvas id="mapCv"></canvas></div>
       <div id="mapFooter">
         raio: ~120m<br>
         <span id="mapDepthLbl" style="color:var(--dim)">—</span>
       </div>
     </div>
 
-    <div id="sidebar">
-
-      <div class="panel">
-        <div class="panel-lbl">INTEGRIDADE DO CASCO</div>
-        <div id="subStatus" class="intacto">INTACTO</div>
-        <div class="state-bar"><div id="stateFill" class="state-fill"></div></div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-lbl">TELEMETRIA</div>
-        <div class="tele-row">
-          <span class="tele-k">PROF</span>
-          <span id="tDepth" class="tele-v">----</span>
-          <span class="tele-u">m</span>
-        </div>
-        <div class="tele-row">
-          <span class="tele-k">BRG</span>
-          <span id="tHeading" class="tele-v">---</span>
-          <span class="tele-u">°</span>
-        </div>
-        <div class="tele-row">
-          <span class="tele-k">MODO</span>
-          <span id="tMode" class="tele-v" style="font-size:11px;letter-spacing:.08em">--</span>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-lbl">CONTROLE DE EMERGÊNCIA</div>
-        <button id="btnReel" class="btn-mon btn-reel" disabled>↑ PUXAR DE VOLTA</button>
-        <div id="reelStatus" class="stat-txt">—</div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-lbl">SHUTTER DO VISOR</div>
-        <div id="shutterWrap" style="display:flex;gap:6px;margin-bottom:6px">
-          <button id="monShutterOpen" class="btn-mon btn-open" style="width:auto;flex:1;margin:0">ABRIR</button>
-          <button id="monShutterClose" class="btn-mon btn-close" style="width:auto;flex:1;margin:0">FECHAR</button>
-        </div>
-        <div id="monShutterDenied" style="display:none">ACESSO NEGADO.<br>Perigo à Integridade do Submarino.</div>
-        <div id="monShutterStatus" class="stat-txt">—</div>
-      </div>
-
-      <div class="panel" style="flex:1">
-        <div class="panel-lbl">SENSOR DE MOVIMENTO</div>
-        <div style="display:flex;justify-content:center;margin-bottom:6px">
-          <canvas id="monSonarCv" width="260" height="260"
-            style="display:block;border:1px solid var(--border);image-rendering:pixelated"></canvas>
-        </div>
-        <div id="monSonarStatus" style="font-size:10px;color:var(--ink-dim);letter-spacing:.08em;text-align:center">
-          nenhum movimento detectado
-        </div>
-      </div>
-
+    <div id="sonarWrap">
+      <div class="panel-lbl">SENSOR DE MOVIMENTO</div>
+      <canvas id="monSonarCv" width="260" height="260"></canvas>
+      <div id="monSonarStatus">nenhum movimento detectado</div>
     </div>
+
   </div>
+
+  <div id="bottomBar">
+
+    <div class="bp">
+      <div class="bp-lbl">INTEGRIDADE DO CASCO</div>
+      <div id="subStatus" class="intacto">INTACTO</div>
+      <div class="state-bar"><div id="stateFill" class="state-fill"></div></div>
+    </div>
+
+    <div class="bp">
+      <div class="bp-lbl">TELEMETRIA</div>
+      <div class="tele-row">
+        <span class="tele-k">PROF</span>
+        <span id="tDepth" class="tele-v">----</span>
+        <span class="tele-u">m</span>
+      </div>
+      <div class="tele-row">
+        <span class="tele-k">BRG</span>
+        <span id="tHeading" class="tele-v">---</span>
+        <span class="tele-u">°</span>
+      </div>
+      <div class="tele-row">
+        <span class="tele-k">MODO</span>
+        <span id="tMode" class="tele-v" style="font-size:11px;letter-spacing:.06em">--</span>
+      </div>
+    </div>
+
+    <div class="bp">
+      <div class="bp-lbl">CONTROLE DE EMERGÊNCIA</div>
+      <button id="btnReel" class="btn-mon btn-reel" disabled>↑ PUXAR DE VOLTA</button>
+      <div id="reelStatus" class="stat-txt">—</div>
+    </div>
+
+    <div class="bp">
+      <div class="bp-lbl">SHUTTER DO VISOR</div>
+      <div id="shutterWrap" style="display:flex;gap:6px;margin-bottom:5px">
+        <button id="monShutterOpen" class="btn-mon btn-open" style="width:auto;flex:1;margin:0;padding:5px 0">ABRIR</button>
+        <button id="monShutterClose" class="btn-mon btn-close" style="width:auto;flex:1;margin:0;padding:5px 0">FECHAR</button>
+      </div>
+      <div id="monShutterDenied" style="display:none;font-size:8px;color:var(--danger);letter-spacing:.04em;line-height:1.7">
+        ACESSO NEGADO.<br>Perigo à Integridade do Submarino.
+      </div>
+      <div id="monShutterStatus" class="stat-txt">—</div>
+    </div>
+
+  </div>
+
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -223,7 +218,7 @@
   // ===== ESTADO =====
   const DEPTH_SHUTTER = 10000; // 1000m wu
   const HULL_WARN=20, HULL_CRIT=30;
-  const CELL_W=14, CELL_H=4;
+  const CELL_W=20, CELL_H=6;
   // raio de visibilidade simétrico: sub no centro do mapa
   const VIS_ABOVE=40, VIS_BELOW=40;
 
@@ -247,7 +242,7 @@
     const subCol=(nav.x-X_MIN_W)/TILE;
     const viewStart=subRow-VIS_ABOVE;  // pode ser fracionário
 
-    mctx.fillStyle='#030810';
+    mctx.fillStyle='#090c11';
     mctx.fillRect(0,0,W,H);
 
     // tiles visíveis
@@ -308,16 +303,15 @@
     const spx=subCol*CELL_W, spy=(subRow-viewStart)*CELL_H;
     const pulse=0.65+0.35*Math.sin(now/520);
     const gr=mctx.createRadialGradient(spx,spy,0,spx,spy,16);
-    gr.addColorStop(0,`rgba(0,200,255,${0.55*pulse})`);
-    gr.addColorStop(1,'rgba(0,200,255,0)');
+    gr.addColorStop(0,`rgba(76,143,200,${0.55*pulse})`);
+    gr.addColorStop(1,'rgba(76,143,200,0)');
     mctx.fillStyle=gr; mctx.beginPath(); mctx.arc(spx,spy,16,0,Math.PI*2); mctx.fill();
     const hRad=nav.heading*Math.PI/180;
-    mctx.strokeStyle='#00c8ff'; mctx.lineWidth=1.5;
+    mctx.strokeStyle='#4c8fc8'; mctx.lineWidth=1.5;
     mctx.beginPath(); mctx.moveTo(spx,spy);
-    // aspecto vertical comprimido: heading=0 = baixo
     mctx.lineTo(spx+Math.sin(hRad)*10, spy+Math.cos(hRad)*10*(CELL_H/CELL_W)*3.5);
     mctx.stroke();
-    mctx.fillStyle='#00c8ff'; mctx.beginPath(); mctx.arc(spx,spy,3,0,Math.PI*2); mctx.fill();
+    mctx.fillStyle='#4c8fc8'; mctx.beginPath(); mctx.arc(spx,spy,3,0,Math.PI*2); mctx.fill();
 
     document.getElementById("mapDepthLbl").textContent=
       Math.round(nav.depth/UNITS_PER_M)+'m — campo: '+(VIS_ABOVE+VIS_BELOW)*4+'m';
@@ -368,7 +362,6 @@
     document.getElementById("monShutterDenied").style.display=depthOk?"none":"block";
     document.getElementById("shutterWrap").style.display=depthOk?"flex":"none";
     document.getElementById("monShutterStatus").textContent=SHUTTER_LABELS[shutterVal]||"—";
-
   }
 
   // ===== SONAR DE MOVIMENTO (verde, estilo jogadores) =====
@@ -435,7 +428,7 @@
     const sg=ctx.createRadialGradient(CX,CY,0,CX,CY,8);
     sg.addColorStop(0,"rgba(0,220,255,.5)"); sg.addColorStop(1,"rgba(0,220,255,0)");
     ctx.fillStyle=sg; ctx.beginPath(); ctx.arc(CX,CY,8,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle="#00c8ff"; ctx.beginPath(); ctx.arc(CX,CY,3,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="#4c8fc8"; ctx.beginPath(); ctx.arc(CX,CY,3,0,Math.PI*2); ctx.fill();
 
     const n=Object.keys(entityBlipsM).length;
     document.getElementById("monSonarStatus").textContent=
