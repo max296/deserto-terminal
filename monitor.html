@@ -428,7 +428,7 @@
     const sg=ctx.createRadialGradient(CX,CY,0,CX,CY,8);
     sg.addColorStop(0,"rgba(0,220,255,.5)"); sg.addColorStop(1,"rgba(0,220,255,0)");
     ctx.fillStyle=sg; ctx.beginPath(); ctx.arc(CX,CY,8,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle="#4c8fc8"; ctx.beginPath(); ctx.arc(CX,CY,3,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="#e0e0e0"; ctx.beginPath(); ctx.arc(CX,CY,3,0,Math.PI*2); ctx.fill();
 
     const n=Object.keys(entityBlipsM).length;
     document.getElementById("monSonarStatus").textContent=
@@ -438,14 +438,17 @@
   function sonarTickM(){
     const t=Date.now();
     Object.entries(entities).forEach(([id,ent])=>{
-      if(!ent||ent.visible===false||ent.mode!=="approach"||typeof ent.wx!=="number"){
-        delete entityBlipsM[id]; return;
+      if(!ent||ent.visible===false){ delete entityBlipsM[id]; return; }
+      let dx, dy;
+      if(ent.mode==="approach"&&typeof ent.wx==="number"){
+        dx=ent.wx-nav.x; dy=ent.wd-nav.depth;
+      } else {
+        dx=ent.dx||0; dy=ent.dy||0;
       }
-      entityBlipsM[id]={pos:{dx:ent.wx-nav.x, dy:ent.wd-nav.depth}, born:t};
+      entityBlipsM[id]={pos:{dx,dy}, born:t};
     });
     Object.keys(entityBlipsM).forEach(id=>{
-      const e=entities[id];
-      if(!e||e.visible===false||e.mode!=="approach") delete entityBlipsM[id];
+      if(!entities[id]||entities[id].visible===false) delete entityBlipsM[id];
     });
     sonarScanMT=t;
   }
