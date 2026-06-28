@@ -187,47 +187,90 @@
 
   // ====== CANYON: corredor 2D com paredes reais ======
   // linha central que serpenteia descendo; o submarino navega em (x, depth).
-  // colisão = encostar nas margens (centro ± meia-largura). Ajustável depois.
-  const MAX_DEPTH=3122, CORAL_DEPTH=600, START_DEPTH=200;
-  const CANYON=(function(){
-    let s=7; const rnd=()=>{s=(s*9301+49297)%233280;return s/233280;};
-    const pts=[]; let cx=0, vx=0;
-    for(let d=0; d<=MAX_DEPTH; d+=40){
-      vx+=(rnd()-0.5)*8; vx*=0.82; cx+=vx;
-      cx=Math.max(-180,Math.min(180,cx));
-      let hw = d<CORAL_DEPTH ? 95-(d/CORAL_DEPTH)*15 : 80-((d-CORAL_DEPTH)/(MAX_DEPTH-CORAL_DEPTH))*35;
-      pts.push({depth:d, cx:Math.round(cx), hw:Math.round(hw)});
-    }
-    return pts;
-  })();
-  function corridorAt(depth){
-    depth=Math.max(0,Math.min(MAX_DEPTH,depth));
-    const i=Math.min(CANYON.length-1, Math.floor(depth/40));
-    const j=Math.min(CANYON.length-1, i+1);
-    const f=(depth-CANYON[i].depth)/40;
-    return {
-      cx: CANYON[i].cx+(CANYON[j].cx-CANYON[i].cx)*f,
-      hw: CANYON[i].hw+(CANYON[j].hw-CANYON[i].hw)*f
+  // ===== MUNDO EM GRID (Wolfenstein/Doom-style) =====
+  // Escala: UNITS_PER_M=10 → 10 unidades de mundo = 1 metro. SPEED=30wu/s = 3m/s realistas.
+  const UNITS_PER_M=10;
+  const MAX_DEPTH=25600, CORAL_DEPTH=6000, START_DEPTH=2000;
+  const TILE=40;              // lado de um tile em wu (1 tile = 4 metros)
+  const X_MIN_W=-400;         // X mínimo do mundo (col 0)
+  const GRID_COLS=21;         // 21 cols × 40wu = 840wu de largura total
+  const GRID_ROWS=640;        // 640 rows × 40wu = 25600wu = 2560m de profundidade
+  // MAP[row][col]: 0=água navegável, 1=rocha/parede
+  const MAP=(()=>{
+    const m=Array.from({length:GRID_ROWS},()=>new Uint8Array(GRID_COLS).fill(1));
+    const open=(r0,r1,c0,c1)=>{
+      for(let r=Math.max(0,r0);r<=Math.min(GRID_ROWS-1,r1);r++)
+        for(let c=Math.max(0,c0);c<=Math.min(GRID_COLS-1,c1);c++) m[r][c]=0;
     };
+    // col(X=0) = floor((0-(-400))/40) = 10. Corredor central = cols 9-11.
+
+    // CANAL DA MOONPOOL (rows 25-29, 100-116m): estreito, transição
+    open(25,29,9,11);
+    // ESTRUTURA DA ESTAÇÃO (rows 30-49, 120-196m): pilares por isPillar()
+    open(30,49,8,12);
+    // CANYON DE ENTRADA (rows 50-74, 200-296m)
+    open(50,74,8,12);
+
+    // GRANDE ÁREA DE BIFURCAÇÃO (rows 75-124, 300-496m): caverna aberta c/ 4 saídas
+    open(75,124,4,16);
+
+    // ===== SAÍDA 1: BROCAS (direita, ~800m) =====
+    // Caminho médio; descida lenta; brocas enormes no fim
+    open(115,130,13,19);  // junção com grande área
+    open(130,160,14,19);  // descida inicial direita (520-640m)
+    open(155,200,13,18);  // volta levemente pro centro, continua (620-800m)
+    open(197,207,11,18);  // câmara das brocas (788-828m, 8 cols = 32m)
+
+    // ===== SAÍDA 2: FENDA / CAVERNA (centro-esquerda, ~2364m) =====
+    // Percurso longo; partes planas; queda irreversível a 1892m
+    open(125,239,8,12);   // descida regular (500-956m)
+    // Primeira zona plana (rows 240-280, 960-1120m): espaço amplo pra RP
+    open(240,280,7,15);
+    // Segunda descida (rows 280-459, 1120-1836m)
+    open(280,459,8,12);
+    // Plataforma pré-queda (rows 460-472, 1840-1888m)
+    open(460,472,7,13);
+    // A QUEDA (rows 473-508, 1892-2032m — 143m, sentido único para baixo):
+    // o "puxar de volta" percorre esses rows subindo sem restrição
+    open(473,508,9,11);
+    // Descida pós-queda até caverna (rows 509-589, 2036-2356m)
+    open(509,589,8,12);
+    // CAVERNA do hive-mind (rows 590-632, 2360-2528m): espaço enorme
+    open(590,632,3,17);
+
+    // ===== SAÍDA 3: PLACEHOLDER — esquerda, experimental =====
+    open(100,130,3,6);    // junção da grande área
+    open(130,180,2,6);    // corredor esquerdo
+    open(175,192,2,9);    // câmara estranha de chegada
+    open(185,225,4,7);    // poço experimental
+
+    // ===== SAÍDA 4: PLACEHOLDER — direita profunda, experimental =====
+    open(190,210,14,19);  // junção com saída 1
+    open(200,265,17,20);  // corredor lateral direito
+    open(250,285,13,20);  // câmara grande (geometria experimental)
+    open(270,300,15,18);  // saída da câmara
+
+    return m;
+  })();
+
+  // Lookup de parede no grid (ponto do mundo → tile)
+  function isWall(wx,depth){
+    const col=Math.floor((wx-X_MIN_W)/TILE);
+    const row=Math.floor(depth/TILE);
+    if(row<0||row>=GRID_ROWS||col<0||col>=GRID_COLS) return true;
+    return MAP[row][col]!==0;
   }
-  // estrutura da petroleira: DOIS pilares grossos + parede no fundo, ACIMA do ponto de partida.
-  // você começa a 200m; a estação fica entre a moonpool (100m) e o início (200m), então
-  // ela está ATRÁS/ACIMA de você — descer (pra frente) é o canyon aberto. olhar pra cima = estação.
-  // MESMA fórmula usada no raycaster, pra colisão e visual baterem exatamente.
-  const STATION_TOP=120, STATION_PILLARS_LO=150, STATION_PILLARS_HI=195;
+
+  // Estrutura da petroleira acima do START_DEPTH (pilares decorativos + parede de fundo)
+  const STATION_TOP=1200, STATION_PILLARS_LO=1500, STATION_PILLARS_HI=1950;
   function isPillar(x, depth){
     if(depth>STATION_PILLARS_HI || depth<STATION_PILLARS_LO) return false;
-    const c=corridorAt(depth);
-    // dois pilares grossos, posicionados a ~45% de cada lado do centro do corredor
-    const halfGap=c.hw*0.45;       // distância de cada pilar ao centro
-    const pillarR=c.hw*0.28;       // raio (grossura) de cada pilar
-    const dxL=Math.abs(x-(c.cx-halfGap));
-    const dxR=Math.abs(x-(c.cx+halfGap));
-    return (dxL<pillarR || dxR<pillarR);
+    const cx=0, hw=80; // corredor da estação fixo centrado em X=0
+    const halfGap=hw*0.45, pillarR=hw*0.28;
+    return (Math.abs(x-(cx-halfGap))<pillarR || Math.abs(x-(cx+halfGap))<pillarR);
   }
-  // parede/teto da estrutura da petroleira (no topo, acima dos pilares) — fecha o começo por cima
   function isStationBackWall(depth){
-    return depth>=STATION_TOP && depth<STATION_TOP+10;
+    return depth>=STATION_TOP && depth<STATION_TOP+100;
   }
 
   // ====== navegação compartilhada ======
@@ -445,9 +488,7 @@
           if(isStationBackWall(rd)){ dist=s; hitSide=0; hitKind="station_wall"; break; }
           // PILARES grossos da petroleira perto do começo (fonte única: isPillar)
           if(isPillar(rx,rd)){ dist=s; hitSide=0; hitKind="pillar"; break; }
-          const cc=corridorAt(rd);
-          if(rx < cc.cx-cc.hw){ dist=s; hitSide=-1; break; }   // margem esquerda
-          if(rx > cc.cx+cc.hw){ dist=s; hitSide=1;  break; }   // margem direita
+          if(isWall(rx,rd)){ dist=s; hitSide=dx<0?-1:1; break; }
           // nada bateu ainda: ao atingir a distância máxima de visão, vira PAREDE DE ESCURIDÃO
           if(s>=VIS_WALL){ dist=s; hitSide=0; hitKind="dark"; break; }
         }
@@ -614,7 +655,7 @@
     const bubbles=[]; for(let i=0;i<50;i++)bubbles.push({x:Math.random(),y:Math.random(),r:Math.random()*3+1,v:Math.random()*0.5+0.3});
     let st=0;
     const SPEED=0.0022;   // ~7.5s, transição mais longa e fluida
-    const MOON_DEPTH=100, DIVE_DEPTH=START_DEPTH;  // superfície a 100m, submerso a 200m
+    const MOON_DEPTH=1000, DIVE_DEPTH=START_DEPTH;  // 100m wu=1000, submerso wu=2000
     diveAnim=setInterval(()=>{
       p+=SPEED; st++;
       // anima o depth junto: descendo 100->200, subindo 200->100
@@ -740,22 +781,25 @@
 
         // colisão lateral checada NA profundidade de destino, eixo X separado:
         // tenta mover X; se sair do corredor, encosta na parede (desliza, não trava tudo).
-        const cTarget = corridorAt(nd);
         let nx = nav.x + stepX;
-        const leftWall = cTarget.cx - cTarget.hw;
-        const rightWall = cTarget.cx + cTarget.hw;
         let hitWall=false;
-        if(nx < leftWall){ nx = leftWall; hitWall=true; }
-        else if(nx > rightWall){ nx = rightWall; hitWall=true; }
-
-        // colisão com PILARES: se o destino cai num pilar, não entra (testa eixos separados
-        // pra deslizar ao redor em vez de travar de vez).
-        if(isPillar(nx, nd)){
-          if(!isPillar(nav.x, nd)){ nx=nav.x; hitWall=true; }      // bloqueia X, mantém profundidade
-          else if(!isPillar(nx, nav.depth)){ nd=nav.depth; hitWall=true; } // bloqueia profundidade
-          else { nx=nav.x; nd=nav.depth; hitWall=true; }            // encurralado: para
+        // colisão com o grid: testa com margem lateral de 15wu
+        const R=15;
+        if(isWall(nx,nd)||isWall(nx-R,nd)||isWall(nx+R,nd)){
+          if(!isWall(nav.x,nd)&&!isWall(nav.x-R,nd)&&!isWall(nav.x+R,nd)){
+            nx=nav.x; hitWall=true;          // desliza em depth
+          } else if(!isWall(nx,nav.depth)&&!isWall(nx-R,nav.depth)&&!isWall(nx+R,nav.depth)){
+            nd=nav.depth; hitWall=true;      // desliza em X
+          } else {
+            nx=nav.x; nd=nav.depth; hitWall=true;
+          }
         }
-        // colisão com a parede de fundo da estação: não atravessa em direção à moonpool
+        // pilares decorativos da estação (sobrepostos ao grid)
+        if(isPillar(nx, nd)){
+          if(!isPillar(nav.x, nd)){ nx=nav.x; hitWall=true; }
+          else if(!isPillar(nx, nav.depth)){ nd=nav.depth; hitWall=true; }
+          else { nx=nav.x; nd=nav.depth; hitWall=true; }
+        }
         if(isStationBackWall(nd) && !isStationBackWall(nav.depth)){
           nd=nav.depth; hitWall=true;
         }
@@ -774,28 +818,27 @@
       }
     }
     else if(nav.mode==="reeling"){
-      // o cabo recolhe pela LINHA CENTRAL do corredor (caminho garantidamente livre).
-      const c=corridorAt(nav.depth);
-      // segurança: se por algum motivo estiver além da margem, traz pra dentro já.
-      if(nav.x < c.cx-c.hw) nav.x=c.cx-c.hw+1;
-      if(nav.x > c.cx+c.hw) nav.x=c.cx+c.hw-1;
-      const offCenter=Math.abs(nav.x-c.cx);
+      // recolhimento: sobe pelo caminho central (X=0), incluindo a queda reversa
+      const targetX=0;
+      const offCenter=Math.abs(nav.x-targetX);
       if(offCenter>2){
-        nav.x += (c.cx-nav.x)*Math.min(1, dt*5);
+        const nx2=nav.x+(targetX-nav.x)*Math.min(1,dt*5);
+        // só move X se o caminho não estiver bloqueado
+        if(!isWall(nx2,nav.depth)&&!isWall(nx2-10,nav.depth)&&!isWall(nx2+10,nav.depth)) nav.x=nx2;
         nav.depth=Math.max(START_DEPTH, nav.depth-8*dt);
         pushNav();
       } else if(nav.depth>START_DEPTH){
-        nav.x=c.cx;
+        nav.x=targetX;
         nav.depth=Math.max(START_DEPTH, nav.depth-26*dt);
         pushNav();
-        if(nav.depth<=START_DEPTH){ nav.x=corridorAt(START_DEPTH).cx; nav.mode="moonpool"; pushNav(); }
+        if(nav.depth<=START_DEPTH){ nav.x=0; nav.mode="moonpool"; pushNav(); }
       } else {
-        nav.x=corridorAt(START_DEPTH).cx; nav.mode="moonpool"; pushNav();
+        nav.x=0; nav.mode="moonpool"; pushNav();
       }
     }
 
-    // blast shutter: fecha a 1000m
-    const needShutter = nav.depth >= 1000;
+    // blast shutter: fecha a 1000m (10000wu com a nova escala)
+    const needShutter = nav.depth >= 10000;
     if(needShutter !== shutterClosed){
       shutterClosed = needShutter;
       const elShutter = document.getElementById("shutter");
@@ -805,9 +848,9 @@
     // HUD local
     heading=nav.heading;
     document.getElementById("compass").textContent="BRG "+String(Math.round(nav.heading)).padStart(3,"0");
-    const dm=Math.round(nav.depth);
+    const dm=Math.round(nav.depth/UNITS_PER_M);
     elDepthVal.textContent=String(dm).padStart(4,"0");
-    elDepthBox.classList.toggle("beyond", dm>CORAL_DEPTH);
+    elDepthBox.classList.toggle("beyond", nav.depth>CORAL_DEPTH);
 
     requestAnimationFrame(navLoop);
   }
