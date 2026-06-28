@@ -220,6 +220,16 @@
             <div id="hullStatLbl" style="font-size:10px;color:var(--ink-dim);margin-top:5px;letter-spacing:.08em">INTACTO</div>
           </div>
           <div>
+            <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">VELOCIDADE DO RECOLHIMENTO</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:10px;color:var(--ink-dim)">lento</span>
+              <input id="reelingSpeedSlider" type="range" min="20" max="220" value="80"
+                style="flex:1;accent-color:var(--live-dim);cursor:pointer">
+              <span style="font-size:10px;color:var(--ink-dim)">rápido</span>
+              <b id="reelingSpeedVal" style="min-width:42px;color:var(--live);font-size:11px;text-align:right">80wu/s</b>
+            </div>
+          </div>
+          <div>
             <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">SHUTTER (visor do sub)</div>
             <div style="display:flex;gap:6px">
               <button class="btn" id="shutterAuto" style="flex:1;font-size:10px">AUTO</button>
@@ -550,7 +560,7 @@
   });
 
   elSubModes.addEventListener("click",e=>{const b=e.target.closest(".submode");if(b) subRef.child("nav/mode").set(b.dataset.mode);});
-  document.getElementById("navSurface").addEventListener("click",()=>subRef.child("nav").update({x:0,depth:200,heading:0,mode:"moonpool"}));
+  document.getElementById("navSurface").addEventListener("click",()=>subRef.child("nav").update({x:0,depth:1000,heading:0,mode:"moonpool"}));
   const elSubReadout=document.getElementById("subReadout");
   elSubReadout.addEventListener("input",()=>subRef.child("readout").set(elSubReadout.value));
   document.getElementById("subReadClear").addEventListener("click",()=>{elSubReadout.value="";subRef.child("readout").set("");});
@@ -569,7 +579,7 @@
   document.getElementById("subreset").addEventListener("click",()=>{
     if(confirm("Resetar o submarino?")){
       subRef.update({online:false,readout:"",imgUrl:null,cracked:false,coralGrowth:false,entities:null,wallHits:0});
-      subRef.child("nav").set({x:0,depth:200,heading:0,mode:"moonpool"});
+      subRef.child("nav").set({x:0,depth:1000,heading:0,mode:"moonpool"});
       document.getElementById("coralStatus").textContent="inativo";
       document.getElementById("coralStatus").style.color="var(--ink-dim)";
     }
@@ -579,6 +589,7 @@
   const sonarCanvas=document.getElementById("sonarCanvas");
   const sctx=sonarCanvas.getContext("2d");
   const S_W=320, S_H=320, S_CX=160, S_CY=160, S_RANGE=100, S_SCALE=1.6;
+  const UNITS_PER_M=10; // 1wu = 0.1m, divide posições por isso para converter em metros
 
   // Jitter suave baseado em tempo (bio-movimento contínuo)
   function threatJitter(t) {
@@ -591,7 +602,7 @@
   // Posição relativa ao sub: fixed usa dx/dy, approach usa wx/wd do mundo
   function entDisplayPos(ent) {
     if(ent.mode==="approach" && typeof ent.wx==="number"){
-      return {dx:ent.wx-(currentSubNav.x||0), dy:ent.wd-(currentSubNav.depth||200)};
+      return {dx:ent.wx-(currentSubNav.x||0), dy:ent.wd-(currentSubNav.depth||1000)};
     }
     return {dx:ent.dx||0, dy:ent.dy||0};
   }
@@ -688,22 +699,22 @@
       const alpha=vis?pulse:pulse*0.28;
       const pos=entDisplayPos(ent);
       const rp=rotByHdg(pos);
-      const bx=S_CX+rp.dx*S_SCALE, by=S_CY+rp.dy*S_SCALE;
-      const cx=Math.max(6,Math.min(S_W-6,bx)), cy=Math.max(6,Math.min(S_H-6,by));
+      const distM=Math.hypot(pos.dx,pos.dy)/UNITS_PER_M;
+      if(distM>S_RANGE){ entCount++; return; }
+      const bx=S_CX+rp.dx/UNITS_PER_M*S_SCALE, by=S_CY+rp.dy/UNITS_PER_M*S_SCALE;
       // linha tracejada
       sctx.setLineDash([3,4]);
       sctx.strokeStyle=col; sctx.lineWidth=1; sctx.globalAlpha=alpha*0.35;
-      sctx.beginPath(); sctx.moveTo(S_CX,S_CY); sctx.lineTo(cx,cy); sctx.stroke();
+      sctx.beginPath(); sctx.moveTo(S_CX,S_CY); sctx.lineTo(bx,by); sctx.stroke();
       sctx.setLineDash([]); sctx.globalAlpha=1;
       // blip colorido
-      drawColorBlip(cx,cy,alpha,col);
+      drawColorBlip(bx,by,alpha,col);
       // rótulo
-      const dist=Math.hypot(pos.dx,pos.dy);
       sctx.globalAlpha=vis?0.9:0.38;
       sctx.fillStyle=col; sctx.font="8px monospace";
-      sctx.textAlign=cx>S_CX?"left":"right";
+      sctx.textAlign=bx>S_CX?"left":"right";
       const modeTag=ent.mode==="approach"?"↗":"·";
-      sctx.fillText(`E${entCount+1} ${modeTag} ${dist.toFixed(0)}m${vis?"":" [oculto]"}`, cx+(cx>S_CX?8:-8), cy-7);
+      sctx.fillText(`E${entCount+1} ${modeTag} ${distM.toFixed(0)}m${vis?"":" [oculto]"}`, bx+(bx>S_CX?8:-8), by-7);
       sctx.globalAlpha=1;
       entCount++;
     });
@@ -746,10 +757,10 @@
       const pa=Math.max(0.12, 1-pulseAge*0.85);
       const j=threatJitter(tsec+entIdx*1.37);
       const rp=rotByHdg(eb.pos);
-      // clampa à borda (entidades além do alcance aparecem no perímetro)
-      const rawX=S_CX+(rp.dx+j.dx)*S_SCALE, rawY=S_CY+(rp.dy+j.dy)*S_SCALE;
-      const bx=Math.max(4,Math.min(S_W-4,rawX)), by=Math.max(4,Math.min(S_H-4,rawY));
-      drawGreenBlip(bx, by, pa);
+      // fora do alcance: não mostrar
+      const rawX=S_CX+(rp.dx+j.dx)/UNITS_PER_M*S_SCALE, rawY=S_CY+(rp.dy+j.dy)/UNITS_PER_M*S_SCALE;
+      if(rawX<4||rawX>S_W-4||rawY<4||rawY>S_H-4) return;
+      drawGreenBlip(rawX, rawY, pa);
       entIdx++;
     });
 
@@ -829,7 +840,7 @@
   function addEntity(dx, dy) {
     const id="e"+Date.now().toString(36);
     const col=ENT_COLORS[Object.keys(entities).length % ENT_COLORS.length];
-    const ent={dx,dy,visible:true,color:col,mode:"fixed",speed:5};
+    const ent={dx,dy,visible:true,color:col,mode:"fixed",speed:0};
     entities[id]=ent;
     subRef.child("entities/"+id).set(ent);
     expandedEntities.add(id);
@@ -991,7 +1002,7 @@
 
     if(document.activeElement!==elSubReadout) elSubReadout.value=s.readout||"";
 
-    currentSubNav = s.nav || {x:0,depth:200,heading:0};
+    currentSubNav = s.nav || {x:0,depth:1000,heading:0};
 
     // Entidades: mescla Firebase com estado local (preserva wx/wd de aproximação)
     const remote=s.entities||{};
@@ -1013,6 +1024,20 @@
   });
 
   subRef.child("viewers").on("value",snap=>{viewers=snap.val()||{};});
+
+  // ---- Velocidade do recolhimento ----
+  const elReelingSpd=document.getElementById("reelingSpeedSlider");
+  const elReelingSpdVal=document.getElementById("reelingSpeedVal");
+  elReelingSpd.addEventListener("input",()=>{
+    const v=parseInt(elReelingSpd.value)||80;
+    elReelingSpdVal.textContent=v+"wu/s";
+    subRef.child("reelingSpeed").set(v);
+  });
+  subRef.child("reelingSpeed").on("value",s=>{
+    const v=s.val()||80;
+    elReelingSpd.value=v;
+    elReelingSpdVal.textContent=v+"wu/s";
+  });
 
   // ---- Dano do Casco ----
   let localHullDamage=0;
