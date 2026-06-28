@@ -435,17 +435,28 @@
       n?`${n} objeto${n>1?"s":""} detectado${n>1?"s":""}`:"nenhum movimento detectado";
   }
 
+  // Calcula posição de approach pela trajetória armazenada — mesmo modelo do guardião
+  function getApproachPos(ent, now) {
+    if(typeof ent.wx!=="number"||!ent.lastUpdateTime) return {wx:ent.wx||0,wd:ent.wd||0};
+    const elapsed=Math.max(0,(now-ent.lastUpdateTime)/1000);
+    const dx=(ent.tx||0)-ent.wx, dd=(ent.td||0)-ent.wd;
+    const dist=Math.hypot(dx,dd);
+    if(dist<1||!(ent.speed>0)) return {wx:ent.wx,wd:ent.wd};
+    const moved=Math.min(elapsed*ent.speed,dist);
+    return {wx:ent.wx+(dx/dist)*moved, wd:ent.wd+(dd/dist)*moved};
+  }
+
   function sonarTickM(){
     const t=Date.now();
     Object.entries(entities).forEach(([id,ent])=>{
       if(!ent||ent.visible===false){ delete entityBlipsM[id]; return; }
-      let dx, dy;
+      let wx, wd;
       if(ent.mode==="approach"&&typeof ent.wx==="number"){
-        dx=ent.wx-nav.x; dy=ent.wd-nav.depth;
+        const pos=getApproachPos(ent,t); wx=pos.wx; wd=pos.wd;
       } else {
-        dx=ent.dx||0; dy=ent.dy||0;
+        wx=(nav.x||0)+(ent.dx||0); wd=(nav.depth||1000)+(ent.dy||0);
       }
-      entityBlipsM[id]={pos:{dx,dy}, born:t};
+      entityBlipsM[id]={pos:{dx:wx-nav.x, dy:wd-nav.depth}, born:t};
     });
     Object.keys(entityBlipsM).forEach(id=>{
       if(!entities[id]||entities[id].visible===false) delete entityBlipsM[id];
