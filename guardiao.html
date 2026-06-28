@@ -201,11 +201,23 @@
               <span style="color:#456;text-transform:none;letter-spacing:0"> — quem pilota são os jogadores</span></div>
             <div id="submodes" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px"></div>
             <div style="display:flex;align-items:center;gap:10px;margin-top:8px;font-size:11px;color:var(--ink-dim)">
-              profundidade: <b id="navDepth" style="color:var(--live)">0</b> m
+              profundidade: <b id="navDepth" style="color:var(--live)">0</b> wu
               <span id="navBeyond" style="color:var(--danger);display:none">· ALÉM DO CORAL</span>
-              <span>· colisões: <b id="wallHits" style="color:var(--ink)">0</b></span>
               <button class="btn" id="navSurface" style="margin-left:auto">zerar p/ superfície</button>
             </div>
+          </div>
+          <div>
+            <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">DANO DO CASCO</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <button class="btn" id="hullMinus" style="width:30px;font-size:15px;padding:2px 0">−</button>
+              <b id="hullDamageVal" style="color:var(--live);min-width:34px;text-align:center;font-size:17px">0</b>
+              <button class="btn" id="hullPlus" style="width:30px;font-size:15px;padding:2px 0">+</button>
+              <span style="color:var(--ink-dim);font-size:10px;margin-left:4px">peso:</span>
+              <input id="hullStep" type="number" min="1" max="99" value="5"
+                style="width:46px;background:var(--bg);border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:12px;padding:3px 6px;border-radius:3px">
+              <button class="btn" id="hullReset" style="font-size:10px;color:var(--danger);margin-left:auto">zerar</button>
+            </div>
+            <div id="hullStatLbl" style="font-size:10px;color:var(--ink-dim);margin-top:5px;letter-spacing:.08em">INTACTO</div>
           </div>
           <div>
             <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">SHUTTER (visor do sub)</div>
@@ -998,11 +1010,38 @@
     const newIds=Object.keys(entities);
     if(prevIds.size!==newIds.length||newIds.some(id=>!prevIds.has(id))) renderEntityList();
 
-    const whEl=document.getElementById("wallHits");
-    if(whEl) whEl.textContent=s.wallHits||0;
   });
 
   subRef.child("viewers").on("value",snap=>{viewers=snap.val()||{};});
+
+  // ---- Dano do Casco ----
+  let localHullDamage=0;
+  const HULL_WARN=20, HULL_CRIT=30;
+  function hullLabel(dmg){
+    if(dmg>=HULL_CRIT) return ["PERIGO IMEDIATO","var(--danger)"];
+    if(dmg>=HULL_WARN) return ["DANIFICADO","var(--live-dim)"];
+    return ["INTACTO","var(--ink-dim)"];
+  }
+  function syncHullUI(dmg){
+    const el=document.getElementById("hullDamageVal"); if(el) el.textContent=dmg;
+    const sl=document.getElementById("hullStatLbl");
+    if(sl){ const [txt,col]=hullLabel(dmg); sl.textContent=txt; sl.style.color=col; }
+  }
+  function setHullDamage(v){
+    localHullDamage=Math.max(0,v);
+    subRef.child("hullDamage").set(localHullDamage);
+    syncHullUI(localHullDamage);
+  }
+  subRef.child("hullDamage").on("value",s=>{
+    localHullDamage=s.val()||0; syncHullUI(localHullDamage);
+  });
+  document.getElementById("hullPlus").addEventListener("click",()=>{
+    setHullDamage(localHullDamage+(parseInt(document.getElementById("hullStep").value)||5));
+  });
+  document.getElementById("hullMinus").addEventListener("click",()=>{
+    setHullDamage(localHullDamage-(parseInt(document.getElementById("hullStep").value)||5));
+  });
+  document.getElementById("hullReset").addEventListener("click",()=>setHullDamage(0));
 
   // =================== ABAS ===================
   document.querySelectorAll(".tab").forEach(tab=>{
