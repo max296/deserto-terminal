@@ -599,10 +599,21 @@
     };
   }
 
-  // Posição relativa ao sub: fixed usa dx/dy, approach usa wx/wd do mundo
+  // Calcula posição de approach pela trajetória armazenada — funciona sem guardião aberto
+  function getApproachPos(ent, now) {
+    if(typeof ent.wx!=="number"||!ent.lastUpdateTime) return {wx:ent.wx||0,wd:ent.wd||0};
+    const elapsed=Math.max(0,(now-ent.lastUpdateTime)/1000);
+    const dx=(ent.tx||0)-ent.wx, dd=(ent.td||0)-ent.wd;
+    const dist=Math.hypot(dx,dd);
+    if(dist<1||!(ent.speed>0)) return {wx:ent.wx,wd:ent.wd};
+    const moved=Math.min(elapsed*ent.speed,dist);
+    return {wx:ent.wx+(dx/dist)*moved, wd:ent.wd+(dd/dist)*moved};
+  }
+  // Posição relativa ao sub: fixed usa dx/dy, approach usa trajetória calculada localmente
   function entDisplayPos(ent) {
-    if(ent.mode==="approach" && typeof ent.wx==="number"){
-      return {dx:ent.wx-(currentSubNav.x||0), dy:ent.wd-(currentSubNav.depth||1000)};
+    if(ent.mode==="approach"&&typeof ent.wx==="number"){
+      const pos=getApproachPos(ent,Date.now());
+      return {dx:pos.wx-(currentSubNav.x||0), dy:pos.wd-(currentSubNav.depth||1000)};
     }
     return {dx:ent.dx||0, dy:ent.dy||0};
   }
@@ -903,7 +914,7 @@
     if(mb){
       const id=mb.dataset.id, m=mb.dataset.m, ent=entities[id]; if(!ent) return;
       const upd=Object.assign({},ent,{mode:m});
-      if(m==="approach"){ upd.wx=(currentSubNav.x||0)+(ent.dx||0); upd.wd=(currentSubNav.depth||1000)+(ent.dy||0); }
+      if(m==="approach"){ const now=Date.now(); upd.wx=(currentSubNav.x||0)+(ent.dx||0); upd.wd=(currentSubNav.depth||1000)+(ent.dy||0); upd.tx=currentSubNav.x||0; upd.td=currentSubNav.depth||1000; upd.lastUpdateTime=now; }
       else { upd.dx=typeof ent.wx==="number"?ent.wx-(currentSubNav.x||0):(ent.dx||0); upd.dy=typeof ent.wd==="number"?ent.wd-(currentSubNav.depth||1000):(ent.dy||0); }
       entities[id]=upd; subRef.child("entities/"+id).set(upd); renderEntityList(); return;
     }
@@ -914,32 +925,27 @@
     const sl=e.target.closest(".ent-spd"); if(!sl) return;
     const id=sl.dataset.id, spd=parseInt(sl.value);
     const sv=document.getElementById("sv-"+id); if(sv) sv.textContent=spd+" wu/s";
-    entities[id]=Object.assign({},entities[id],{speed:spd});
-    subRef.child("entities/"+id+"/speed").set(spd);
+    const ent=entities[id]; if(!ent) return;
+    const snap=(ent.mode==="approach"&&typeof ent.wx==="number")?getApproachPos(ent,Date.now()):null;
+    const patch=snap?{speed:spd,wx:snap.wx,wd:snap.wd,lastUpdateTime:Date.now()}:{speed:spd};
+    entities[id]=Object.assign({},ent,patch);
+    subRef.child("entities/"+id).update(patch);
   });
 
-  // Loop de aproximação: move entidades em modo "approach" em direção ao sub
+  // Refresh de trajetória a cada 4s: snapshot da posição calculada + alvo atualizado.
+  // Entidades continuam se movendo em TODOS os clientes sem ninguém no guardião aberto.
   setInterval(()=>{
-    Object.entries(entities).forEach(([id,ent])=>{
-      if(!ent||ent.mode!=="approach"||(ent.speed||0)<=0) return;
-      const wx=typeof ent.wx==="number"?ent.wx:(currentSubNav.x||0)+(ent.dx||0);
-      const wd=typeof ent.wd==="number"?ent.wd:(currentSubNav.depth||1000)+(ent.dy||0);
-      const dirX=(currentSubNav.x||0)-wx, dirD=(currentSubNav.depth||1000)-wd;
-      const dist=Math.hypot(dirX,dirD);
-      if(dist<1) return;
-      const spd=Math.min(ent.speed,200);
-      entities[id]=Object.assign({},ent,{wx:wx+(dirX/dist)*spd*0.1, wd:wd+(dirD/dist)*spd*0.1});
-    });
-  },100);
-
-  // Push de posições de aproximação ao Firebase a cada 2s
-  setInterval(()=>{
+    const now=Date.now();
     const updates={};
     Object.entries(entities).forEach(([id,ent])=>{
-      if(ent&&ent.mode==="approach"&&typeof ent.wx==="number"){ updates["entities/"+id+"/wx"]=ent.wx; updates["entities/"+id+"/wd"]=ent.wd; }
+      if(!ent||ent.mode!=="approach"||typeof ent.wx!=="number") return;
+      const pos=getApproachPos(ent,now);
+      const patch={wx:pos.wx,wd:pos.wd,tx:currentSubNav.x||0,td:currentSubNav.depth||1000,lastUpdateTime:now};
+      entities[id]=Object.assign({},ent,patch);
+      Object.entries(patch).forEach(([k,v])=>{updates["entities/"+id+"/"+k]=v;});
     });
     if(Object.keys(updates).length) subRef.update(updates);
-  },2000);
+  },4000);
 
   document.addEventListener("keydown",e=>{
     if(e.code==="KeyE" && mouseOverCanvas){
