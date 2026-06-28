@@ -18,7 +18,6 @@
   .top h1 span{color:var(--live)}
   .top .sess{font-size:11px;color:var(--ink-dim);letter-spacing:.12em}
 
-  /* tabs */
   .tabs{display:flex;gap:0;border-bottom:1px solid var(--line);margin-bottom:20px;max-width:840px}
   .tab{cursor:pointer;padding:11px 22px;font-family:var(--font);font-size:11px;letter-spacing:.18em;color:var(--ink-dim);background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s}
   .tab:hover{color:var(--ink)}
@@ -27,7 +26,7 @@
   .tabpanel.active{display:block}
 
   .card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px;max-width:840px;margin-bottom:18px}
-  .card .hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+  .card .hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px}
   .card .hd .name{font-size:13px;letter-spacing:.16em;color:var(--ink)}
   .card .hd .name b{color:var(--live)}
   .card .hd .name.dim b{color:var(--ink)}
@@ -41,7 +40,6 @@
   .sub-hd{font-size:10px;letter-spacing:.24em;color:var(--ink-dim);border-top:1px solid var(--line);padding-top:16px;margin:20px 0 12px;display:flex;justify-content:space-between;align-items:center}
   .sub-hd .clear-force{cursor:pointer;color:var(--warn);font-size:10px;border:1px solid var(--warn-dim);border-radius:3px;padding:3px 9px;background:transparent;letter-spacing:.1em}
   .sub-hd .clear-force:hover{background:var(--warn);color:var(--bg)}
-  .sub-hd .clear-force.hidden{display:none}
 
   .lvls{display:flex;flex-direction:column;gap:8px}
   .row{display:flex;align-items:center;gap:12px;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:10px 12px;transition:border-color .2s}
@@ -59,6 +57,7 @@
   .btn.force{min-width:84px;text-align:center}
   .btn.force.is-on{color:var(--bg);background:var(--warn);border-color:var(--warn)}
   .btn.force:disabled{opacity:.3;cursor:not-allowed}
+  .view-btn.is-on,.mode-btn.is-on{color:var(--live);border-color:var(--live-dim)}
 
   .cams{display:flex;flex-wrap:wrap;gap:8px}
   .cam{display:flex;flex-direction:column;gap:9px;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:11px 12px;width:180px}
@@ -104,9 +103,9 @@
   .urls{max-width:840px;font-size:11px;color:var(--ink-dim);line-height:1.8;letter-spacing:.04em;margin-top:10px}
   .urls code{background:var(--panel);padding:2px 7px;border-radius:3px;color:var(--ink)}
 
-  /* sonar */
-  #sonar{display:block;border:1px solid #152515;border-radius:4px;background:#060b06}
-  .sonar-legend{display:flex;flex-direction:column;gap:7px;font-size:11px;color:var(--ink-dim);letter-spacing:.04em;line-height:1.8}
+  #sonarCanvas{display:block;border:1px solid #152515;border-radius:4px;background:#060b06;cursor:crosshair}
+  .sonar-sidebar{display:flex;flex-direction:column;gap:14px;min-width:160px}
+  .sonar-sidebar .s-lbl{font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:2px}
   .sonar-dot{display:inline-block;width:8px;height:8px;border-radius:50%;vertical-align:middle;margin-right:6px}
 </style>
 </head>
@@ -133,14 +132,11 @@
       </div>
       <div class="hint">
         Ligar acende o terminal dos jogadores. <b>Liberar</b> deixa o nível clicável pra eles explorarem sozinhos.
-        <b>Forçar</b> puxa a tela de todos pra aquele nível na hora (momento de cena) — clique de novo ou em "soltar foco" pra liberar.
+        <b>Forçar</b> puxa a tela de todos pra aquele nível na hora (momento de cena).
       </div>
-
       <div class="lvls" id="lvls"></div>
-
       <div class="sub-hd"><span>CÂMERAS — marque ON pra deixar acessível (jogador puxa, ~6s, 1min de cooldown)</span></div>
       <div class="cams" id="cams"></div>
-
       <div class="footer">
         <span>Tudo o que você muda aqui aparece nos terminais na hora.</span>
         <span class="x" id="reset">RESETAR ESTAÇÃO</span>
@@ -151,23 +147,21 @@
       <div class="hd"><div class="name dim">ARQUIVOS // <b>escrever ao vivo</b></div></div>
       <div class="hint">
         Escreva um dossiê e escolha o nível. Publicar só salva — ele <b>não</b> aparece pros jogadores até você marcar
-        <b>DISPONÍVEL</b> na lista de baixo. Assim você segura cada documento até a hora certa.
+        <b>DISPONÍVEL</b> na lista de baixo.
       </div>
-
       <div class="editor">
         <div class="pickbar">
           <input type="text" id="docTitle" placeholder="Título do arquivo (ex: Incident Report 04-A)">
           <select id="docLevel"></select>
         </div>
         <textarea id="docBody" placeholder="Corpo do dossiê.&#10;&#10;## cabeçalho de seção&#10;[[ texto ]] vira tarja de redigido&#10;*texto* vira ênfase&#10;Linha em branco separa parágrafos."></textarea>
-        <div class="tools">marcas: <code>## Cabeçalho</code> &nbsp; <code>[[ redigido ]]</code> &nbsp; <code>*ênfase*</code> &nbsp; — linha em branco = novo parágrafo</div>
+        <div class="tools">marcas: <code>## Cabeçalho</code> &nbsp; <code>[[ redigido ]]</code> &nbsp; <code>*ênfase*</code></div>
         <div class="acts">
           <button class="pub" id="publish">SALVAR ARQUIVO</button>
           <button class="btn" id="clearForm">limpar campos</button>
           <span class="saved" id="saved">✓ salvo</span>
         </div>
       </div>
-
       <div class="sub-hd"><span>ARQUIVOS SALVOS — marque DISPONÍVEL pra liberar pros jogadores</span></div>
       <div class="doclist" id="doclist"></div>
     </div>
@@ -177,18 +171,19 @@
   <!-- TAB: SUBMARINO -->
   <div id="tab-submarino" class="tabpanel">
 
+    <!-- VISOR (sem radar — fundido no sonar abaixo) -->
     <div class="card">
       <div class="hd">
         <div class="name dim">SUBMERSÍVEL // <b>visor</b></div>
         <div class="power" id="subpower"><span class="led"></span><span id="subpowertxt">VISOR DESLIGADO</span></div>
       </div>
       <div class="hint">
-        Ligar acende o visor dos jogadores. Escolha o <b>casco</b>, dispare <b>estados</b> do breu, marque a <b>direção</b> de onde a ameaça aparece,
-        e use a <b>leitura</b> pra escrever no HUD deles. O minimapa mostra pra onde cada investigador está olhando.
+        Ligar acende o visor dos jogadores. Escolha o <b>casco</b>, modo de <b>percurso</b>,
+        escreva na <b>leitura</b>. A ameaça e o sonar estão no card abaixo.
       </div>
-
-      <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
-        <div style="flex:1;min-width:300px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;gap:14px;flex-wrap:wrap">
+        <!-- skin -->
+        <div style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:12px">
           <div>
             <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">CASCO</div>
             <div style="display:flex;gap:8px">
@@ -199,23 +194,16 @@
               <button class="btn" id="crackBtn" style="flex:1">⚠ RACHAR CASCO (velho)</button>
               <span id="crackStat" style="font-size:10px;letter-spacing:.1em;color:var(--ink-dim);min-width:90px;text-align:center">intacto</span>
             </div>
-            <div style="font-size:10px;color:var(--ink-dim);margin-top:5px;letter-spacing:.04em;line-height:1.6">
-              Rachar é permanente — o visor do submarino velho fica danificado até você apertar de novo pra consertar.
-            </div>
           </div>
           <div>
             <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">PERCURSO / PILOTAGEM
-              <span style="color:#456;text-transform:none;letter-spacing:0"> — quem pilota são os jogadores (WASD)</span></div>
+              <span style="color:#456;text-transform:none;letter-spacing:0"> — quem pilota são os jogadores</span></div>
             <div id="submodes" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px"></div>
             <div style="display:flex;align-items:center;gap:10px;margin-top:8px;font-size:11px;color:var(--ink-dim)">
-              profundidade atual: <b id="navDepth" style="color:var(--live)">0</b> m
+              profundidade: <b id="navDepth" style="color:var(--live)">0</b> m
               <span id="navBeyond" style="color:var(--danger);display:none">· ALÉM DO CORAL</span>
               <button class="btn" id="navSurface" style="margin-left:auto">zerar p/ superfície</button>
             </div>
-          </div>
-          <div>
-            <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">AMEAÇA NO BREU</div>
-            <div id="substates" style="display:grid;grid-template-columns:1fr 1fr;gap:7px"></div>
           </div>
           <div>
             <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">LEITURA / LEGENDA (HUD)</div>
@@ -226,63 +214,71 @@
             </div>
           </div>
           <div>
-            <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">IMAGEM DA AMEAÇA (PNG transparente, opcional)</div>
+            <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">IMAGEM DA AMEAÇA (PNG, opcional)</div>
             <div style="display:flex;gap:8px">
-              <input type="text" id="subImgUrl" placeholder="cole a URL de um PNG (deixe vazio = formas abstratas)"
+              <input type="text" id="subImgUrl" placeholder="URL de um PNG transparente"
                 style="flex:1;background:var(--bg);border:1px solid var(--line);border-radius:4px;color:var(--ink);font-family:inherit;font-size:12px;padding:8px 10px">
               <button class="btn" id="subImgSet">usar</button>
               <button class="btn" id="subImgClear">tirar</button>
             </div>
           </div>
         </div>
-
-        <div style="width:240px">
-          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">DIREÇÃO DA AMEAÇA · clique no anel</div>
-          <div style="position:relative;width:220px;height:220px;margin:0 auto">
-            <canvas id="radar" width="220" height="220" style="cursor:crosshair"></canvas>
-          </div>
-          <div style="font-size:10px;color:var(--ink-dim);text-align:center;margin-top:8px;letter-spacing:.08em">
-            setas = investigadores olhando · <span style="color:var(--danger)">vermelho</span> = ameaça
-          </div>
-          <button class="btn" id="threatClear" style="width:100%;margin-top:8px">tirar direção da ameaça</button>
-        </div>
       </div>
-
       <div class="footer">
-        <span>O visor é controlado quase todo por você. Os jogadores só espiam.</span>
+        <span>Os jogadores só espiam o visor — você controla tudo.</span>
         <span class="x" id="subreset">RESETAR SUBMARINO</span>
       </div>
     </div>
 
-    <!-- SENSOR DE MOVIMENTO -->
+    <!-- AMEAÇA + SONAR (fundidos) -->
     <div class="card">
       <div class="hd">
-        <div class="name dim">SENSOR DE MOVIMENTO // <b>sonar</b></div>
-        <span id="sonarStatus" style="font-size:10px;letter-spacing:.1em;color:var(--ink-dim)">aguardando...</span>
+        <div class="name dim">AMEAÇA // <b>sonar</b></div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span id="sonarStatus" style="font-size:10px;letter-spacing:.1em;color:var(--ink-dim)">aguardando...</span>
+          <button id="viewGM" class="btn view-btn is-on" style="font-size:10px;padding:5px 12px">VISTA GM</button>
+          <button id="viewPlayer" class="btn view-btn" style="font-size:10px;padding:5px 12px">JOGADORES</button>
+        </div>
       </div>
       <div class="hint">
-        Atualiza a cada 2 segundos. Detecta somente movimento — paredes são invisíveis.
-        Criaturas vivas sempre aparecem (micro-movimento constante). Alcance: 100m.
-        0° = acima do sub (mais raso) · 90° = lateral · 180° = abaixo (mais fundo).
+        Clique no canvas pra posicionar a ameaça. <b>Vista GM</b> mostra posição exata + investigadores.
+        <b>Vista Jogadores</b> simula o sensor de movimento deles (blips com micro-movimento, atualiza 2s).
+        0° = acima do sub (raso) · 180° = abaixo (fundo).
       </div>
-      <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
-        <canvas id="sonar" width="320" height="320"></canvas>
-        <div class="sonar-legend">
-          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:4px">LEGENDA</div>
-          <div><span class="sonar-dot" style="background:#1eff60;box-shadow:0 0 4px #1eff60"></span>Submersível (centro)</div>
-          <div><span class="sonar-dot" style="background:#00ff80;box-shadow:0 0 6px #00ff80"></span>Objeto em movimento</div>
-          <div style="margin-top:12px;font-size:10px;color:var(--ink-dim);line-height:2.1">
-            Eixo vertical = profundidade<br>
-            Eixo horizontal = posição lateral<br>
-            Anéis = 25 · 50 · 75 · 100m<br>
-            Direção = anel de ameaça acima.
+      <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+
+        <canvas id="sonarCanvas" width="320" height="320"></canvas>
+
+        <div class="sonar-sidebar">
+
+          <div>
+            <div class="s-lbl">ESTADO DA AMEAÇA</div>
+            <div id="substates" style="display:grid;grid-template-columns:1fr 1fr;gap:6px"></div>
           </div>
-          <div style="margin-top:14px;font-size:10px;color:var(--ink-dim);line-height:1.9;border-top:1px solid var(--line);padding-top:12px">
-            Distância estimada:<br>
-            "à distância" → ~80m<br>
-            "vulto" → ~45m<br>
-            "contato" → ~18m
+
+          <div>
+            <div class="s-lbl">MODO DO SENSOR</div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <button id="modeFixed" class="btn mode-btn is-on" style="text-align:left;font-size:10px">DISTÂNCIA FIXA</button>
+              <button id="modeApproach" class="btn mode-btn" style="text-align:left;font-size:10px">APROXIMAÇÃO</button>
+            </div>
+            <div style="font-size:10px;color:var(--ink-dim);margin-top:6px;line-height:1.7;letter-spacing:.02em" id="modeDesc">
+              Ameaça fica sempre à mesma distância relativa do sub.
+            </div>
           </div>
+
+          <div>
+            <button class="btn" id="threatClear" style="width:100%;font-size:10px">tirar ameaça do sensor</button>
+          </div>
+
+          <div style="border-top:1px solid var(--line);padding-top:12px;font-size:10px;color:var(--ink-dim);line-height:2.1;letter-spacing:.02em">
+            <div style="letter-spacing:.12em;margin-bottom:4px;color:var(--ink-dim)">LEGENDA</div>
+            <div><span class="sonar-dot" style="background:#1eff60;box-shadow:0 0 3px #1eff60"></span>Sub (centro)</div>
+            <div><span class="sonar-dot" style="background:#00ff80;box-shadow:0 0 5px #00ff80"></span>Movimento (jogadores)</div>
+            <div><span class="sonar-dot" style="background:#d65a5a;box-shadow:0 0 4px #d65a5a"></span>Ameaça (GM)</div>
+            <div><span class="sonar-dot" style="background:#2f6f62;border-radius:2px"></span>Investigador (GM)</div>
+          </div>
+
         </div>
       </div>
     </div>
@@ -293,13 +289,13 @@
   <div id="tab-dre" class="tabpanel">
     <div class="card" style="opacity:.4;pointer-events:none">
       <div class="hd"><div class="name dim">ARQUIVO DRE // <b>não inicializado</b></div></div>
-      <div class="hint">Terminal DRE não inicializado. Computadores VHS anos 90 degradados — em desenvolvimento.</div>
+      <div class="hint">Terminal DRE não inicializado. Em desenvolvimento.</div>
     </div>
   </div>
 
   <div class="urls">
-    <div>jogadores abrem &rarr; <code>.../estacao.html</code></div>
-    <div>você (este painel) &rarr; <code>.../guardiao.html</code></div>
+    <div>jogadores &rarr; <code>.../estacao.html</code></div>
+    <div>guardião &rarr; <code>.../guardiao.html</code></div>
   </div>
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -309,8 +305,24 @@
   const CAM_COOLDOWN = 60000;
   document.getElementById("sk").textContent = SESSION_KEY;
 
-  // declarado cedo pra subRef.on poder atualizar
-  let sonarState = "void";
+  // ---- sonar / ameaça state (declarados cedo) ----
+  let sonarView   = "gm";    // "gm" | "player"
+  let sonarState  = "void";
+  let prevSonarState = "void";
+  let currentSubNav  = { x: 0, depth: 200, heading: 0 };
+  let threatPos   = null;    // {dx,dy} metros relativos ao sub (offset fixo)
+  let threatWorld = null;    // {x,depth} coords mundo (modo aproximação)
+  let threatMode  = "fixed"; // "fixed" | "approach"
+  let viewers     = {};
+  // Blip do sensor (vista jogadores)
+  let blipPos  = null;   // {dx,dy} última posição de blip
+  let blipBorn = 0;      // timestamp do último sonarTick que criou o blip
+  // Fade ao desaparecer
+  let fadingPos  = null;
+  let fadeStart  = 0;
+  const FADE_DURATION = 4000; // ms
+  // Scan ring
+  let sonarScanT = 0;
 
   const LEVELS = [
     { id:"helipad",  tag:"L-07", name:"Helipad" },
@@ -329,15 +341,13 @@
   ];
 
   const ref = sessionRef.child("station");
-  const elLvls=document.getElementById("lvls");
-  const elCams=document.getElementById("cams");
+  const elLvls = document.getElementById("lvls");
+  const elCams = document.getElementById("cams");
 
   LEVELS.forEach(l=>{
     const row=document.createElement("div");
     row.className="row"; row.dataset.id=l.id;
-    row.innerHTML=`
-      <div class="tag">${l.tag}</div>
-      <div class="nm">${l.name}</div>
+    row.innerHTML=`<div class="tag">${l.tag}</div><div class="nm">${l.name}</div>
       <button class="btn lock" data-act="lock">LIBERAR</button>
       <button class="btn force" data-act="force">FORÇAR</button>`;
     elLvls.appendChild(row);
@@ -349,36 +359,31 @@
   CAMERAS.forEach(c=>{
     const d=document.createElement("div");
     d.className="cam"; d.dataset.id=c.id;
-    d.innerHTML=`
-      <div class="cl">${c.label}</div>
-      <div class="cloc">${c.loc}</div>
-      <div class="cstat" data-stat>OFF</div>
-      <button class="toggle" data-id="${c.id}">LIGAR</button>`;
+    d.innerHTML=`<div class="cl">${c.label}</div><div class="cloc">${c.loc}</div>
+      <div class="cstat" data-stat>OFF</div><button class="toggle" data-id="${c.id}">LIGAR</button>`;
     elCams.appendChild(d);
   });
 
-  // ===== acoes =====
+  // ---- ações estação ----
   document.getElementById("power").addEventListener("click",()=>ref.child("online").transaction(v=>!v));
 
-  elLvls.addEventListener("click", e=>{
+  elLvls.addEventListener("click",e=>{
     const btn=e.target.closest("button"); if(!btn) return;
-    const id=btn.closest(".row").dataset.id;
-    const act=btn.dataset.act;
-    if(act==="lock"){ ref.child("unlocked/"+id).transaction(v=>v?null:true); }
-    if(act==="force"){ ref.child("force").transaction(v=> v===id?null:id ); }
+    const id=btn.closest(".row").dataset.id, act=btn.dataset.act;
+    if(act==="lock") ref.child("unlocked/"+id).transaction(v=>v?null:true);
+    if(act==="force") ref.child("force").transaction(v=>v===id?null:id);
   });
 
-  elCams.addEventListener("click", e=>{
+  elCams.addEventListener("click",e=>{
     const btn=e.target.closest(".toggle"); if(!btn) return;
     const id=btn.dataset.id;
     ref.child("cams/"+id).once("value").then(s=>{
       const c=s.val()||{};
-      if(c.on){ ref.child("cams/"+id).set({on:false}); }
-      else { ref.child("cams/"+id).set({on:true, pulledAt:0}); }
+      ref.child("cams/"+id).set(c.on?{on:false}:{on:true,pulledAt:0});
     });
   });
 
-  // ===== editor =====
+  // ---- editor ----
   const elTitle=document.getElementById("docTitle");
   const elBody=document.getElementById("docBody");
   const elSaved=document.getElementById("saved");
@@ -387,51 +392,48 @@
   document.getElementById("publish").addEventListener("click",()=>{
     const title=elTitle.value.trim(); if(!title){elTitle.focus();return;}
     const finish=(prevAvail)=>{
-      const payload={title, body:elBody.value, level:elDocLevel.value, at:Date.now(), available:!!prevAvail};
+      const payload={title,body:elBody.value,level:elDocLevel.value,at:Date.now(),available:!!prevAvail};
       const dest=editingKey?ref.child("files/"+editingKey):ref.child("files").push();
-      dest.set(payload);
-      editingKey=null;
+      dest.set(payload); editingKey=null;
       elSaved.classList.add("show"); setTimeout(()=>elSaved.classList.remove("show"),1600);
       elTitle.value=""; elBody.value="";
     };
-    if(editingKey){ ref.child("files/"+editingKey+"/available").once("value").then(s=>finish(s.val())); }
+    if(editingKey) ref.child("files/"+editingKey+"/available").once("value").then(s=>finish(s.val()));
     else finish(false);
   });
 
   document.getElementById("clearForm").addEventListener("click",()=>{elTitle.value="";elBody.value="";editingKey=null;});
 
   const elDocList=document.getElementById("doclist");
-  ref.child("files").on("value", snap=>{
-    const files=snap.val()||{}; const keys=Object.keys(files);
-    if(!keys.length){ elDocList.innerHTML=`<div style="color:var(--ink-dim);opacity:.5;font-size:12px">Nenhum arquivo salvo ainda.</div>`; return; }
+  ref.child("files").on("value",snap=>{
+    const files=snap.val()||{}, keys=Object.keys(files);
+    if(!keys.length){elDocList.innerHTML=`<div style="color:var(--ink-dim);opacity:.5;font-size:12px">Nenhum arquivo salvo ainda.</div>`;return;}
     keys.sort((a,b)=>(files[a].level||"").localeCompare(files[b].level||""));
     elDocList.innerHTML="";
     keys.forEach(k=>{
-      const f=files[k];
-      const lvlName=(LEVELS.find(l=>l.id===f.level)||{}).name||f.level||"—";
+      const f=files[k], lvlName=(LEVELS.find(l=>l.id===f.level)||{}).name||f.level||"—";
       const d=document.createElement("div");
       d.className="doc"+(f.available?" avail":"");
       d.innerHTML=`<span class="dt">${escapeHtml(f.title||"(sem título)")}</span>
-                   <span class="dl">${escapeHtml(lvlName)}</span>
-                   <button class="av" data-k="${k}">${f.available?"DISPONÍVEL":"oculto"}</button>
-                   <button class="edit" data-k="${k}">editar</button>
-                   <button class="del" data-k="${k}">apagar</button>`;
+        <span class="dl">${escapeHtml(lvlName)}</span>
+        <button class="av" data-k="${k}">${f.available?"DISPONÍVEL":"oculto"}</button>
+        <button class="edit" data-k="${k}">editar</button>
+        <button class="del" data-k="${k}">apagar</button>`;
       elDocList.appendChild(d);
     });
   });
 
-  elDocList.addEventListener("click", e=>{
+  elDocList.addEventListener("click",e=>{
     const k=e.target.dataset.k; if(!k) return;
-    if(e.target.classList.contains("av")){ ref.child("files/"+k+"/available").transaction(v=>!v); }
+    if(e.target.classList.contains("av")) ref.child("files/"+k+"/available").transaction(v=>!v);
     if(e.target.classList.contains("del")){
-      if(confirm("Apagar este arquivo? Some pros jogadores também.")) ref.child("files/"+k).remove();
+      if(confirm("Apagar este arquivo?")) ref.child("files/"+k).remove();
     }
     if(e.target.classList.contains("edit")){
       ref.child("files/"+k).once("value").then(s=>{
         const f=s.val(); if(!f) return;
         elTitle.value=f.title||""; elBody.value=f.body||""; elDocLevel.value=f.level||LEVELS[0].id;
         editingKey=k;
-        // vai pra aba estacao e rola até o editor
         document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
         document.querySelectorAll(".tabpanel").forEach(p=>p.classList.remove("active"));
         document.querySelector(".tab[data-tab='estacao']").classList.add("active");
@@ -442,89 +444,71 @@
   });
 
   document.getElementById("reset").addEventListener("click",()=>{
-    if(confirm("Resetar a Estação? Desliga, tranca níveis, solta foco e desliga câmeras. Mantém os arquivos salvos.")){
-      ref.child("online").set(false);
-      ref.child("unlocked").set({});
-      ref.child("force").set(null);
-      ref.child("cams").set({});
+    if(confirm("Resetar a Estação?")){
+      ref.child("online").set(false); ref.child("unlocked").set({});
+      ref.child("force").set(null); ref.child("cams").set({});
     }
   });
 
-  // ===== reflete estado no painel =====
-  ref.on("value", snap=>{
-    const s=snap.val()||{};
-    const online=!!s.online;
+  ref.on("value",snap=>{
+    const s=snap.val()||{}, online=!!s.online;
     const power=document.getElementById("power");
     power.classList.toggle("on",online);
     document.getElementById("powertxt").textContent=online?"TERMINAL LIGADO":"TERMINAL DESLIGADO";
-
-    const unlocked=s.unlocked||{};
-    const force=s.force||null;
+    const unlocked=s.unlocked||{}, force=s.force||null;
     document.querySelectorAll(".row").forEach(row=>{
-      const id=row.dataset.id;
-      const isUn=!!unlocked[id];
-      row.classList.toggle("unlocked",isUn);
-      row.classList.toggle("forced",force===id);
-      const lockBtn=row.querySelector(".lock");
-      lockBtn.textContent=isUn?"TRANCAR":"LIBERAR"; lockBtn.classList.toggle("is-on",isUn);
-      const forceBtn=row.querySelector(".force");
-      forceBtn.disabled=!isUn;
-      forceBtn.classList.toggle("is-on",force===id);
-      forceBtn.textContent=force===id?"FORÇANDO":"FORÇAR";
+      const id=row.dataset.id, isUn=!!unlocked[id];
+      row.classList.toggle("unlocked",isUn); row.classList.toggle("forced",force===id);
+      const lb=row.querySelector(".lock"); lb.textContent=isUn?"TRANCAR":"LIBERAR"; lb.classList.toggle("is-on",isUn);
+      const fb=row.querySelector(".force"); fb.disabled=!isUn;
+      fb.classList.toggle("is-on",force===id); fb.textContent=force===id?"FORÇANDO":"FORÇAR";
     });
-
     let cf=document.getElementById("clearForceBtn");
     if(force){
       if(!cf){
-        cf=document.createElement("button");
-        cf.id="clearForceBtn"; cf.className="clear-force";
+        cf=document.createElement("button"); cf.id="clearForceBtn"; cf.className="clear-force";
         cf.textContent="✕ SOLTAR FOCO";
         cf.addEventListener("click",()=>ref.child("force").set(null));
-        document.querySelector(".lvls").parentNode.insertBefore(cf, document.querySelector(".lvls").nextSibling);
+        document.querySelector(".lvls").parentNode.insertBefore(cf,document.querySelector(".lvls").nextSibling);
       }
-    } else if(cf){ cf.remove(); }
-
-    const cams=s.cams||{}; const now=Date.now();
+    } else if(cf) cf.remove();
+    const cams=s.cams||{}, now=Date.now();
     document.querySelectorAll(".cam").forEach(cam=>{
-      const id=cam.dataset.id; const c=cams[id]||{};
-      const isOn=!!c.on; const pulledAt=c.pulledAt||0;
-      const inCool=isOn && (now-pulledAt<CAM_COOLDOWN) && pulledAt>0;
+      const id=cam.dataset.id, c=cams[id]||{};
+      const isOn=!!c.on, pulledAt=c.pulledAt||0, inCool=isOn&&(now-pulledAt<CAM_COOLDOWN)&&pulledAt>0;
       cam.classList.toggle("on",isOn);
-      const stat=cam.querySelector("[data-stat]");
-      const toggle=cam.querySelector(".toggle");
+      const stat=cam.querySelector("[data-stat]"), toggle=cam.querySelector(".toggle");
       stat.classList.toggle("cool",inCool);
-      if(!isOn){ stat.textContent="OFF"; toggle.textContent="LIGAR"; }
-      else if(inCool){ const left=Math.ceil((CAM_COOLDOWN-(now-pulledAt))/1000); stat.textContent=`COOLDOWN ${left}s`; toggle.textContent="DESLIGAR"; }
-      else { stat.textContent="● ON / pronta"; toggle.textContent="DESLIGAR"; }
+      if(!isOn){stat.textContent="OFF";toggle.textContent="LIGAR";}
+      else if(inCool){stat.textContent=`COOLDOWN ${Math.ceil((CAM_COOLDOWN-(now-pulledAt))/1000)}s`;toggle.textContent="DESLIGAR";}
+      else{stat.textContent="● ON / pronta";toggle.textContent="DESLIGAR";}
     });
   });
 
-  setInterval(()=>{ ref.child("cams").once("value").then(s=>{
-    const cams=s.val()||{}; const now=Date.now();
+  setInterval(()=>{ref.child("cams").once("value").then(s=>{
+    const cams=s.val()||{}, now=Date.now();
     document.querySelectorAll(".cam").forEach(cam=>{
-      const id=cam.dataset.id; const c=cams[id]||{};
+      const id=cam.dataset.id, c=cams[id]||{};
       if(!c.on) return;
-      const pulledAt=c.pulledAt||0;
-      const inCool=(now-pulledAt<CAM_COOLDOWN)&&pulledAt>0;
+      const pulledAt=c.pulledAt||0, inCool=(now-pulledAt<CAM_COOLDOWN)&&pulledAt>0;
       const stat=cam.querySelector("[data-stat]");
       stat.classList.toggle("cool",inCool);
-      if(inCool){ const left=Math.ceil((CAM_COOLDOWN-(now-pulledAt))/1000); stat.textContent=`COOLDOWN ${left}s`; }
-      else stat.textContent="● ON / pronta";
+      stat.textContent=inCool?`COOLDOWN ${Math.ceil((CAM_COOLDOWN-(now-pulledAt))/1000)}s`:"● ON / pronta";
     });
-  }); },1000);
+  });},1000);
 
   // =================== SUBMARINO ===================
-  const subRef = sessionRef.child("submarine");
+  const subRef=sessionRef.child("submarine");
   const SUB_MODES=[
-    {id:"moonpool", label:"Na moonpool"},
-    {id:"diving",   label:"Submersos"},
-    {id:"reeling",  label:"Puxar de volta"}
+    {id:"moonpool",label:"Na moonpool"},
+    {id:"diving",  label:"Submersos"},
+    {id:"reeling", label:"Puxar de volta"}
   ];
   const SUB_STATES=[
-    {id:"void",     label:"Nada"},
-    {id:"distant",  label:"Algo à distância"},
-    {id:"passing",  label:"Vulto no visor"},
-    {id:"close",    label:"Contato próximo"}
+    {id:"void",    label:"Nada"},
+    {id:"distant", label:"À distância"},
+    {id:"passing", label:"Vulto no visor"},
+    {id:"close",   label:"Contato próximo"}
   ];
 
   const elSubModes=document.getElementById("submodes");
@@ -537,105 +521,291 @@
   SUB_STATES.forEach(s=>{
     const b=document.createElement("button");
     b.className="btn substate"; b.dataset.state=s.id; b.textContent=s.label;
-    b.style.textAlign="left";
+    b.style.cssText="font-size:10px;text-align:left";
     elSubStates.appendChild(b);
   });
 
   document.getElementById("subpower").addEventListener("click",()=>subRef.child("online").transaction(v=>!v));
-
-  document.querySelectorAll(".skin").forEach(b=>{
-    b.addEventListener("click",()=>subRef.child("skin").set(b.dataset.skin));
-  });
+  document.querySelectorAll(".skin").forEach(b=>b.addEventListener("click",()=>subRef.child("skin").set(b.dataset.skin)));
   document.getElementById("crackBtn").addEventListener("click",()=>{
     subRef.child("cracked").once("value").then(s=>{
       const isCracked=!!s.val();
-      if(!isCracked){
-        if(confirm("Rachar o casco do submarino velho? Fica danificado permanentemente até você consertar aqui.")){
-          subRef.child("cracked").set(true);
-        }
-      } else { subRef.child("cracked").set(false); }
+      if(!isCracked){if(confirm("Rachar o casco?")) subRef.child("cracked").set(true);}
+      else subRef.child("cracked").set(false);
     });
   });
-  elSubModes.addEventListener("click",e=>{
-    const b=e.target.closest(".submode"); if(!b) return;
-    subRef.child("nav/mode").set(b.dataset.mode);
-  });
-  document.getElementById("navSurface").addEventListener("click",()=>{
-    subRef.child("nav").update({x:0,depth:200,heading:0,mode:"moonpool"});
-  });
-  elSubStates.addEventListener("click",e=>{
-    const b=e.target.closest(".substate"); if(!b) return;
-    subRef.child("state").set(b.dataset.state);
-  });
-
+  elSubModes.addEventListener("click",e=>{const b=e.target.closest(".submode");if(b) subRef.child("nav/mode").set(b.dataset.mode);});
+  document.getElementById("navSurface").addEventListener("click",()=>subRef.child("nav").update({x:0,depth:200,heading:0,mode:"moonpool"}));
+  elSubStates.addEventListener("click",e=>{const b=e.target.closest(".substate");if(b) subRef.child("state").set(b.dataset.state);});
   const elSubReadout=document.getElementById("subReadout");
   elSubReadout.addEventListener("input",()=>subRef.child("readout").set(elSubReadout.value));
   document.getElementById("subReadClear").addEventListener("click",()=>{elSubReadout.value="";subRef.child("readout").set("");});
-
-  document.getElementById("subImgSet").addEventListener("click",()=>{
-    const u=document.getElementById("subImgUrl").value.trim();
-    subRef.child("imgUrl").set(u||null);
-  });
-  document.getElementById("subImgClear").addEventListener("click",()=>{
-    document.getElementById("subImgUrl").value=""; subRef.child("imgUrl").set(null);
-  });
-
+  document.getElementById("subImgSet").addEventListener("click",()=>subRef.child("imgUrl").set(document.getElementById("subImgUrl").value.trim()||null));
+  document.getElementById("subImgClear").addEventListener("click",()=>{document.getElementById("subImgUrl").value="";subRef.child("imgUrl").set(null);});
   document.getElementById("subreset").addEventListener("click",()=>{
-    if(confirm("Resetar o submarino? Desliga o visor, zera profundidade/percurso, ameaça, direção, leitura e imagem.")){
-      subRef.update({online:false,state:"void",threatDir:null,readout:"",imgUrl:null,cracked:false});
+    if(confirm("Resetar o submarino?")){
+      subRef.update({online:false,state:"void",threatPos:null,threatWorld:null,threatDir:null,readout:"",imgUrl:null,cracked:false});
       subRef.child("nav").set({x:0,depth:200,heading:0,mode:"moonpool"});
     }
   });
 
-  // ---- RADAR / minimapa ----
-  const radar=document.getElementById("radar");
-  const rctx=radar.getContext("2d");
-  const RC=110, RR=88;
-  let viewers={}, threatDir=null, subSkinNow="old";
+  // =================== SONAR UNIFICADO ===================
+  const sonarCanvas=document.getElementById("sonarCanvas");
+  const sctx=sonarCanvas.getContext("2d");
+  const S_W=320, S_H=320, S_CX=160, S_CY=160, S_RANGE=100, S_SCALE=1.6;
 
-  radar.addEventListener("click",e=>{
-    const rect=radar.getBoundingClientRect();
-    const x=e.clientX-rect.left-RC, y=e.clientY-rect.top-RC;
-    let ang=Math.atan2(x,-y)*180/Math.PI;
-    ang=(ang+360)%360;
-    subRef.child("threatDir").set(Math.round(ang));
-  });
-  document.getElementById("threatClear").addEventListener("click",()=>subRef.child("threatDir").set(null));
+  // Jitter suave baseado em tempo (bio-movimento contínuo)
+  function threatJitter(t) {
+    return {
+      dx: Math.sin(t*0.83)*0.9 + Math.sin(t*2.07)*0.5,
+      dy: Math.sin(t*1.13+1.2)*0.8 + Math.sin(t*0.67+2.4)*0.6
+    };
+  }
 
-  function drawRadar(){
-    rctx.clearRect(0,0,220,220);
-    rctx.strokeStyle="#2a3035"; rctx.lineWidth=1;
-    [RR,RR*0.66,RR*0.33].forEach(r=>{rctx.beginPath();rctx.arc(RC,RC,r,0,7);rctx.stroke();});
-    rctx.beginPath();rctx.moveTo(RC,RC-RR);rctx.lineTo(RC,RC+RR);rctx.moveTo(RC-RR,RC);rctx.lineTo(RC+RR,RC);rctx.stroke();
-    rctx.fillStyle="#6a767d";rctx.font="9px monospace";rctx.textAlign="center";rctx.fillText("N",RC,RC-RR-4);
+  // Posição atual da ameaça relativa ao sub (sem jitter)
+  function getCurrentDisplayPos() {
+    if (!threatPos) return null;
+    if (threatMode === "approach" && threatWorld) {
+      return {
+        dx: threatWorld.x - (currentSubNav.x||0),
+        dy: threatWorld.depth - (currentSubNav.depth||200)
+      };
+    }
+    return { dx: threatPos.dx, dy: threatPos.dy };
+  }
 
-    rctx.fillStyle="#62e0c4";
-    rctx.beginPath();rctx.arc(RC,RC,5,0,7);rctx.fill();
+  // Alpha do blip levando em conta o fade de estado
+  function getFadeAlpha(base) {
+    if (sonarState !== "void") return base;
+    if (!fadeStart) return 0;
+    const age = (Date.now() - fadeStart) / FADE_DURATION;
+    if (age >= 1) return 0;
+    // Curva easing out-cubic pra fade suave
+    return base * (1 - age) * (1 - age) * (1 + 2*age);
+  }
 
-    const now=Date.now();
-    Object.keys(viewers).forEach((id,i)=>{
-      const v=viewers[id]; if(!v||now-(v.at||0)>12000) return;
-      const h=(v.heading||0)*Math.PI/180;
-      const dx=Math.sin(h), dy=-Math.cos(h);
-      rctx.strokeStyle="#62e0c4";rctx.fillStyle="#62e0c4";rctx.lineWidth=2;
-      rctx.globalAlpha=.85;
-      rctx.beginPath();rctx.moveTo(RC,RC);rctx.lineTo(RC+dx*RR*0.8,RC+dy*RR*0.8);rctx.stroke();
-      rctx.beginPath();
-      rctx.arc(RC+dx*RR*0.8,RC+dy*RR*0.8,3,0,7);rctx.fill();
-      rctx.globalAlpha=1;
-      rctx.fillStyle="#7a8a8a";rctx.font="8px monospace";
-      rctx.fillText("INV "+(i+1), RC+dx*RR*0.92, RC+dy*RR*0.92);
+  // ---- helpers de desenho ----
+  function drawGrid() {
+    sctx.strokeStyle="#0d2010"; sctx.lineWidth=1;
+    [25,50,75,100].forEach(m=>{
+      sctx.beginPath(); sctx.arc(S_CX,S_CY,m*S_SCALE,0,Math.PI*2); sctx.stroke();
     });
+    sctx.beginPath();
+    sctx.moveTo(S_CX,4); sctx.lineTo(S_CX,S_H-4);
+    sctx.moveTo(4,S_CY); sctx.lineTo(S_W-4,S_CY);
+    sctx.stroke();
+    sctx.fillStyle="#0e2a10"; sctx.font="8px monospace";
+    sctx.textAlign="left";
+    [25,50,75].forEach(m=>sctx.fillText(m+"m", S_CX+m*S_SCALE+2, S_CY-2));
+    sctx.fillStyle="#0e3018"; sctx.textAlign="center";
+    sctx.fillText("RASO",S_CX,11); sctx.fillText("FUNDO",S_CX,S_H-3);
+    sctx.textAlign="right"; sctx.fillText("LAT",S_W-3,S_CY-3);
+    sctx.textAlign="left";  sctx.fillText("LAT",3,S_CY-3);
+  }
 
-    if(threatDir!=null){
-      const a=threatDir*Math.PI/180;
-      const dx=Math.sin(a), dy=-Math.cos(a);
-      rctx.strokeStyle="#d65a5a";rctx.fillStyle="#d65a5a";rctx.lineWidth=2;
-      rctx.beginPath();rctx.moveTo(RC,RC);rctx.lineTo(RC+dx*RR,RC+dy*RR);rctx.stroke();
-      rctx.beginPath();rctx.arc(RC+dx*RR,RC+dy*RR,4,0,7);rctx.fill();
+  function drawSub() {
+    const sg=sctx.createRadialGradient(S_CX,S_CY,0,S_CX,S_CY,10);
+    sg.addColorStop(0,"rgba(30,255,96,.5)"); sg.addColorStop(1,"rgba(30,255,96,0)");
+    sctx.fillStyle=sg; sctx.beginPath(); sctx.arc(S_CX,S_CY,10,0,Math.PI*2); sctx.fill();
+    sctx.fillStyle="#1eff60"; sctx.beginPath(); sctx.arc(S_CX,S_CY,4,0,Math.PI*2); sctx.fill();
+  }
+
+  function drawGreenBlip(bx, by, alpha) {
+    if(bx<2||bx>S_W-2||by<2||by>S_H-2) return;
+    const g=sctx.createRadialGradient(bx,by,0,bx,by,16);
+    g.addColorStop(0,`rgba(0,255,100,${alpha*0.65})`); g.addColorStop(1,"rgba(0,255,100,0)");
+    sctx.fillStyle=g; sctx.beginPath(); sctx.arc(bx,by,16,0,Math.PI*2); sctx.fill();
+    sctx.fillStyle=`rgba(120,255,160,${alpha})`;
+    sctx.beginPath(); sctx.arc(bx,by,3,0,Math.PI*2); sctx.fill();
+  }
+
+  function drawRedBlip(bx, by, alpha) {
+    if(bx<2||bx>S_W-2||by<2||by>S_H-2) return;
+    const g=sctx.createRadialGradient(bx,by,0,bx,by,18);
+    g.addColorStop(0,`rgba(214,90,90,${alpha*0.7})`); g.addColorStop(1,"rgba(214,90,90,0)");
+    sctx.fillStyle=g; sctx.beginPath(); sctx.arc(bx,by,18,0,Math.PI*2); sctx.fill();
+    sctx.fillStyle=`rgba(230,120,120,${alpha})`;
+    sctx.beginPath(); sctx.arc(bx,by,4,0,Math.PI*2); sctx.fill();
+  }
+
+  // ---- Vista GM ----
+  function drawSonarGM() {
+    sctx.fillStyle="#060b06"; sctx.fillRect(0,0,S_W,S_H);
+    drawGrid();
+
+    // Investigadores (setas verdes discretas)
+    const now=Date.now(), VR=S_CX*0.82;
+    Object.values(viewers).forEach((v,i)=>{
+      if(!v||now-(v.at||0)>12000) return;
+      const h=(v.heading||0)*Math.PI/180;
+      const adx=Math.sin(h), ady=-Math.cos(h);
+      sctx.strokeStyle="#1a4a3a"; sctx.lineWidth=1.5; sctx.globalAlpha=0.55;
+      sctx.beginPath(); sctx.moveTo(S_CX,S_CY); sctx.lineTo(S_CX+adx*VR,S_CY+ady*VR); sctx.stroke();
+      sctx.fillStyle="#2f6f62"; sctx.globalAlpha=0.7;
+      sctx.beginPath(); sctx.arc(S_CX+adx*VR,S_CY+ady*VR,3,0,Math.PI*2); sctx.fill();
+      sctx.globalAlpha=0.5; sctx.fillStyle="#2a5a4a"; sctx.font="8px monospace"; sctx.textAlign="center";
+      sctx.fillText("I"+(i+1), S_CX+adx*(VR+10), S_CY+ady*(VR+10)+3);
+    });
+    sctx.globalAlpha=1;
+
+    // Ameaça
+    let displayPos = null, alpha = 0;
+    if (sonarState !== "void") {
+      displayPos = getCurrentDisplayPos();
+      alpha = 1.0;
+    } else if (fadeStart && fadingPos) {
+      displayPos = fadingPos;
+      alpha = getFadeAlpha(1.0);
+    }
+
+    if (displayPos && alpha > 0.01) {
+      const bx=S_CX+displayPos.dx*S_SCALE, by=S_CY+displayPos.dy*S_SCALE;
+      const cx=Math.max(6,Math.min(S_W-6,bx)), cy=Math.max(6,Math.min(S_H-6,by));
+      // Linha tracejada do centro à ameaça
+      sctx.setLineDash([4,4]);
+      sctx.strokeStyle=`rgba(180,70,70,${alpha*0.45})`; sctx.lineWidth=1;
+      sctx.beginPath(); sctx.moveTo(S_CX,S_CY); sctx.lineTo(cx,cy); sctx.stroke();
+      sctx.setLineDash([]);
+      drawRedBlip(cx,cy,alpha);
+      // Label
+      const dist=Math.hypot(displayPos.dx,displayPos.dy);
+      sctx.fillStyle=`rgba(214,90,90,${alpha})`; sctx.font="8px monospace";
+      sctx.textAlign=cx>S_CX?"left":"right";
+      sctx.fillText(`AMEAÇA  ${dist.toFixed(0)}m`, cx+(cx>S_CX?8:-8), cy-7);
+    } else if (!threatPos) {
+      // Dica de clique quando sem ameaça
+      sctx.fillStyle="#152015"; sctx.font="9px monospace"; sctx.textAlign="center";
+      sctx.fillText("clique pra posicionar ameaça", S_CX, S_H-14);
+    }
+
+    drawSub();
+
+    // Status GM
+    const el=document.getElementById("sonarStatus");
+    if (displayPos && alpha>0.01) {
+      const dist=Math.hypot(displayPos.dx,displayPos.dy);
+      const ang=(Math.atan2(displayPos.dx,-displayPos.dy)*180/Math.PI+360)%360;
+      el.textContent=`AMEAÇA: ${dist.toFixed(0)}m / ${ang.toFixed(0)}°`;
+      el.style.color="var(--danger)";
+    } else {
+      el.textContent="nenhuma ameaça";
+      el.style.color="var(--ink-dim)";
     }
   }
 
+  // ---- Vista Jogadores ----
+  function drawSonarPlayer() {
+    sctx.fillStyle="#060b06"; sctx.fillRect(0,0,S_W,S_H);
+
+    // Anel de varredura (a cada 2s)
+    const ringAge=(Date.now()-sonarScanT)/2000;
+    if(ringAge<1){
+      sctx.strokeStyle=`rgba(0,200,80,${(1-ringAge)*0.45})`; sctx.lineWidth=1.5;
+      sctx.beginPath(); sctx.arc(S_CX,S_CY,ringAge*S_CX,0,Math.PI*2); sctx.stroke();
+    }
+
+    drawGrid();
+
+    // Blip ativo (ameaça em movimento)
+    if (blipPos && sonarState !== "void") {
+      const pulseAge=(Date.now()-blipBorn)/2000;
+      const pulseAlpha=Math.max(0.15, 1-pulseAge*0.85);
+      const t=Date.now()/1000;
+      const j=threatJitter(t);
+      drawGreenBlip(S_CX+(blipPos.dx+j.dx)*S_SCALE, S_CY+(blipPos.dy+j.dy)*S_SCALE, pulseAlpha);
+    }
+
+    // Blip em fade (ameaça desaparecendo)
+    if (fadingPos && fadeStart && sonarState==="void") {
+      const fa=getFadeAlpha(0.8);
+      if(fa>0.01) drawGreenBlip(S_CX+fadingPos.dx*S_SCALE, S_CY+fadingPos.dy*S_SCALE, fa);
+    }
+
+    drawSub();
+
+    const el=document.getElementById("sonarStatus");
+    const hasBlip=(blipPos&&sonarState!=="void")||(fadingPos&&fadeStart&&getFadeAlpha(1)>0.01);
+    el.textContent=hasBlip?"1 objeto em movimento":"nenhum movimento";
+    el.style.color=hasBlip?"var(--live)":"var(--ink-dim)";
+  }
+
+  function drawSonar() {
+    if(sonarView==="gm") drawSonarGM(); else drawSonarPlayer();
+  }
+
+  // Tick do sensor: atualiza blipPos a cada 2s (para vista jogadores)
+  function sonarTick() {
+    const pos=getCurrentDisplayPos();
+    if(sonarState!=="void" && pos){
+      blipPos={...pos};
+      blipBorn=Date.now();
+    }
+    sonarScanT=Date.now();
+  }
+
+  setInterval(sonarTick,2000);
+  setInterval(drawSonar,100); // 10fps — suficiente pro anel + jitter
+  sonarTick(); drawSonar();
+
+  // ---- Click no canvas: posiciona a ameaça ----
+  sonarCanvas.addEventListener("click",e=>{
+    const rect=sonarCanvas.getBoundingClientRect();
+    const px=e.clientX-rect.left, py=e.clientY-rect.top;
+    const dx=(px-S_CX)/S_SCALE, dy=(py-S_CY)/S_SCALE;
+    const ang=(Math.atan2(dx,-dy)*180/Math.PI+360)%360;
+    const update={
+      threatPos:{dx,dy},
+      threatDir:Math.round(ang)
+    };
+    if(threatMode==="approach"){
+      update.threatWorld={
+        x:(currentSubNav.x||0)+dx,
+        depth:(currentSubNav.depth||200)+dy
+      };
+    }
+    subRef.update(update);
+  });
+
+  // ---- Controles de modo/vista ----
+  document.getElementById("viewGM").addEventListener("click",()=>{
+    sonarView="gm";
+    document.getElementById("viewGM").classList.add("is-on");
+    document.getElementById("viewPlayer").classList.remove("is-on");
+  });
+  document.getElementById("viewPlayer").addEventListener("click",()=>{
+    sonarView="player";
+    document.getElementById("viewPlayer").classList.add("is-on");
+    document.getElementById("viewGM").classList.remove("is-on");
+  });
+
+  document.getElementById("modeFixed").addEventListener("click",()=>{
+    // Ao voltar pra fixo, congela posição relativa atual (approach → fixed)
+    const update={threatMode:"fixed"};
+    if(threatWorld){
+      update.threatPos={
+        dx:threatWorld.x-(currentSubNav.x||0),
+        dy:threatWorld.depth-(currentSubNav.depth||200)
+      };
+    }
+    subRef.update(update);
+  });
+  document.getElementById("modeApproach").addEventListener("click",()=>{
+    const update={threatMode:"approach"};
+    // Calcula mundo a partir da posição relativa atual
+    if(threatPos){
+      update.threatWorld={
+        x:(currentSubNav.x||0)+threatPos.dx,
+        depth:(currentSubNav.depth||200)+threatPos.dy
+      };
+    }
+    subRef.update(update);
+  });
+
+  document.getElementById("threatClear").addEventListener("click",()=>{
+    subRef.update({threatPos:null,threatWorld:null,threatDir:null});
+  });
+
+  // ---- Listener Firebase do submarino ----
   subRef.on("value",snap=>{
     const s=snap.val()||{};
     const online=!!s.online;
@@ -643,203 +813,76 @@
     p.classList.toggle("on",online);
     document.getElementById("subpowertxt").textContent=online?"VISOR LIGADO":"VISOR DESLIGADO";
 
-    subSkinNow=s.skin||"old";
+    const skin=s.skin||"old";
     document.querySelectorAll(".skin").forEach(b=>{
-      const on=b.dataset.skin===subSkinNow;
-      b.style.borderColor=on?"var(--live-dim)":"";
-      b.style.color=on?"var(--live)":"";
+      const on=b.dataset.skin===skin;
+      b.style.borderColor=on?"var(--live-dim)":""; b.style.color=on?"var(--live)":"";
     });
     const cracked=!!s.cracked;
-    const crackBtn=document.getElementById("crackBtn");
-    const crackStat=document.getElementById("crackStat");
-    if(crackBtn){
-      crackBtn.textContent = cracked ? "✓ CONSERTAR CASCO" : "⚠ RACHAR CASCO (velho)";
-      crackBtn.style.borderColor = cracked ? "var(--danger)" : "";
-      crackBtn.style.color = cracked ? "var(--danger)" : "";
-      crackStat.textContent = cracked ? "RACHADO" : "intacto";
-      crackStat.style.color = cracked ? "var(--danger)" : "var(--ink-dim)";
+    const cb=document.getElementById("crackBtn"), cs=document.getElementById("crackStat");
+    if(cb){
+      cb.textContent=cracked?"✓ CONSERTAR CASCO":"⚠ RACHAR CASCO (velho)";
+      cb.style.borderColor=cracked?"var(--danger)":""; cb.style.color=cracked?"var(--danger)":"";
+      cs.textContent=cracked?"RACHADO":"intacto"; cs.style.color=cracked?"var(--danger)":"var(--ink-dim)";
     }
-    document.querySelectorAll(".substate").forEach(b=>{
-      const on=b.dataset.state===(s.state||"void");
-      b.style.borderColor=on?"var(--live-dim)":"";
-      b.style.color=on?"var(--live)":"";
-    });
+
     const navmode=(s.nav&&s.nav.mode)||"moonpool";
     document.querySelectorAll(".submode").forEach(b=>{
       const on=b.dataset.mode===navmode;
-      b.style.borderColor=on?"var(--live-dim)":"";
-      b.style.color=on?"var(--live)":"";
+      b.style.borderColor=on?"var(--live-dim)":""; b.style.color=on?"var(--live)":"";
     });
     const depth=(s.nav&&s.nav.depth)||0;
-    const nd=document.getElementById("navDepth");
-    if(nd) nd.textContent=Math.round(depth);
-    const nb=document.getElementById("navBeyond");
-    if(nb) nb.style.display = depth>600 ? "inline" : "none";
+    const nd=document.getElementById("navDepth"); if(nd) nd.textContent=Math.round(depth);
+    const nb=document.getElementById("navBeyond"); if(nb) nb.style.display=depth>600?"inline":"none";
 
-    if(document.activeElement!==elSubReadout){ elSubReadout.value=s.readout||""; }
-    threatDir = (s.threatDir!=null)?s.threatDir:null;
-    sonarState = s.state || "void";
-    drawRadar();
+    if(document.activeElement!==elSubReadout) elSubReadout.value=s.readout||"";
+
+    // Atualiza state das ameaças
+    const newState=s.state||"void";
+    document.querySelectorAll(".substate").forEach(b=>{
+      const on=b.dataset.state===newState;
+      b.style.borderColor=on?"var(--live-dim)":""; b.style.color=on?"var(--live)":"";
+    });
+
+    // Transição de estado: ativo → void inicia fade
+    if(prevSonarState!=="void" && newState==="void"){
+      const pos=getCurrentDisplayPos();
+      fadingPos=blipPos||pos;
+      fadeStart=Date.now();
+      blipPos=null; blipBorn=0;
+    }
+    // void → ativo cancela fade
+    if(newState!=="void" && prevSonarState==="void"){
+      fadingPos=null; fadeStart=0;
+    }
+    prevSonarState=newState;
+    sonarState=newState;
+
+    // Atualiza threat data
+    threatPos   = s.threatPos  || null;
+    threatWorld = s.threatWorld|| null;
+    const tm    = s.threatMode || "fixed";
+    threatMode  = tm;
+    currentSubNav = s.nav || {x:0,depth:200,heading:0};
+
+    // Highlight modo
+    document.getElementById("modeFixed").classList.toggle("is-on",tm==="fixed");
+    document.getElementById("modeApproach").classList.toggle("is-on",tm==="approach");
+    const desc=document.getElementById("modeDesc");
+    if(desc) desc.textContent=tm==="fixed"
+      ? "Ameaça fica sempre à mesma distância relativa do sub."
+      : "Jogadores que se aproximam verão o blip ficar mais perto.";
   });
 
-  subRef.child("viewers").on("value",snap=>{
-    viewers=snap.val()||{};
-    drawRadar();
-  });
-  setInterval(drawRadar,1000);
-
-  // =================== SENSOR DE MOVIMENTO ===================
-  const sonar = document.getElementById("sonar");
-  const sctx = sonar.getContext("2d");
-  const S_W = 320, S_H = 320, S_CX = 160, S_CY = 160;
-  const S_RANGE = 100;        // metros por eixo a partir do centro
-  const S_SCALE = S_CX / S_RANGE; // 1.6 px/m
-
-  let sonarSnap0 = null;  // snapshot anterior
-  let sonarSnap1 = null;  // snapshot atual
-  let sonarBlips = [];    // [{dx, dy, born}] em metros relativos ao sub
-  let sonarScanT = 0;     // timestamp do último tick (pra animação do anel)
-
-  const SONAR_DIST = { void:0, distant:78, passing:44, close:18 };
-
-  function sonarSnapshot() {
-    const entities = [];
-    if (sonarState !== "void" && threatDir != null) {
-      const dist = SONAR_DIST[sonarState] || 50;
-      const rad = threatDir * Math.PI / 180;
-      // Micro-jitter garante que a ameaça sempre se mova entre snapshots
-      const j = 1.4;
-      entities.push({
-        id: "threat",
-        dx: Math.sin(rad) * dist + (Math.random() - 0.5) * j,
-        dy: -Math.cos(rad) * dist + (Math.random() - 0.5) * j  // negativo: 0°=raso=acima no canvas
-      });
-    }
-    return entities;
-  }
-
-  function sonarGetMoving(prev, curr) {
-    if (!prev) return curr.slice();
-    return curr.filter(e => {
-      const p = prev.find(x => x.id === e.id);
-      if (!p) return true;
-      return Math.hypot(e.dx - p.dx, e.dy - p.dy) > 0.4;
-    });
-  }
-
-  function sonarTick() {
-    sonarSnap0 = sonarSnap1;
-    sonarSnap1 = sonarSnapshot();
-    const now = Date.now();
-    sonarBlips = sonarGetMoving(sonarSnap0, sonarSnap1).map(e => ({ ...e, born: now }));
-    sonarScanT = now;
-    const el = document.getElementById("sonarStatus");
-    if (el) el.textContent = sonarBlips.length > 0
-      ? sonarBlips.length + " objeto(s) em movimento"
-      : "nenhum movimento detectado";
-  }
-
-  function drawSonar() {
-    // Fundo
-    sctx.fillStyle = "#060b06";
-    sctx.fillRect(0, 0, S_W, S_H);
-
-    // Anel de varredura (expande do centro após cada tick)
-    const ringAge = (Date.now() - sonarScanT) / 2000;
-    if (ringAge < 1) {
-      const r = ringAge * S_CX;
-      sctx.strokeStyle = `rgba(0,200,80,${(1 - ringAge) * 0.45})`;
-      sctx.lineWidth = 1.5;
-      sctx.beginPath();
-      sctx.arc(S_CX, S_CY, r, 0, Math.PI * 2);
-      sctx.stroke();
-    }
-
-    // Grid — anéis concêntricos
-    sctx.strokeStyle = "#0d2010";
-    sctx.lineWidth = 1;
-    [25, 50, 75, 100].forEach(m => {
-      sctx.beginPath();
-      sctx.arc(S_CX, S_CY, m * S_SCALE, 0, Math.PI * 2);
-      sctx.stroke();
-    });
-    // Eixos
-    sctx.beginPath();
-    sctx.moveTo(S_CX, 4); sctx.lineTo(S_CX, S_H - 4);
-    sctx.moveTo(4, S_CY); sctx.lineTo(S_W - 4, S_CY);
-    sctx.stroke();
-
-    // Labels de distância
-    sctx.fillStyle = "#0e2a10";
-    sctx.font = "8px monospace";
-    sctx.textAlign = "left";
-    [25, 50, 75].forEach(m => {
-      sctx.fillText(m + "m", S_CX + m * S_SCALE + 2, S_CY - 2);
-    });
-
-    // Labels de orientação
-    sctx.fillStyle = "#0e3018";
-    sctx.font = "8px monospace";
-    sctx.textAlign = "center";
-    sctx.fillText("RASO", S_CX, 11);
-    sctx.fillText("FUNDO", S_CX, S_H - 3);
-    sctx.textAlign = "right";
-    sctx.fillText("LAT", S_W - 3, S_CY - 3);
-    sctx.textAlign = "left";
-    sctx.fillText("LAT", 3, S_CY - 3);
-
-    // Blips com fade
-    const now = Date.now();
-    sonarBlips.forEach(b => {
-      const age = (now - b.born) / 2000;
-      const alpha = Math.max(0.1, 1 - age * 0.6);
-      // dy positivo = mais fundo = canvas Y maior (abaixo)
-      const bx = S_CX + b.dx * S_SCALE;
-      const by = S_CY + b.dy * S_SCALE;
-      if (bx < 2 || bx > S_W - 2 || by < 2 || by > S_H - 2) return;
-      // Glow
-      const grd = sctx.createRadialGradient(bx, by, 0, bx, by, 16);
-      grd.addColorStop(0, `rgba(0,255,100,${alpha * 0.65})`);
-      grd.addColorStop(1, `rgba(0,255,100,0)`);
-      sctx.fillStyle = grd;
-      sctx.beginPath();
-      sctx.arc(bx, by, 16, 0, Math.PI * 2);
-      sctx.fill();
-      // Ponto central
-      sctx.fillStyle = `rgba(120,255,160,${alpha})`;
-      sctx.beginPath();
-      sctx.arc(bx, by, 3, 0, Math.PI * 2);
-      sctx.fill();
-    });
-
-    // Sub no centro
-    const sg = sctx.createRadialGradient(S_CX, S_CY, 0, S_CX, S_CY, 10);
-    sg.addColorStop(0, "rgba(30,255,96,.5)");
-    sg.addColorStop(1, "rgba(30,255,96,0)");
-    sctx.fillStyle = sg;
-    sctx.beginPath(); sctx.arc(S_CX, S_CY, 10, 0, Math.PI * 2); sctx.fill();
-    sctx.fillStyle = "#1eff60";
-    sctx.beginPath(); sctx.arc(S_CX, S_CY, 4, 0, Math.PI * 2); sctx.fill();
-
-    // Rodapé
-    sctx.fillStyle = "#183018";
-    sctx.font = "8px monospace";
-    sctx.textAlign = "left";
-    sctx.fillText("MOTION SENSOR  RANGE 100m", 4, S_H - 4);
-  }
-
-  setInterval(sonarTick, 2000);
-  setInterval(drawSonar, 100); // 10fps — suficiente pra animação do anel
-  sonarTick();
-  drawSonar();
+  subRef.child("viewers").on("value",snap=>{viewers=snap.val()||{};});
 
   // =================== ABAS ===================
-  document.querySelectorAll(".tab").forEach(tab => {
-    tab.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-      document.querySelectorAll(".tabpanel").forEach(p => p.classList.remove("active"));
+  document.querySelectorAll(".tab").forEach(tab=>{
+    tab.addEventListener("click",()=>{
+      document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+      document.querySelectorAll(".tabpanel").forEach(p=>p.classList.remove("active"));
       tab.classList.add("active");
-      document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
+      document.getElementById("tab-"+tab.dataset.tab).classList.add("active");
     });
   });
 
