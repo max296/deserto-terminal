@@ -222,6 +222,14 @@
               <button class="btn" id="subImgClear">tirar</button>
             </div>
           </div>
+          <div>
+            <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">CORAL // AMBIENTE</div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn" id="coralGrow" style="color:var(--danger)">CORAL: CRESCER</button>
+              <button class="btn" id="coralReset">CORAL: resetar</button>
+              <span id="coralStatus" style="font-size:10px;color:var(--ink-dim)">inativo</span>
+            </div>
+          </div>
         </div>
       </div>
       <div class="footer">
@@ -542,10 +550,22 @@
   document.getElementById("subReadClear").addEventListener("click",()=>{elSubReadout.value="";subRef.child("readout").set("");});
   document.getElementById("subImgSet").addEventListener("click",()=>subRef.child("imgUrl").set(document.getElementById("subImgUrl").value.trim()||null));
   document.getElementById("subImgClear").addEventListener("click",()=>{document.getElementById("subImgUrl").value="";subRef.child("imgUrl").set(null);});
+  document.getElementById("coralGrow").addEventListener("click",()=>{
+    subRef.child("coralGrowth").set(true);
+    document.getElementById("coralStatus").textContent="ATIVO";
+    document.getElementById("coralStatus").style.color="var(--danger)";
+  });
+  document.getElementById("coralReset").addEventListener("click",()=>{
+    subRef.child("coralGrowth").set(false);
+    document.getElementById("coralStatus").textContent="inativo";
+    document.getElementById("coralStatus").style.color="var(--ink-dim)";
+  });
   document.getElementById("subreset").addEventListener("click",()=>{
     if(confirm("Resetar o submarino?")){
-      subRef.update({online:false,state:"void",threatPos:null,threatWorld:null,threatDir:null,readout:"",imgUrl:null,cracked:false});
+      subRef.update({online:false,state:"void",threatPos:null,threatWorld:null,threatDir:null,readout:"",imgUrl:null,cracked:false,coralGrowth:false});
       subRef.child("nav").set({x:0,depth:200,heading:0,mode:"moonpool"});
+      document.getElementById("coralStatus").textContent="inativo";
+      document.getElementById("coralStatus").style.color="var(--ink-dim)";
     }
   });
 
