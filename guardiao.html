@@ -279,6 +279,7 @@
           <span id="sonarStatus" style="font-size:10px;letter-spacing:.1em;color:var(--ink-dim)">aguardando...</span>
           <button id="viewGM" class="btn view-btn is-on" style="font-size:10px;padding:5px 12px">VISTA GM</button>
           <button id="viewPlayer" class="btn view-btn" style="font-size:10px;padding:5px 12px">JOGADORES</button>
+          <button id="viewMap" class="btn view-btn" style="font-size:10px;padding:5px 12px;color:#44aacc">MAPA</button>
         </div>
       </div>
       <div class="hint">
@@ -590,7 +591,31 @@
   const sonarCanvas=document.getElementById("sonarCanvas");
   const sctx=sonarCanvas.getContext("2d");
   const S_W=320, S_H=320, S_CX=160, S_CY=160, S_RANGE=100, S_SCALE=1.6;
-  const UNITS_PER_M=10; // 1wu = 0.1m, divide posições por isso para converter em metros
+  const UNITS_PER_M=10;
+  // ===== MAPA DO MUNDO (mesma grade do submarino/monitor) =====
+  const TILE=40, X_MIN_W=-400, GRID_COLS=21, GRID_ROWS=640;
+  const MAP_VIS_ABOVE=40, MAP_VIS_BELOW=40;
+  const MAP_CELL_W=15, MAP_CELL_H=4; // 15*21=315px, 4*80=320px — cabe no canvas 320×320
+  const MAP=(()=>{
+    const m=Array.from({length:GRID_ROWS},()=>new Uint8Array(GRID_COLS).fill(1));
+    const open=(r0,r1,c0,c1)=>{
+      for(let r=Math.max(0,r0);r<=Math.min(GRID_ROWS-1,r1);r++)
+        for(let c=Math.max(0,c0);c<=Math.min(GRID_COLS-1,c1);c++) m[r][c]=0;
+    };
+    open(25,29,9,11);
+    open(30,49,8,12);
+    open(50,74,8,12);
+    open(75,124,4,16);
+    open(115,130,13,19); open(130,160,14,19); open(155,200,13,18); open(197,207,11,18);
+    open(125,239,8,12);
+    open(240,280,7,15);
+    open(280,459,8,12);
+    open(460,472,7,13); open(473,508,9,11); open(509,589,8,12);
+    open(590,632,3,17);
+    open(100,130,3,6); open(130,180,2,6); open(175,192,2,9); open(185,225,4,7);
+    open(190,210,14,19); open(200,265,17,20); open(250,285,13,20); open(270,300,15,18);
+    return m;
+  })();
 
   // Jitter suave baseado em tempo (bio-movimento contínuo)
   function threatJitter(t) {
@@ -703,11 +728,11 @@
     });
     sctx.globalAlpha=1;
 
-    // Entidades como blips coloridos pulsantes
+    // Entidades como blips coloridos pulsantes (peixes ficam no mapa, não no sonar)
     const tsec=now/1000;
     let entCount=0;
     Object.entries(entities).forEach(([id,ent],idx)=>{
-      if(!ent) return;
+      if(!ent||ent.mode==="fish") return;
       const col=ent.color||"#d65a5a";
       const vis=ent.visible!==false;
       const pulse=0.65+0.35*Math.sin(tsec*3.14+idx);
@@ -787,19 +812,83 @@
     el.style.color=n?"var(--live)":"var(--ink-dim)";
   }
 
-  function drawSonar() {
-    if(sonarView==="gm") drawSonarGM(); else drawSonarPlayer();
+  // ===== MAPA DO MUNDO no guardião: vista de cima, peixes clicáveis =====
+  function drawGuardMap(){
+    const W=S_W, H=S_H;
+    sctx.fillStyle='#070a0f'; sctx.fillRect(0,0,W,H);
+    const subDepth=currentSubNav.depth||1000;
+    const subX=currentSubNav.x||0;
+    const subRow=subDepth/TILE, subCol=(subX-X_MIN_W)/TILE;
+    const viewStart=subRow-MAP_VIS_ABOVE;
+    const rStart=Math.floor(viewStart), rEnd=Math.ceil(viewStart+MAP_VIS_ABOVE+MAP_VIS_BELOW);
+    for(let r=Math.max(0,rStart);r<=Math.min(GRID_ROWS-1,rEnd);r++){
+      const py=(r-viewStart)*MAP_CELL_H;
+      for(let c=0;c<GRID_COLS;c++){
+        const px=c*MAP_CELL_W;
+        const isOpen=MAP[r]&&MAP[r][c]===0;
+        sctx.fillStyle=isOpen?'#04111e':'#030609';
+        sctx.fillRect(px,py,MAP_CELL_W-1,MAP_CELL_H);
+      }
+    }
+    // marcadores de profundidade
+    sctx.font='7px monospace'; sctx.textAlign='left';
+    for(let md=0;md<=2600;md+=100){
+      const r=(md*UNITS_PER_M)/TILE;
+      const py=(r-viewStart)*MAP_CELL_H;
+      if(py<-6||py>H+6) continue;
+      sctx.strokeStyle=md%200===0?'rgba(0,100,160,.4)':'rgba(0,60,100,.15)';
+      sctx.lineWidth=1;
+      sctx.beginPath(); sctx.moveTo(0,py); sctx.lineTo(W,py); sctx.stroke();
+      if(md%200===0){ sctx.fillStyle='rgba(0,130,190,.7)'; sctx.fillText(md+'m',2,py-1); }
+    }
+    // peixes
+    Object.entries(entities).forEach(([id,ent])=>{
+      if(!ent||ent.mode!=="fish") return;
+      const r=(ent.wd||0)/TILE, c=((ent.wx||0)-X_MIN_W)/TILE;
+      const px=c*MAP_CELL_W, py=(r-viewStart)*MAP_CELL_H;
+      if(py<-8||py>H+8) return;
+      const vis=ent.visible!==false;
+      sctx.globalAlpha=vis?1:0.35;
+      sctx.fillStyle='#44aacc';
+      sctx.beginPath(); sctx.arc(px,py,4,0,Math.PI*2); sctx.fill();
+      sctx.fillStyle='#88ddee'; sctx.font='8px monospace'; sctx.textAlign='left';
+      sctx.fillText('P',px+6,py+3);
+      sctx.globalAlpha=1;
+    });
+    // sub
+    const sx=subCol*MAP_CELL_W, sy=(subRow-viewStart)*MAP_CELL_H;
+    const pulse=0.65+0.35*Math.sin(Date.now()/500);
+    const gr=sctx.createRadialGradient(sx,sy,0,sx,sy,12);
+    gr.addColorStop(0,`rgba(76,143,200,${0.5*pulse})`); gr.addColorStop(1,'rgba(76,143,200,0)');
+    sctx.fillStyle=gr; sctx.beginPath(); sctx.arc(sx,sy,12,0,Math.PI*2); sctx.fill();
+    const hRad=(currentSubNav.heading||0)*Math.PI/180;
+    sctx.strokeStyle='#4c8fc8'; sctx.lineWidth=1.5;
+    sctx.beginPath(); sctx.moveTo(sx,sy); sctx.lineTo(sx+Math.sin(hRad)*10,sy+Math.cos(hRad)*12); sctx.stroke();
+    sctx.fillStyle='#4c8fc8'; sctx.beginPath(); sctx.arc(sx,sy,3,0,Math.PI*2); sctx.fill();
+    // rodapé
+    const depthM=Math.round(subDepth/UNITS_PER_M);
+    const fishCount=Object.values(entities).filter(e=>e&&e.mode==="fish").length;
+    sctx.fillStyle='rgba(0,130,190,.6)'; sctx.font='8px monospace'; sctx.textAlign='center';
+    sctx.fillText(`${depthM}m · ${fishCount} peixe${fishCount!==1?"s":""}`, W/2, H-3);
+    sctx.fillStyle='rgba(68,170,204,.5)'; sctx.textAlign='center';
+    sctx.fillText('clique no mapa pra colocar peixe', W/2, H-13);
   }
 
-  // Tick do sensor: atualiza entityBlips a cada 2s (somente entidades visíveis)
+  function drawSonar() {
+    if(sonarView==="gm") drawSonarGM();
+    else if(sonarView==="map") drawGuardMap();
+    else drawSonarPlayer();
+  }
+
+  // Tick do sensor: atualiza entityBlips a cada 2s (entidades visíveis, exceto peixes)
   function sonarTick() {
     const t=Date.now();
     Object.entries(entities).forEach(([id,ent])=>{
-      if(!ent||ent.visible===false){ delete entityBlips[id]; return; }
+      if(!ent||ent.visible===false||ent.mode==="fish"){ delete entityBlips[id]; return; }
       const pos=entDisplayPos(ent);
-      entityBlips[id]={ pos:{...pos}, born:t }; // born resetado em cada tick → fade começa do zero
+      entityBlips[id]={ pos:{...pos}, born:t };
     });
-    Object.keys(entityBlips).forEach(id=>{ if(!entities[id]||entities[id].visible===false) delete entityBlips[id]; });
+    Object.keys(entityBlips).forEach(id=>{ if(!entities[id]||entities[id].visible===false||entities[id].mode==="fish") delete entityBlips[id]; });
     sonarScanT=Date.now();
   }
 
@@ -810,9 +899,17 @@
   // ---- Click no canvas: adiciona entidade (bloqueia se foi drag) ----
   sonarCanvas.addEventListener("click",e=>{
     if(justDraggedEntity){ justDraggedEntity=false; return; }
-    if(entityAtCanvas(mouseCanvasX,mouseCanvasY)) return;
     const rect=sonarCanvas.getBoundingClientRect();
     const px=e.clientX-rect.left, py=e.clientY-rect.top;
+    // no modo MAPA: clique coloca peixe no mundo nas coordenadas do tile
+    if(sonarView==="map"){
+      const subRow=(currentSubNav.depth||1000)/TILE;
+      const viewStart=subRow-MAP_VIS_ABOVE;
+      const wx=X_MIN_W+(px/MAP_CELL_W)*TILE;
+      const wd=(py/MAP_CELL_H+viewStart)*TILE;
+      addFishEntity(wx,wd); return;
+    }
+    if(entityAtCanvas(mouseCanvasX,mouseCanvasY)) return;
     const wr=unrotByHdg((px-S_CX)/S_SCALE*UNITS_PER_M,(py-S_CY)/S_SCALE*UNITS_PER_M);
     addEntity(wr.dx, wr.dy);
   });
@@ -820,9 +917,10 @@
   // ---- Drag de entidades + hover + tecla E ----
   function getCanvasXY(e){ const r=sonarCanvas.getBoundingClientRect(); return {px:e.clientX-r.left,py:e.clientY-r.top}; }
   function entityAtCanvas(px,py){
+    if(sonarView==="map") return null; // no map mode não há drag pelo sonar
     let best=null, bestD=14;
     Object.entries(entities).forEach(([id,ent])=>{
-      if(!ent) return;
+      if(!ent||ent.mode==="fish") return; // peixes ficam no mapa
       const pos=entDisplayPos(ent);
       const rp=rotByHdg(pos);
       const d=Math.hypot(px-(S_CX+rp.dx/UNITS_PER_M*S_SCALE),py-(S_CY+rp.dy/UNITS_PER_M*S_SCALE));
@@ -862,11 +960,8 @@
     renderEntityList();
   }
 
-  function addFishEntity(dx, dy) {
+  function addFishEntity(wx, wd) {
     const id="f"+Date.now().toString(36);
-    // peixe usa posição absoluta no mundo (igual a entidades approach)
-    const wx=(currentSubNav.x||0)+dx;
-    const wd=(currentSubNav.depth||1000)+dy;
     const ent={mode:"fish",wx,wd,visible:true,color:"#44aacc",fishPhase:Math.random()*Math.PI*2};
     entities[id]=ent;
     subRef.child("entities/"+id).set(ent);
@@ -971,30 +1066,47 @@
   document.addEventListener("keydown",e=>{
     if(e.code==="KeyE" && mouseOverCanvas){
       e.preventDefault();
-      const wr=unrotByHdg((mouseCanvasX-S_CX)/S_SCALE*UNITS_PER_M,(mouseCanvasY-S_CY)/S_SCALE*UNITS_PER_M);
-      addEntity(wr.dx, wr.dy);
+      if(sonarView==="map"){
+        const subRow=(currentSubNav.depth||1000)/TILE;
+        const viewStart=subRow-MAP_VIS_ABOVE;
+        const wx=X_MIN_W+(mouseCanvasX/MAP_CELL_W)*TILE;
+        const wd=(mouseCanvasY/MAP_CELL_H+viewStart)*TILE;
+        addFishEntity(wx,wd);
+      } else {
+        const wr=unrotByHdg((mouseCanvasX-S_CX)/S_SCALE*UNITS_PER_M,(mouseCanvasY-S_CY)/S_SCALE*UNITS_PER_M);
+        addEntity(wr.dx, wr.dy);
+      }
     }
   });
 
   // ---- Controles de modo/vista ----
-  document.getElementById("viewGM").addEventListener("click",()=>{
-    sonarView="gm";
-    document.getElementById("viewGM").classList.add("is-on");
-    document.getElementById("viewPlayer").classList.remove("is-on");
-  });
-  document.getElementById("viewPlayer").addEventListener("click",()=>{
-    sonarView="player";
-    document.getElementById("viewPlayer").classList.add("is-on");
-    document.getElementById("viewGM").classList.remove("is-on");
-  });
+  function setView(v){
+    sonarView=v;
+    document.getElementById("viewGM").classList.toggle("is-on",v==="gm");
+    document.getElementById("viewPlayer").classList.toggle("is-on",v==="player");
+    document.getElementById("viewMap").classList.toggle("is-on",v==="map");
+  }
+  document.getElementById("viewGM").addEventListener("click",()=>setView("gm"));
+  document.getElementById("viewPlayer").addEventListener("click",()=>setView("player"));
+  document.getElementById("viewMap").addEventListener("click",()=>setView("map"));
 
   document.getElementById("entAdd").addEventListener("click",()=>{
     const hdgRad=(currentSubNav.heading||0)*Math.PI/180;
     addEntity(Math.sin(hdgRad)*500, Math.cos(hdgRad)*500);
   });
   document.getElementById("entFish").addEventListener("click",()=>{
-    const hdgRad=(currentSubNav.heading||0)*Math.PI/180;
-    addFishEntity(Math.sin(hdgRad)*300, Math.cos(hdgRad)*300);
+    // abre o MAPA para colocar no lugar certo; ou coloca à frente do sub se já no mapa
+    if(sonarView!=="map"){
+      sonarView="map";
+      document.getElementById("viewMap").classList.add("is-on");
+      document.getElementById("viewGM").classList.remove("is-on");
+      document.getElementById("viewPlayer").classList.remove("is-on");
+    } else {
+      const hdgRad=(currentSubNav.heading||0)*Math.PI/180;
+      const wx=(currentSubNav.x||0)+Math.sin(hdgRad)*300;
+      const wd=(currentSubNav.depth||1000)+Math.cos(hdgRad)*300;
+      addFishEntity(wx,wd);
+    }
   });
   document.getElementById("entClear").addEventListener("click",()=>{
     subRef.child("entities").set(null);
