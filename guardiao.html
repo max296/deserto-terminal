@@ -294,8 +294,9 @@
 
           <div>
             <div class="s-lbl">ENTIDADES / AMEAÇAS</div>
-            <div style="display:flex;gap:6px;margin-bottom:8px">
-              <button class="btn" id="entAdd" style="flex:1;font-size:10px">+ nova</button>
+            <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+              <button class="btn" id="entAdd" style="flex:1;font-size:10px">+ ameaça</button>
+              <button class="btn" id="entFish" style="flex:1;font-size:10px;color:#44aacc">+ peixe</button>
               <button class="btn" id="entClear" style="flex:1;font-size:10px;color:var(--danger)">limpar</button>
             </div>
             <div id="entityList" style="display:flex;flex-direction:column;gap:5px;max-height:340px;overflow-y:auto;overflow-x:hidden"></div>
@@ -609,11 +610,14 @@
     const moved=Math.min(elapsed*ent.speed,dist);
     return {wx:ent.wx+(dx/dist)*moved, wd:ent.wd+(dd/dist)*moved};
   }
-  // Posição relativa ao sub: fixed usa dx/dy, approach usa trajetória calculada localmente
+  // Posição relativa ao sub: fixed usa dx/dy, approach usa trajetória calculada, fish usa wx/wd absoluto
   function entDisplayPos(ent) {
     if(ent.mode==="approach"&&typeof ent.wx==="number"){
       const pos=getApproachPos(ent,Date.now());
       return {dx:pos.wx-(currentSubNav.x||0), dy:pos.wd-(currentSubNav.depth||1000)};
+    }
+    if(ent.mode==="fish"&&typeof ent.wx==="number"){
+      return {dx:ent.wx-(currentSubNav.x||0), dy:ent.wd-(currentSubNav.depth||1000)};
     }
     return {dx:ent.dx||0, dy:ent.dy||0};
   }
@@ -858,6 +862,18 @@
     renderEntityList();
   }
 
+  function addFishEntity(dx, dy) {
+    const id="f"+Date.now().toString(36);
+    // peixe usa posição absoluta no mundo (igual a entidades approach)
+    const wx=(currentSubNav.x||0)+dx;
+    const wd=(currentSubNav.depth||1000)+dy;
+    const ent={mode:"fish",wx,wd,visible:true,color:"#44aacc",fishPhase:Math.random()*Math.PI*2};
+    entities[id]=ent;
+    subRef.child("entities/"+id).set(ent);
+    expandedEntities.add(id);
+    renderEntityList();
+  }
+
   function renderEntityList() {
     const list=document.getElementById("entityList"); if(!list) return;
     const ids=Object.keys(entities).filter(id=>entities[id]);
@@ -870,14 +886,16 @@
       const col=ent.color||"#d65a5a";
       const vis=ent.visible!==false;
       const mode=ent.mode||"fixed";
+      const isFish=mode==="fish";
       const spd=typeof ent.speed==="number"?ent.speed:0;
       const pos=entDisplayPos(ent);
       const dist=Math.hypot(pos.dx,pos.dy);
       const open=expandedEntities.has(id);
+      const modeTag=isFish?" · peixe":mode==="approach"?" · ↗":"";
       return `<div style="border:1px solid ${col}44;border-radius:4px;padding:5px 7px;background:#0a100a;font-size:10px">
         <div style="display:flex;align-items:center;gap:6px;cursor:pointer" data-toggle="${id}">
           <span style="width:8px;height:8px;border-radius:50%;background:${col};flex-shrink:0;opacity:${vis?1:0.4};box-shadow:0 0 5px ${col}88"></span>
-          <span style="flex:1;color:${vis?"var(--ink)":"var(--ink-dim)"}">E${i+1} · ${dist.toFixed(0)}m${vis?"":" · oculto"}${mode==="approach"?" · ↗":""}</span>
+          <span style="flex:1;color:${vis?"var(--ink)":"var(--ink-dim)"}">E${i+1} · ${dist.toFixed(0)}m${vis?"":" · oculto"}${modeTag}</span>
           <span style="color:var(--ink-dim)">${open?"▴":"▾"}</span>
         </div>
         <div id="ent-body-${id}" style="display:${open?"flex":"none"};flex-direction:column;gap:5px;margin-top:6px;padding-top:6px;border-top:1px solid #1a2a1a">
@@ -885,17 +903,20 @@
             <button class="btn ent-vis-btn" data-id="${id}" data-val="true" style="flex:1;font-size:9px${vis?";color:var(--live);border-color:var(--live-dim)":""}">VISÍVEL</button>
             <button class="btn ent-vis-btn" data-id="${id}" data-val="false" style="flex:1;font-size:9px${!vis?";color:var(--ink-dim);border-color:var(--ink-dim)":""}">OCULTO</button>
           </div>
-          <div style="display:flex;gap:4px;flex-wrap:wrap">
-            ${ENT_COLORS.map(c=>`<button class="btn ent-col-btn" data-id="${id}" data-c="${c}" style="width:18px;height:18px;padding:0;background:${c};border-radius:50%;border:2px solid ${col===c?"#fff":"transparent"};min-width:0"></button>`).join("")}
-          </div>
-          <div style="display:flex;gap:4px">
-            <button class="btn ent-mode-btn" data-id="${id}" data-m="fixed" style="flex:1;font-size:9px${mode==="fixed"?";color:var(--live);border-color:var(--live-dim)":""}">FIXO</button>
-            <button class="btn ent-mode-btn" data-id="${id}" data-m="approach" style="flex:1;font-size:9px${mode==="approach"?";color:var(--live);border-color:var(--live-dim)":""}">APROX.</button>
-          </div>
-          ${mode==="approach"?`<div style="display:flex;align-items:center;gap:6px">
-            <input type="range" class="ent-spd" data-id="${id}" min="0" max="200" step="1" value="${spd}" style="flex:1">
-            <span id="sv-${id}" style="font-size:9px;color:var(--ink-dim);min-width:42px">${spd} wu/s</span>
-          </div>`:""}
+          ${isFish
+            ?`<div style="font-size:9px;color:#44aacc;padding:2px 0">PEIXE — sprite 3D no visor</div>`
+            :`<div style="display:flex;gap:4px;flex-wrap:wrap">
+                ${ENT_COLORS.map(c=>`<button class="btn ent-col-btn" data-id="${id}" data-c="${c}" style="width:18px;height:18px;padding:0;background:${c};border-radius:50%;border:2px solid ${col===c?"#fff":"transparent"};min-width:0"></button>`).join("")}
+              </div>
+              <div style="display:flex;gap:4px">
+                <button class="btn ent-mode-btn" data-id="${id}" data-m="fixed" style="flex:1;font-size:9px${mode==="fixed"?";color:var(--live);border-color:var(--live-dim)":""}">FIXO</button>
+                <button class="btn ent-mode-btn" data-id="${id}" data-m="approach" style="flex:1;font-size:9px${mode==="approach"?";color:var(--live);border-color:var(--live-dim)":""}">APROX.</button>
+              </div>
+              ${mode==="approach"?`<div style="display:flex;align-items:center;gap:6px">
+                <input type="range" class="ent-spd" data-id="${id}" min="0" max="200" step="1" value="${spd}" style="flex:1">
+                <span id="sv-${id}" style="font-size:9px;color:var(--ink-dim);min-width:42px">${spd} wu/s</span>
+              </div>`:""}`
+          }
           <button class="btn ent-rm" data-id="${id}" style="font-size:9px;color:var(--danger);margin-top:2px">remover</button>
         </div>
       </div>`;
@@ -970,6 +991,10 @@
   document.getElementById("entAdd").addEventListener("click",()=>{
     const hdgRad=(currentSubNav.heading||0)*Math.PI/180;
     addEntity(Math.sin(hdgRad)*500, Math.cos(hdgRad)*500);
+  });
+  document.getElementById("entFish").addEventListener("click",()=>{
+    const hdgRad=(currentSubNav.heading||0)*Math.PI/180;
+    addFishEntity(Math.sin(hdgRad)*300, Math.cos(hdgRad)*300);
   });
   document.getElementById("entClear").addEventListener("click",()=>{
     subRef.child("entities").set(null);
