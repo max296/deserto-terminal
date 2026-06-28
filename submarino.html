@@ -476,43 +476,40 @@
     });
 
     for(const ent of ents){
-      // posição do peixe com glide: oscila ±50wu no eixo X a partir da posição fixa
-      const phase=now*0.6+(ent.fishPhase||0);
-      const glideX=Math.sin(phase)*50;
+      // glide suave ±15wu (1.5m) — não dominante, só dá vida
+      const phase=now*0.5+(ent.fishPhase||0);
+      const glideX=Math.sin(phase)*15;
       const glideVel=Math.cos(phase); // >0 = movendo p/ +X
       const fishX=(ent.wx||0)+glideX;
       const fishD=(ent.wd||nav.depth);
 
-      // transforma p/ espaço de câmera (rotaciona pelo heading)
+      // transforma p/ espaço de câmera
       const rx=fishX-nav.x, rd=fishD-nav.depth;
       const camX=rx*cosH - rd*sinH;
       const camZ=rx*sinH + rd*cosH;
-      if(camZ<=4) continue; // atrás da câmera ou muito perto
+      if(camZ<=4) continue;
 
-      // projeção de tela
-      const projH=Math.min(h*1.8, WALLH_/camZ);
+      // projeção: ~30% da altura de parede equivalente → peixe pequeno no mundo
+      const projH=Math.min(h*0.65, WALLH_*0.3/camZ);
       const projW=projH*(FISH_FW/FISH_FH);
       const screenX=w/2 + (camX/camZ/planeMag)*(w/2);
       const y0=h/2-projH/2;
       const x0=screenX-projW/2, x1=screenX+projW/2;
       if(x1<0||x0>w) continue;
 
-      // escolhe o frame: ângulo câmera→peixe relativo à direção de nado do peixe
-      // fishFacing: 90° = peixe nadando p/ +X, 270° = p/ -X (heading onde 0=olhar p/ +depth)
-      const fishFacing=glideVel>=0?Math.PI/2:-Math.PI/2; // heading em rad
-      const camAngleFish=Math.atan2(nav.x-fishX, nav.depth-fishD); // ângulo do sub visto do peixe
-      let viewSlice=((camAngleFish-fishFacing)/(Math.PI*2)*8+16)%8;
-      const frameIdx=Math.floor(viewSlice+0.5)%8;
-      const [fRow,fCol]=FISH_FRAMES[frameIdx];
-      const srcX=fCol*FISH_FW, srcY=fRow*FISH_FH;
+      // frame baseado na direção de nado (vista lateral): row 0 = direita, row 1 = esquerda
+      // col 2 = vista frontal do broadside (mais expressivo). inset 2px p/ evitar bleeding.
+      const fRow=glideVel>=0?0:1;
+      const srcX=2*FISH_FW+2, srcY=fRow*FISH_FH+2; // col 2, com inset de 2px
+      const srcW=FISH_FW-4, srcH=FISH_FH-4;
 
-      // fog por distância (igual às paredes)
+      // fog de distância — peixe opaco em distâncias médias
       const fog=Math.max(0,Math.min(1,1-camZ/(VIS_WALL_*0.9)));
-      if(fog<0.04) continue;
+      if(fog<0.05) continue;
 
-      // desenha em segmentos que passam no zbuffer (colunas onde peixe está na frente da parede)
+      // desenha por segmentos passando no zbuffer
       x.save();
-      x.globalAlpha=fog*fog;
+      x.globalAlpha=Math.min(0.92, fog);
       const sx0=Math.max(0,Math.floor(x0));
       const sx1=Math.min(w-1,Math.ceil(x1));
       let segStart=-1;
@@ -520,7 +517,7 @@
         if(segStart<0) return;
         x.save();
         x.beginPath(); x.rect(segStart,y0,end-segStart,projH); x.clip();
-        x.drawImage(fishSprite,srcX,srcY,FISH_FW,FISH_FH,x0,y0,projW,projH);
+        x.drawImage(fishSprite,srcX,srcY,srcW,srcH,x0,y0,projW,projH);
         x.restore();
         segStart=-1;
       };
@@ -630,7 +627,7 @@
       // ---- PAREDES (raycasting) ----
       // parede de escuridão: invisível antes de 550m, aparece lá e vai encolhendo até 180u no fundo.
       const VIS_DEPTH_THRESHOLD=5500;
-      const VIS_WALL = depth<=VIS_DEPTH_THRESHOLD ? MAXD+STEP : Math.max(180, MAXD - (depth-VIS_DEPTH_THRESHOLD)/(MAX_DEPTH-VIS_DEPTH_THRESHOLD)*(MAXD-180));
+      const VIS_WALL = depth<VIS_DEPTH_THRESHOLD ? MAXD+STEP : Math.max(180, MAXD - (depth-VIS_DEPTH_THRESHOLD)/(MAX_DEPTH-VIS_DEPTH_THRESHOLD)*(MAXD-180));
       const WALL_SIGHT = Math.min(MAXD,VIS_WALL)*0.9;
       // zbuffer: distância perpendicular de cada coluna (para sprite depth test)
       const zBuffer = new Float32Array(COLS).fill(MAXD);
