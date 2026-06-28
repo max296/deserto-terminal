@@ -859,7 +859,7 @@
       const col=ent.color||"#d65a5a";
       const vis=ent.visible!==false;
       const mode=ent.mode||"fixed";
-      const spd=ent.speed||5;
+      const spd=typeof ent.speed==="number"?ent.speed:0;
       const pos=entDisplayPos(ent);
       const dist=Math.hypot(pos.dx,pos.dy);
       const open=expandedEntities.has(id);
@@ -882,8 +882,8 @@
             <button class="btn ent-mode-btn" data-id="${id}" data-m="approach" style="flex:1;font-size:9px${mode==="approach"?";color:var(--live);border-color:var(--live-dim)":""}">APROX.</button>
           </div>
           ${mode==="approach"?`<div style="display:flex;align-items:center;gap:6px">
-            <input type="range" class="ent-spd" data-id="${id}" min="0.5" max="25" step="0.5" value="${spd}" style="flex:1">
-            <span id="sv-${id}" style="font-size:9px;color:var(--ink-dim);min-width:42px">${Number(spd).toFixed(1)} u/s</span>
+            <input type="range" class="ent-spd" data-id="${id}" min="0" max="200" step="1" value="${spd}" style="flex:1">
+            <span id="sv-${id}" style="font-size:9px;color:var(--ink-dim);min-width:42px">${spd} wu/s</span>
           </div>`:""}
           <button class="btn ent-rm" data-id="${id}" style="font-size:9px;color:var(--danger);margin-top:2px">remover</button>
         </div>
@@ -912,8 +912,8 @@
   });
   document.getElementById("entityList").addEventListener("input",e=>{
     const sl=e.target.closest(".ent-spd"); if(!sl) return;
-    const id=sl.dataset.id, spd=parseFloat(sl.value);
-    const sv=document.getElementById("sv-"+id); if(sv) sv.textContent=spd.toFixed(1)+" u/s";
+    const id=sl.dataset.id, spd=parseInt(sl.value);
+    const sv=document.getElementById("sv-"+id); if(sv) sv.textContent=spd+" wu/s";
     entities[id]=Object.assign({},entities[id],{speed:spd});
     subRef.child("entities/"+id+"/speed").set(spd);
   });
@@ -927,7 +927,7 @@
       const dirX=(currentSubNav.x||0)-wx, dirD=(currentSubNav.depth||1000)-wd;
       const dist=Math.hypot(dirX,dirD);
       if(dist<1) return;
-      const spd=Math.min(ent.speed||5,25);
+      const spd=Math.min(ent.speed,200);
       entities[id]=Object.assign({},ent,{wx:wx+(dirX/dist)*spd*0.1, wd:wd+(dirD/dist)*spd*0.1});
     });
   },100);
