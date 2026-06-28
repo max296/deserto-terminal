@@ -13,10 +13,18 @@
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.5;padding:20px;min-height:100vh}
-  .top{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:20px}
+  .top{display:flex;justify-content:space-between;align-items:center;padding-bottom:14px;margin-bottom:10px}
   .top h1{font-size:15px;letter-spacing:.22em;font-weight:600}
   .top h1 span{color:var(--live)}
   .top .sess{font-size:11px;color:var(--ink-dim);letter-spacing:.12em}
+
+  /* tabs */
+  .tabs{display:flex;gap:0;border-bottom:1px solid var(--line);margin-bottom:20px;max-width:840px}
+  .tab{cursor:pointer;padding:11px 22px;font-family:var(--font);font-size:11px;letter-spacing:.18em;color:var(--ink-dim);background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s}
+  .tab:hover{color:var(--ink)}
+  .tab.active{color:var(--live);border-bottom-color:var(--live)}
+  .tabpanel{display:none}
+  .tabpanel.active{display:block}
 
   .card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px;max-width:840px;margin-bottom:18px}
   .card .hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
@@ -35,7 +43,6 @@
   .sub-hd .clear-force:hover{background:var(--warn);color:var(--bg)}
   .sub-hd .clear-force.hidden{display:none}
 
-  /* niveis */
   .lvls{display:flex;flex-direction:column;gap:8px}
   .row{display:flex;align-items:center;gap:12px;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:10px 12px;transition:border-color .2s}
   .row.unlocked{border-color:var(--live-dim)}
@@ -53,7 +60,6 @@
   .btn.force.is-on{color:var(--bg);background:var(--warn);border-color:var(--warn)}
   .btn.force:disabled{opacity:.3;cursor:not-allowed}
 
-  /* cameras */
   .cams{display:flex;flex-wrap:wrap;gap:8px}
   .cam{display:flex;flex-direction:column;gap:9px;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:11px 12px;width:180px}
   .cam.on{border-color:var(--live-dim)}
@@ -66,7 +72,6 @@
   .cam .toggle:hover{border-color:var(--ink-dim);color:var(--ink)}
   .cam.on .toggle{color:var(--live);border-color:var(--live-dim)}
 
-  /* editor */
   .editor{display:flex;flex-direction:column;gap:10px}
   .editor .pickbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .editor input[type=text],.editor select,.editor textarea{background:var(--bg);border:1px solid var(--line);border-radius:4px;color:var(--ink);font-family:inherit;font-size:13px;padding:8px 10px}
@@ -96,8 +101,13 @@
   .footer{margin-top:18px;display:flex;gap:10px;align-items:center;justify-content:space-between;font-size:11px;color:var(--ink-dim);letter-spacing:.06em}
   .footer .x{cursor:pointer;color:var(--danger);border:1px solid var(--line);border-radius:4px;padding:5px 11px;background:var(--panel)}
   .footer .x:hover{border-color:var(--danger)}
-  .urls{max-width:840px;font-size:11px;color:var(--ink-dim);line-height:1.8;letter-spacing:.04em}
+  .urls{max-width:840px;font-size:11px;color:var(--ink-dim);line-height:1.8;letter-spacing:.04em;margin-top:10px}
   .urls code{background:var(--panel);padding:2px 7px;border-radius:3px;color:var(--ink)}
+
+  /* sonar */
+  #sonar{display:block;border:1px solid #152515;border-radius:4px;background:#060b06}
+  .sonar-legend{display:flex;flex-direction:column;gap:7px;font-size:11px;color:var(--ink-dim);letter-spacing:.04em;line-height:1.8}
+  .sonar-dot{display:inline-block;width:8px;height:8px;border-radius:50%;vertical-align:middle;margin-right:6px}
 </style>
 </head>
 <body>
@@ -107,138 +117,184 @@
     <div class="sess">sessão: <b id="sk">—</b></div>
   </div>
 
-  <!-- ESTACAO -->
-  <div class="card">
-    <div class="hd">
-      <div class="name"><b>NEUROSTAT</b> // Terminal de Estação</div>
-      <div class="power" id="power"><span class="led"></span><span id="powertxt">TERMINAL DESLIGADO</span></div>
-    </div>
-    <div class="hint">
-      Ligar acende o terminal dos jogadores. <b>Liberar</b> deixa o nível clicável pra eles explorarem sozinhos.
-      <b>Forçar</b> puxa a tela de todos pra aquele nível na hora (momento de cena) — clique de novo ou em "soltar foco" pra liberar.
-    </div>
-
-    <div class="lvls" id="lvls"></div>
-
-    <!-- cameras -->
-    <div class="sub-hd"><span>CÂMERAS — marque ON pra deixar acessível (jogador puxa, ~6s, 1min de cooldown)</span></div>
-    <div class="cams" id="cams"></div>
-
-    <div class="footer">
-      <span>Tudo o que você muda aqui aparece nos terminais na hora.</span>
-      <span class="x" id="reset">RESETAR ESTAÇÃO</span>
-    </div>
+  <div class="tabs">
+    <button class="tab active" data-tab="estacao">ESTAÇÃO</button>
+    <button class="tab" data-tab="submarino">SUBMARINO</button>
+    <button class="tab" data-tab="dre">DRE</button>
   </div>
 
-  <!-- SUBMARINO -->
-  <div class="card">
-    <div class="hd">
-      <div class="name dim">SUBMERSÍVEL // <b>visor</b></div>
-      <div class="power" id="subpower"><span class="led"></span><span id="subpowertxt">VISOR DESLIGADO</span></div>
-    </div>
-    <div class="hint">
-      Ligar acende o visor dos jogadores. Escolha o <b>casco</b>, dispare <b>estados</b> do breu, marque a <b>direção</b> de onde a ameaça aparece,
-      e use a <b>leitura</b> pra escrever no HUD deles. O minimapa mostra pra onde cada investigador está olhando.
-    </div>
+  <!-- TAB: ESTAÇÃO -->
+  <div id="tab-estacao" class="tabpanel active">
 
-    <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
-      <!-- coluna controles -->
-      <div style="flex:1;min-width:300px;display:flex;flex-direction:column;gap:14px">
-        <!-- skin -->
-        <div>
-          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">CASCO</div>
-          <div style="display:flex;gap:8px">
-            <button class="btn skin" data-skin="old" style="flex:1">VELHO (Iron Lung)</button>
-            <button class="btn skin" data-skin="neurostat" style="flex:1">MODERNO (NeuroStat)</button>
-          </div>
-          <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
-            <button class="btn" id="crackBtn" style="flex:1">⚠ RACHAR CASCO (velho)</button>
-            <span id="crackStat" style="font-size:10px;letter-spacing:.1em;color:var(--ink-dim);min-width:90px;text-align:center">intacto</span>
-          </div>
-          <div style="font-size:10px;color:var(--ink-dim);margin-top:5px;letter-spacing:.04em;line-height:1.6">
-            Rachar é permanente — o visor do submarino velho fica danificado até você apertar de novo pra consertar.
-          </div>
-        </div>
-        <!-- pilotagem (modo de navegação) -->
-        <div>
-          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">PERCURSO / PILOTAGEM
-            <span style="color:#456;text-transform:none;letter-spacing:0"> — quem pilota são os jogadores (WASD)</span></div>
-          <div id="submodes" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px"></div>
-          <div style="display:flex;align-items:center;gap:10px;margin-top:8px;font-size:11px;color:var(--ink-dim)">
-            profundidade atual: <b id="navDepth" style="color:var(--live)">0</b> m
-            <span id="navBeyond" style="color:var(--danger);display:none">· ALÉM DO CORAL</span>
-            <button class="btn" id="navSurface" style="margin-left:auto">zerar p/ superfície</button>
-          </div>
-        </div>
-        <!-- ameaça no breu -->
-        <div>
-          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">AMEAÇA NO BREU</div>
-          <div id="substates" style="display:grid;grid-template-columns:1fr 1fr;gap:7px"></div>
-        </div>
-        <!-- leitura livre -->
-        <div>
-          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">LEITURA / LEGENDA (HUD)</div>
-          <div style="display:flex;gap:8px">
-            <input type="text" id="subReadout" placeholder="ex: sonar — massa biológica, 40m, descendo"
-              style="flex:1;background:var(--bg);border:1px solid var(--line);border-radius:4px;color:var(--ink);font-family:inherit;font-size:13px;padding:8px 10px">
-            <button class="btn" id="subReadClear">limpar</button>
-          </div>
-        </div>
-        <!-- imagem -->
-        <div>
-          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">IMAGEM DA AMEAÇA (PNG transparente, opcional)</div>
-          <div style="display:flex;gap:8px">
-            <input type="text" id="subImgUrl" placeholder="cole a URL de um PNG (deixe vazio = formas abstratas)"
-              style="flex:1;background:var(--bg);border:1px solid var(--line);border-radius:4px;color:var(--ink);font-family:inherit;font-size:12px;padding:8px 10px">
-            <button class="btn" id="subImgSet">usar</button>
-            <button class="btn" id="subImgClear">tirar</button>
-          </div>
-        </div>
+    <div class="card">
+      <div class="hd">
+        <div class="name"><b>NEUROSTAT</b> // Terminal de Estação</div>
+        <div class="power" id="power"><span class="led"></span><span id="powertxt">TERMINAL DESLIGADO</span></div>
+      </div>
+      <div class="hint">
+        Ligar acende o terminal dos jogadores. <b>Liberar</b> deixa o nível clicável pra eles explorarem sozinhos.
+        <b>Forçar</b> puxa a tela de todos pra aquele nível na hora (momento de cena) — clique de novo ou em "soltar foco" pra liberar.
       </div>
 
-      <!-- coluna minimapa -->
-      <div style="width:240px">
-        <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">DIREÇÃO DA AMEAÇA · clique no anel</div>
-        <div style="position:relative;width:220px;height:220px;margin:0 auto">
-          <canvas id="radar" width="220" height="220" style="cursor:crosshair"></canvas>
-        </div>
-        <div style="font-size:10px;color:var(--ink-dim);text-align:center;margin-top:8px;letter-spacing:.08em">
-          setas = investigadores olhando · <span style="color:var(--danger)">vermelho</span> = ameaça
-        </div>
-        <button class="btn" id="threatClear" style="width:100%;margin-top:8px">tirar direção da ameaça</button>
+      <div class="lvls" id="lvls"></div>
+
+      <div class="sub-hd"><span>CÂMERAS — marque ON pra deixar acessível (jogador puxa, ~6s, 1min de cooldown)</span></div>
+      <div class="cams" id="cams"></div>
+
+      <div class="footer">
+        <span>Tudo o que você muda aqui aparece nos terminais na hora.</span>
+        <span class="x" id="reset">RESETAR ESTAÇÃO</span>
       </div>
     </div>
 
-    <div class="footer">
-      <span>O visor é controlado quase todo por você. Os jogadores só espiam.</span>
-      <span class="x" id="subreset">RESETAR SUBMARINO</span>
-    </div>
-  </div>
-
-  <!-- ARQUIVOS -->
-  <div class="card">
-    <div class="hd"><div class="name dim">ARQUIVOS // <b>escrever ao vivo</b></div></div>
-    <div class="hint">
-      Escreva um dossiê e escolha o nível. Publicar só salva — ele <b>não</b> aparece pros jogadores até você marcar
-      <b>DISPONÍVEL</b> na lista de baixo. Assim você segura cada documento até a hora certa.
-    </div>
-
-    <div class="editor">
-      <div class="pickbar">
-        <input type="text" id="docTitle" placeholder="Título do arquivo (ex: Incident Report 04-A)">
-        <select id="docLevel"></select>
+    <div class="card">
+      <div class="hd"><div class="name dim">ARQUIVOS // <b>escrever ao vivo</b></div></div>
+      <div class="hint">
+        Escreva um dossiê e escolha o nível. Publicar só salva — ele <b>não</b> aparece pros jogadores até você marcar
+        <b>DISPONÍVEL</b> na lista de baixo. Assim você segura cada documento até a hora certa.
       </div>
-      <textarea id="docBody" placeholder="Corpo do dossiê.&#10;&#10;## cabeçalho de seção&#10;[[ texto ]] vira tarja de redigido&#10;*texto* vira ênfase&#10;Linha em branco separa parágrafos."></textarea>
-      <div class="tools">marcas: <code>## Cabeçalho</code> &nbsp; <code>[[ redigido ]]</code> &nbsp; <code>*ênfase*</code> &nbsp; — linha em branco = novo parágrafo</div>
-      <div class="acts">
-        <button class="pub" id="publish">SALVAR ARQUIVO</button>
-        <button class="btn" id="clearForm">limpar campos</button>
-        <span class="saved" id="saved">✓ salvo</span>
+
+      <div class="editor">
+        <div class="pickbar">
+          <input type="text" id="docTitle" placeholder="Título do arquivo (ex: Incident Report 04-A)">
+          <select id="docLevel"></select>
+        </div>
+        <textarea id="docBody" placeholder="Corpo do dossiê.&#10;&#10;## cabeçalho de seção&#10;[[ texto ]] vira tarja de redigido&#10;*texto* vira ênfase&#10;Linha em branco separa parágrafos."></textarea>
+        <div class="tools">marcas: <code>## Cabeçalho</code> &nbsp; <code>[[ redigido ]]</code> &nbsp; <code>*ênfase*</code> &nbsp; — linha em branco = novo parágrafo</div>
+        <div class="acts">
+          <button class="pub" id="publish">SALVAR ARQUIVO</button>
+          <button class="btn" id="clearForm">limpar campos</button>
+          <span class="saved" id="saved">✓ salvo</span>
+        </div>
+      </div>
+
+      <div class="sub-hd"><span>ARQUIVOS SALVOS — marque DISPONÍVEL pra liberar pros jogadores</span></div>
+      <div class="doclist" id="doclist"></div>
+    </div>
+
+  </div><!-- /tab-estacao -->
+
+  <!-- TAB: SUBMARINO -->
+  <div id="tab-submarino" class="tabpanel">
+
+    <div class="card">
+      <div class="hd">
+        <div class="name dim">SUBMERSÍVEL // <b>visor</b></div>
+        <div class="power" id="subpower"><span class="led"></span><span id="subpowertxt">VISOR DESLIGADO</span></div>
+      </div>
+      <div class="hint">
+        Ligar acende o visor dos jogadores. Escolha o <b>casco</b>, dispare <b>estados</b> do breu, marque a <b>direção</b> de onde a ameaça aparece,
+        e use a <b>leitura</b> pra escrever no HUD deles. O minimapa mostra pra onde cada investigador está olhando.
+      </div>
+
+      <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+        <div style="flex:1;min-width:300px;display:flex;flex-direction:column;gap:14px">
+          <div>
+            <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">CASCO</div>
+            <div style="display:flex;gap:8px">
+              <button class="btn skin" data-skin="old" style="flex:1">VELHO (Iron Lung)</button>
+              <button class="btn skin" data-skin="neurostat" style="flex:1">MODERNO (NeuroStat)</button>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+              <button class="btn" id="crackBtn" style="flex:1">⚠ RACHAR CASCO (velho)</button>
+              <span id="crackStat" style="font-size:10px;letter-spacing:.1em;color:var(--ink-dim);min-width:90px;text-align:center">intacto</span>
+            </div>
+            <div style="font-size:10px;color:var(--ink-dim);margin-top:5px;letter-spacing:.04em;line-height:1.6">
+              Rachar é permanente — o visor do submarino velho fica danificado até você apertar de novo pra consertar.
+            </div>
+          </div>
+          <div>
+            <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">PERCURSO / PILOTAGEM
+              <span style="color:#456;text-transform:none;letter-spacing:0"> — quem pilota são os jogadores (WASD)</span></div>
+            <div id="submodes" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px"></div>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:8px;font-size:11px;color:var(--ink-dim)">
+              profundidade atual: <b id="navDepth" style="color:var(--live)">0</b> m
+              <span id="navBeyond" style="color:var(--danger);display:none">· ALÉM DO CORAL</span>
+              <button class="btn" id="navSurface" style="margin-left:auto">zerar p/ superfície</button>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">AMEAÇA NO BREU</div>
+            <div id="substates" style="display:grid;grid-template-columns:1fr 1fr;gap:7px"></div>
+          </div>
+          <div>
+            <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">LEITURA / LEGENDA (HUD)</div>
+            <div style="display:flex;gap:8px">
+              <input type="text" id="subReadout" placeholder="ex: sonar — massa biológica, 40m, descendo"
+                style="flex:1;background:var(--bg);border:1px solid var(--line);border-radius:4px;color:var(--ink);font-family:inherit;font-size:13px;padding:8px 10px">
+              <button class="btn" id="subReadClear">limpar</button>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">IMAGEM DA AMEAÇA (PNG transparente, opcional)</div>
+            <div style="display:flex;gap:8px">
+              <input type="text" id="subImgUrl" placeholder="cole a URL de um PNG (deixe vazio = formas abstratas)"
+                style="flex:1;background:var(--bg);border:1px solid var(--line);border-radius:4px;color:var(--ink);font-family:inherit;font-size:12px;padding:8px 10px">
+              <button class="btn" id="subImgSet">usar</button>
+              <button class="btn" id="subImgClear">tirar</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="width:240px">
+          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">DIREÇÃO DA AMEAÇA · clique no anel</div>
+          <div style="position:relative;width:220px;height:220px;margin:0 auto">
+            <canvas id="radar" width="220" height="220" style="cursor:crosshair"></canvas>
+          </div>
+          <div style="font-size:10px;color:var(--ink-dim);text-align:center;margin-top:8px;letter-spacing:.08em">
+            setas = investigadores olhando · <span style="color:var(--danger)">vermelho</span> = ameaça
+          </div>
+          <button class="btn" id="threatClear" style="width:100%;margin-top:8px">tirar direção da ameaça</button>
+        </div>
+      </div>
+
+      <div class="footer">
+        <span>O visor é controlado quase todo por você. Os jogadores só espiam.</span>
+        <span class="x" id="subreset">RESETAR SUBMARINO</span>
       </div>
     </div>
 
-    <div class="sub-hd"><span>ARQUIVOS SALVOS — marque DISPONÍVEL pra liberar pros jogadores</span></div>
-    <div class="doclist" id="doclist"></div>
+    <!-- SENSOR DE MOVIMENTO -->
+    <div class="card">
+      <div class="hd">
+        <div class="name dim">SENSOR DE MOVIMENTO // <b>sonar</b></div>
+        <span id="sonarStatus" style="font-size:10px;letter-spacing:.1em;color:var(--ink-dim)">aguardando...</span>
+      </div>
+      <div class="hint">
+        Atualiza a cada 2 segundos. Detecta somente movimento — paredes são invisíveis.
+        Criaturas vivas sempre aparecem (micro-movimento constante). Alcance: 100m.
+        0° = acima do sub (mais raso) · 90° = lateral · 180° = abaixo (mais fundo).
+      </div>
+      <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
+        <canvas id="sonar" width="320" height="320"></canvas>
+        <div class="sonar-legend">
+          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:4px">LEGENDA</div>
+          <div><span class="sonar-dot" style="background:#1eff60;box-shadow:0 0 4px #1eff60"></span>Submersível (centro)</div>
+          <div><span class="sonar-dot" style="background:#00ff80;box-shadow:0 0 6px #00ff80"></span>Objeto em movimento</div>
+          <div style="margin-top:12px;font-size:10px;color:var(--ink-dim);line-height:2.1">
+            Eixo vertical = profundidade<br>
+            Eixo horizontal = posição lateral<br>
+            Anéis = 25 · 50 · 75 · 100m<br>
+            Direção = anel de ameaça acima.
+          </div>
+          <div style="margin-top:14px;font-size:10px;color:var(--ink-dim);line-height:1.9;border-top:1px solid var(--line);padding-top:12px">
+            Distância estimada:<br>
+            "à distância" → ~80m<br>
+            "vulto" → ~45m<br>
+            "contato" → ~18m
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /tab-submarino -->
+
+  <!-- TAB: DRE -->
+  <div id="tab-dre" class="tabpanel">
+    <div class="card" style="opacity:.4;pointer-events:none">
+      <div class="hd"><div class="name dim">ARQUIVO DRE // <b>não inicializado</b></div></div>
+      <div class="hint">Terminal DRE não inicializado. Computadores VHS anos 90 degradados — em desenvolvimento.</div>
+    </div>
   </div>
 
   <div class="urls">
@@ -252,6 +308,9 @@
 <script>
   const CAM_COOLDOWN = 60000;
   document.getElementById("sk").textContent = SESSION_KEY;
+
+  // declarado cedo pra subRef.on poder atualizar
+  let sonarState = "void";
 
   const LEVELS = [
     { id:"helipad",  tag:"L-07", name:"Helipad" },
@@ -273,7 +332,6 @@
   const elLvls=document.getElementById("lvls");
   const elCams=document.getElementById("cams");
 
-  // niveis
   LEVELS.forEach(l=>{
     const row=document.createElement("div");
     row.className="row"; row.dataset.id=l.id;
@@ -285,11 +343,9 @@
     elLvls.appendChild(row);
   });
 
-  // editor: select de niveis
   const elDocLevel=document.getElementById("docLevel");
   LEVELS.forEach(l=>{const o=document.createElement("option");o.value=l.id;o.textContent=`${l.tag} · ${l.name}`;elDocLevel.appendChild(o);});
 
-  // cameras
   CAMERAS.forEach(c=>{
     const d=document.createElement("div");
     d.className="cam"; d.dataset.id=c.id;
@@ -312,14 +368,13 @@
     if(act==="force"){ ref.child("force").transaction(v=> v===id?null:id ); }
   });
 
-  // camera: liga/desliga (toggle do "on"). Ligar zera o cooldown.
   elCams.addEventListener("click", e=>{
     const btn=e.target.closest(".toggle"); if(!btn) return;
     const id=btn.dataset.id;
     ref.child("cams/"+id).once("value").then(s=>{
       const c=s.val()||{};
       if(c.on){ ref.child("cams/"+id).set({on:false}); }
-      else { ref.child("cams/"+id).set({on:true, pulledAt:0}); } // ON e pronto pra puxar
+      else { ref.child("cams/"+id).set({on:true, pulledAt:0}); }
     });
   });
 
@@ -331,7 +386,6 @@
 
   document.getElementById("publish").addEventListener("click",()=>{
     const title=elTitle.value.trim(); if(!title){elTitle.focus();return;}
-    // preserva o estado 'available' se estiver editando
     const finish=(prevAvail)=>{
       const payload={title, body:elBody.value, level:elDocLevel.value, at:Date.now(), available:!!prevAvail};
       const dest=editingKey?ref.child("files/"+editingKey):ref.child("files").push();
@@ -377,7 +431,12 @@
         const f=s.val(); if(!f) return;
         elTitle.value=f.title||""; elBody.value=f.body||""; elDocLevel.value=f.level||LEVELS[0].id;
         editingKey=k;
-        window.scrollTo({top:document.querySelector(".editor").offsetTop-40,behavior:"smooth"});
+        // vai pra aba estacao e rola até o editor
+        document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+        document.querySelectorAll(".tabpanel").forEach(p=>p.classList.remove("active"));
+        document.querySelector(".tab[data-tab='estacao']").classList.add("active");
+        document.getElementById("tab-estacao").classList.add("active");
+        setTimeout(()=>window.scrollTo({top:document.querySelector(".editor").offsetTop-40,behavior:"smooth"}),50);
       });
     }
   });
@@ -409,14 +468,12 @@
       const lockBtn=row.querySelector(".lock");
       lockBtn.textContent=isUn?"TRANCAR":"LIBERAR"; lockBtn.classList.toggle("is-on",isUn);
       const forceBtn=row.querySelector(".force");
-      forceBtn.disabled=!isUn; // so força o que está liberado
+      forceBtn.disabled=!isUn;
       forceBtn.classList.toggle("is-on",force===id);
       forceBtn.textContent=force===id?"FORÇANDO":"FORÇAR";
     });
 
-    // botao global de soltar foco
     let cf=document.getElementById("clearForceBtn");
-    const camsHd=document.querySelectorAll(".sub-hd")[0];
     if(force){
       if(!cf){
         cf=document.createElement("button");
@@ -427,7 +484,6 @@
       }
     } else if(cf){ cf.remove(); }
 
-    // cameras
     const cams=s.cams||{}; const now=Date.now();
     document.querySelectorAll(".cam").forEach(cam=>{
       const id=cam.dataset.id; const c=cams[id]||{};
@@ -442,7 +498,7 @@
       else { stat.textContent="● ON / pronta"; toggle.textContent="DESLIGAR"; }
     });
   });
-  // tick pro cooldown atualizar no painel
+
   setInterval(()=>{ ref.child("cams").once("value").then(s=>{
     const cams=s.val()||{}; const now=Date.now();
     document.querySelectorAll(".cam").forEach(cam=>{
@@ -459,13 +515,11 @@
 
   // =================== SUBMARINO ===================
   const subRef = sessionRef.child("submarine");
-  // modos de pilotagem (controlam nav.mode)
   const SUB_MODES=[
     {id:"moonpool", label:"Na moonpool"},
     {id:"diving",   label:"Submersos"},
     {id:"reeling",  label:"Puxar de volta"}
   ];
-  // estados de ameaça (controlam state)
   const SUB_STATES=[
     {id:"void",     label:"Nada"},
     {id:"distant",  label:"Algo à distância"},
@@ -473,14 +527,12 @@
     {id:"close",    label:"Contato próximo"}
   ];
 
-  // monta botoes de pilotagem
   const elSubModes=document.getElementById("submodes");
   SUB_MODES.forEach(s=>{
     const b=document.createElement("button");
     b.className="btn submode"; b.dataset.mode=s.id; b.textContent=s.label;
     elSubModes.appendChild(b);
   });
-  // monta botoes de ameaça
   const elSubStates=document.getElementById("substates");
   SUB_STATES.forEach(s=>{
     const b=document.createElement("button");
@@ -504,27 +556,22 @@
       } else { subRef.child("cracked").set(false); }
     });
   });
-  // pilotagem: muda nav.mode
   elSubModes.addEventListener("click",e=>{
     const b=e.target.closest(".submode"); if(!b) return;
     subRef.child("nav/mode").set(b.dataset.mode);
   });
-  // zerar profundidade pra superfície
   document.getElementById("navSurface").addEventListener("click",()=>{
     subRef.child("nav").update({x:0,depth:200,heading:0,mode:"moonpool"});
   });
-  // ameaça: muda state
   elSubStates.addEventListener("click",e=>{
     const b=e.target.closest(".substate"); if(!b) return;
     subRef.child("state").set(b.dataset.state);
   });
 
-  // leitura livre
   const elSubReadout=document.getElementById("subReadout");
   elSubReadout.addEventListener("input",()=>subRef.child("readout").set(elSubReadout.value));
   document.getElementById("subReadClear").addEventListener("click",()=>{elSubReadout.value="";subRef.child("readout").set("");});
 
-  // imagem
   document.getElementById("subImgSet").addEventListener("click",()=>{
     const u=document.getElementById("subImgUrl").value.trim();
     subRef.child("imgUrl").set(u||null);
@@ -543,14 +590,13 @@
   // ---- RADAR / minimapa ----
   const radar=document.getElementById("radar");
   const rctx=radar.getContext("2d");
-  const RC=110, RR=88; // centro e raio
+  const RC=110, RR=88;
   let viewers={}, threatDir=null, subSkinNow="old";
 
-  // clique no anel = define direcao da ameaca
   radar.addEventListener("click",e=>{
     const rect=radar.getBoundingClientRect();
     const x=e.clientX-rect.left-RC, y=e.clientY-rect.top-RC;
-    let ang=Math.atan2(x,-y)*180/Math.PI; // 0 = topo (norte), horario
+    let ang=Math.atan2(x,-y)*180/Math.PI;
     ang=(ang+360)%360;
     subRef.child("threatDir").set(Math.round(ang));
   });
@@ -558,37 +604,29 @@
 
   function drawRadar(){
     rctx.clearRect(0,0,220,220);
-    // aneis
     rctx.strokeStyle="#2a3035"; rctx.lineWidth=1;
     [RR,RR*0.66,RR*0.33].forEach(r=>{rctx.beginPath();rctx.arc(RC,RC,r,0,7);rctx.stroke();});
-    // cruz
     rctx.beginPath();rctx.moveTo(RC,RC-RR);rctx.lineTo(RC,RC+RR);rctx.moveTo(RC-RR,RC);rctx.lineTo(RC+RR,RC);rctx.stroke();
-    // N
     rctx.fillStyle="#6a767d";rctx.font="9px monospace";rctx.textAlign="center";rctx.fillText("N",RC,RC-RR-4);
 
-    // submersivel no centro
     rctx.fillStyle="#62e0c4";
     rctx.beginPath();rctx.arc(RC,RC,5,0,7);rctx.fill();
 
-    // setas dos investigadores (heading)
     const now=Date.now();
     Object.keys(viewers).forEach((id,i)=>{
-      const v=viewers[id]; if(!v||now-(v.at||0)>12000) return; // some apos 12s sem reportar
+      const v=viewers[id]; if(!v||now-(v.at||0)>12000) return;
       const h=(v.heading||0)*Math.PI/180;
       const dx=Math.sin(h), dy=-Math.cos(h);
       rctx.strokeStyle="#62e0c4";rctx.fillStyle="#62e0c4";rctx.lineWidth=2;
       rctx.globalAlpha=.85;
       rctx.beginPath();rctx.moveTo(RC,RC);rctx.lineTo(RC+dx*RR*0.8,RC+dy*RR*0.8);rctx.stroke();
-      // ponta
       rctx.beginPath();
       rctx.arc(RC+dx*RR*0.8,RC+dy*RR*0.8,3,0,7);rctx.fill();
       rctx.globalAlpha=1;
-      // rotulo
       rctx.fillStyle="#7a8a8a";rctx.font="8px monospace";
       rctx.fillText("INV "+(i+1), RC+dx*RR*0.92, RC+dy*RR*0.92);
     });
 
-    // direcao da ameaca (vermelho)
     if(threatDir!=null){
       const a=threatDir*Math.PI/180;
       const dx=Math.sin(a), dy=-Math.cos(a);
@@ -598,7 +636,6 @@
     }
   }
 
-  // escuta estado do submarino pro painel
   subRef.on("value",snap=>{
     const s=snap.val()||{};
     const online=!!s.online;
@@ -612,7 +649,6 @@
       b.style.borderColor=on?"var(--live-dim)":"";
       b.style.color=on?"var(--live)":"";
     });
-    // estado de rachadura
     const cracked=!!s.cracked;
     const crackBtn=document.getElementById("crackBtn");
     const crackStat=document.getElementById("crackStat");
@@ -628,7 +664,6 @@
       b.style.borderColor=on?"var(--live-dim)":"";
       b.style.color=on?"var(--live)":"";
     });
-    // pilotagem: highlight do modo atual + profundidade ao vivo
     const navmode=(s.nav&&s.nav.mode)||"moonpool";
     document.querySelectorAll(".submode").forEach(b=>{
       const on=b.dataset.mode===navmode;
@@ -643,15 +678,170 @@
 
     if(document.activeElement!==elSubReadout){ elSubReadout.value=s.readout||""; }
     threatDir = (s.threatDir!=null)?s.threatDir:null;
+    sonarState = s.state || "void";
     drawRadar();
   });
 
-  // escuta viewers (presenca dos jogadores)
   subRef.child("viewers").on("value",snap=>{
     viewers=snap.val()||{};
     drawRadar();
   });
-  setInterval(drawRadar,1000); // atualiza setas/expira
+  setInterval(drawRadar,1000);
+
+  // =================== SENSOR DE MOVIMENTO ===================
+  const sonar = document.getElementById("sonar");
+  const sctx = sonar.getContext("2d");
+  const S_W = 320, S_H = 320, S_CX = 160, S_CY = 160;
+  const S_RANGE = 100;        // metros por eixo a partir do centro
+  const S_SCALE = S_CX / S_RANGE; // 1.6 px/m
+
+  let sonarSnap0 = null;  // snapshot anterior
+  let sonarSnap1 = null;  // snapshot atual
+  let sonarBlips = [];    // [{dx, dy, born}] em metros relativos ao sub
+  let sonarScanT = 0;     // timestamp do último tick (pra animação do anel)
+
+  const SONAR_DIST = { void:0, distant:78, passing:44, close:18 };
+
+  function sonarSnapshot() {
+    const entities = [];
+    if (sonarState !== "void" && threatDir != null) {
+      const dist = SONAR_DIST[sonarState] || 50;
+      const rad = threatDir * Math.PI / 180;
+      // Micro-jitter garante que a ameaça sempre se mova entre snapshots
+      const j = 1.4;
+      entities.push({
+        id: "threat",
+        dx: Math.sin(rad) * dist + (Math.random() - 0.5) * j,
+        dy: -Math.cos(rad) * dist + (Math.random() - 0.5) * j  // negativo: 0°=raso=acima no canvas
+      });
+    }
+    return entities;
+  }
+
+  function sonarGetMoving(prev, curr) {
+    if (!prev) return curr.slice();
+    return curr.filter(e => {
+      const p = prev.find(x => x.id === e.id);
+      if (!p) return true;
+      return Math.hypot(e.dx - p.dx, e.dy - p.dy) > 0.4;
+    });
+  }
+
+  function sonarTick() {
+    sonarSnap0 = sonarSnap1;
+    sonarSnap1 = sonarSnapshot();
+    const now = Date.now();
+    sonarBlips = sonarGetMoving(sonarSnap0, sonarSnap1).map(e => ({ ...e, born: now }));
+    sonarScanT = now;
+    const el = document.getElementById("sonarStatus");
+    if (el) el.textContent = sonarBlips.length > 0
+      ? sonarBlips.length + " objeto(s) em movimento"
+      : "nenhum movimento detectado";
+  }
+
+  function drawSonar() {
+    // Fundo
+    sctx.fillStyle = "#060b06";
+    sctx.fillRect(0, 0, S_W, S_H);
+
+    // Anel de varredura (expande do centro após cada tick)
+    const ringAge = (Date.now() - sonarScanT) / 2000;
+    if (ringAge < 1) {
+      const r = ringAge * S_CX;
+      sctx.strokeStyle = `rgba(0,200,80,${(1 - ringAge) * 0.45})`;
+      sctx.lineWidth = 1.5;
+      sctx.beginPath();
+      sctx.arc(S_CX, S_CY, r, 0, Math.PI * 2);
+      sctx.stroke();
+    }
+
+    // Grid — anéis concêntricos
+    sctx.strokeStyle = "#0d2010";
+    sctx.lineWidth = 1;
+    [25, 50, 75, 100].forEach(m => {
+      sctx.beginPath();
+      sctx.arc(S_CX, S_CY, m * S_SCALE, 0, Math.PI * 2);
+      sctx.stroke();
+    });
+    // Eixos
+    sctx.beginPath();
+    sctx.moveTo(S_CX, 4); sctx.lineTo(S_CX, S_H - 4);
+    sctx.moveTo(4, S_CY); sctx.lineTo(S_W - 4, S_CY);
+    sctx.stroke();
+
+    // Labels de distância
+    sctx.fillStyle = "#0e2a10";
+    sctx.font = "8px monospace";
+    sctx.textAlign = "left";
+    [25, 50, 75].forEach(m => {
+      sctx.fillText(m + "m", S_CX + m * S_SCALE + 2, S_CY - 2);
+    });
+
+    // Labels de orientação
+    sctx.fillStyle = "#0e3018";
+    sctx.font = "8px monospace";
+    sctx.textAlign = "center";
+    sctx.fillText("RASO", S_CX, 11);
+    sctx.fillText("FUNDO", S_CX, S_H - 3);
+    sctx.textAlign = "right";
+    sctx.fillText("LAT", S_W - 3, S_CY - 3);
+    sctx.textAlign = "left";
+    sctx.fillText("LAT", 3, S_CY - 3);
+
+    // Blips com fade
+    const now = Date.now();
+    sonarBlips.forEach(b => {
+      const age = (now - b.born) / 2000;
+      const alpha = Math.max(0.1, 1 - age * 0.6);
+      // dy positivo = mais fundo = canvas Y maior (abaixo)
+      const bx = S_CX + b.dx * S_SCALE;
+      const by = S_CY + b.dy * S_SCALE;
+      if (bx < 2 || bx > S_W - 2 || by < 2 || by > S_H - 2) return;
+      // Glow
+      const grd = sctx.createRadialGradient(bx, by, 0, bx, by, 16);
+      grd.addColorStop(0, `rgba(0,255,100,${alpha * 0.65})`);
+      grd.addColorStop(1, `rgba(0,255,100,0)`);
+      sctx.fillStyle = grd;
+      sctx.beginPath();
+      sctx.arc(bx, by, 16, 0, Math.PI * 2);
+      sctx.fill();
+      // Ponto central
+      sctx.fillStyle = `rgba(120,255,160,${alpha})`;
+      sctx.beginPath();
+      sctx.arc(bx, by, 3, 0, Math.PI * 2);
+      sctx.fill();
+    });
+
+    // Sub no centro
+    const sg = sctx.createRadialGradient(S_CX, S_CY, 0, S_CX, S_CY, 10);
+    sg.addColorStop(0, "rgba(30,255,96,.5)");
+    sg.addColorStop(1, "rgba(30,255,96,0)");
+    sctx.fillStyle = sg;
+    sctx.beginPath(); sctx.arc(S_CX, S_CY, 10, 0, Math.PI * 2); sctx.fill();
+    sctx.fillStyle = "#1eff60";
+    sctx.beginPath(); sctx.arc(S_CX, S_CY, 4, 0, Math.PI * 2); sctx.fill();
+
+    // Rodapé
+    sctx.fillStyle = "#183018";
+    sctx.font = "8px monospace";
+    sctx.textAlign = "left";
+    sctx.fillText("MOTION SENSOR  RANGE 100m", 4, S_H - 4);
+  }
+
+  setInterval(sonarTick, 2000);
+  setInterval(drawSonar, 100); // 10fps — suficiente pra animação do anel
+  sonarTick();
+  drawSonar();
+
+  // =================== ABAS ===================
+  document.querySelectorAll(".tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      document.querySelectorAll(".tabpanel").forEach(p => p.classList.remove("active"));
+      tab.classList.add("active");
+      document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
+    });
+  });
 
   function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 </script>
