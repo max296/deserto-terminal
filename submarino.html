@@ -280,6 +280,7 @@
   let navReady=false;
   const keys={};
   let lastWallHit=0, wallHitCount=0;
+  let navPath=[], lastPathPoint=null, reelingWpIdx=-1, reelingSpeed=80;
 
   let heading=0, lightMode=false, lightOn=false, focusing=false;
   let beamX=0.5, beamY=0.5, focusAmt=0;
@@ -440,7 +441,7 @@
       }
 
       // CHÃO (sempre) via floor casting (técnica lodev). escurece com a distância (breu).
-      const GRID=28;
+      const GRID=10;   // grid em metros (depois de dividir por UNITS_PER_M)
       const SIGHT=13;
       for(let y=Math.floor(horizon)+1; y<h; y+=ROWH){
         const p = y - horizon;
@@ -455,9 +456,10 @@
         for(let cxi=0; cxi<COLN; cxi++){
           const t2=cxi/COLN;
           const wx=wx0+(wx1-wx0)*t2, wy=wy0+(wy1-wy0)*t2;
-          const sh=rockShade(wx,wy);
-          const gx=Math.abs(((wx%GRID)+GRID)%GRID - GRID/2);
-          const gy=Math.abs(((wy%GRID)+GRID)%GRID - GRID/2);
+          const mx=wx/UNITS_PER_M, my=wy/UNITS_PER_M; // converte para metros
+          const sh=rockShade(mx,my);
+          const gx=Math.abs(((mx%GRID)+GRID)%GRID - GRID/2);
+          const gy=Math.abs(((my%GRID)+GRID)%GRID - GRID/2);
           const onLine = Math.min(gx,gy) < 0.7;
           let base = (22 + sh*30) * vis2 * (0.45+ambLight*0.7);
           if(onLine) base += 12*vis2*(0.45+ambLight*0.7);
@@ -809,6 +811,13 @@
         nav.depth = nd;
         pushNav();
 
+        // breadcrumb: registra ponto do caminho a cada 60wu de movimento
+        if(!lastPathPoint) lastPathPoint={x:nav.x,depth:nav.depth};
+        if(Math.hypot(nav.x-lastPathPoint.x,nav.depth-lastPathPoint.depth)>60){
+          navPath.push({x:nav.x,depth:nav.depth});
+          lastPathPoint={x:nav.x,depth:nav.depth};
+        }
+
         // só sinaliza impacto quando DE FATO raspa a parede lateral (não nos limites de profundidade)
         if(hitWall && Math.abs(stepX)>0.5 && now-lastWallHit>450){
           lastWallHit=now; elWallHit.classList.remove("hit"); void elWallHit.offsetWidth; elWallHit.classList.add("hit");
@@ -817,22 +826,24 @@
       }
     }
     else if(nav.mode==="reeling"){
-      // recolhimento: sobe pelo caminho central (X=0), incluindo a queda reversa
-      const targetX=0;
-      const offCenter=Math.abs(nav.x-targetX);
-      if(offCenter>2){
-        const nx2=nav.x+(targetX-nav.x)*Math.min(1,dt*5);
-        // só move X se o caminho não estiver bloqueado
-        if(!isWall(nx2,nav.depth)&&!isWall(nx2-10,nav.depth)&&!isWall(nx2+10,nav.depth)) nav.x=nx2;
-        nav.depth=Math.max(START_DEPTH, nav.depth-8*dt);
-        pushNav();
-      } else if(nav.depth>START_DEPTH){
-        nav.x=targetX;
-        nav.depth=Math.max(START_DEPTH, nav.depth-26*dt);
+      // recolhimento: segue breadcrumbs em reverso (caminho real do sub)
+      const target = reelingWpIdx>=0 ? navPath[reelingWpIdx] : null;
+      if(!target){
+        // sem breadcrumbs restantes: centraliza e sobe direto
+        nav.x += (0-nav.x)*Math.min(1,dt*3);
+        nav.depth = Math.max(START_DEPTH, nav.depth - reelingSpeed*dt);
         pushNav();
         if(nav.depth<=START_DEPTH){ nav.x=0; nav.mode="moonpool"; pushNav(); }
       } else {
-        nav.x=0; nav.mode="moonpool"; pushNav();
+        const dx=target.x-nav.x, dd=target.depth-nav.depth;
+        const dist=Math.hypot(dx,dd);
+        if(dist<25){
+          reelingWpIdx--; // chegou neste waypoint, vai pro anterior
+        } else {
+          nav.x  += (dx/dist)*reelingSpeed*dt;
+          nav.depth += (dd/dist)*reelingSpeed*dt;
+          pushNav();
+        }
       }
     }
 
@@ -963,11 +974,22 @@
       document.getElementById("sub").classList.toggle("bobbing", nav.mode==="moonpool");
       if(diveAnim){clearInterval(diveAnim);diveAnim=null;}
       updateMoonpoolByMode(prev);
-      // volta pra moonpool: zera o contador de colisões
       if(nav.mode==="moonpool" && prev && prev!=="moonpool"){
         wallHitCount=0;
+        navPath=[]; lastPathPoint=null;  // moonpool reseta o caminho
+      }
+      if(nav.mode==="reeling" && prev!=="reeling"){
+        reelingWpIdx=navPath.length-1;   // inicia recolhimento pelo último breadcrumb
+      }
+      if(nav.mode==="diving" && prev==="moonpool"){
+        navPath=[]; lastPathPoint=null;  // nova descida: limpa caminho anterior
       }
     }
+  });
+
+  // velocidade do recolhimento (configurada pelo guardião)
+  ref.child("reelingSpeed").on("value",snap=>{
+    const v=snap.val(); if(typeof v==="number"&&v>0) reelingSpeed=v;
   });
 
   // escuta override do shutter (guardião ou monitor)
