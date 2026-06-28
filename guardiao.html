@@ -202,6 +202,7 @@
             <div style="display:flex;align-items:center;gap:10px;margin-top:8px;font-size:11px;color:var(--ink-dim)">
               profundidade: <b id="navDepth" style="color:var(--live)">0</b> m
               <span id="navBeyond" style="color:var(--danger);display:none">· ALÉM DO CORAL</span>
+              <span>· colisões: <b id="wallHits" style="color:var(--ink)">0</b></span>
               <button class="btn" id="navSurface" style="margin-left:auto">zerar p/ superfície</button>
             </div>
           </div>
@@ -275,8 +276,10 @@
             </div>
           </div>
 
-          <div>
-            <button class="btn" id="threatClear" style="width:100%;font-size:10px">tirar ameaça do sensor</button>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <button class="btn" id="threatClear" style="font-size:10px">tirar ameaça</button>
+            <button class="btn" id="entClear" style="font-size:10px">limpar entidades</button>
+            <div style="font-size:9px;color:var(--ink-dim);line-height:1.5">E+mouse = nova · arrastar = mover</div>
           </div>
 
           <div style="border-top:1px solid var(--line);padding-top:12px;font-size:10px;color:var(--ink-dim);line-height:2.1;letter-spacing:.02em">
@@ -331,6 +334,12 @@
   const FADE_DURATION = 4000; // ms
   // Scan ring
   let sonarScanT = 0;
+  // Entidades extras (múltiplos blips)
+  let entities = {}, entityBlips = {};
+  // Drag + hover no canvas
+  let dragEntityId = null, justDraggedEntity = false;
+  let mouseCanvasX = 160, mouseCanvasY = 160, mouseOverCanvas = false;
+  let entDragThrottle = 0;
 
   const LEVELS = [
     { id:"helipad",  tag:"L-07", name:"Helipad" },
@@ -562,7 +571,7 @@
   });
   document.getElementById("subreset").addEventListener("click",()=>{
     if(confirm("Resetar o submarino?")){
-      subRef.update({online:false,state:"void",threatPos:null,threatWorld:null,threatDir:null,readout:"",imgUrl:null,cracked:false,coralGrowth:false});
+      subRef.update({online:false,state:"void",threatPos:null,threatWorld:null,threatDir:null,readout:"",imgUrl:null,cracked:false,coralGrowth:false,entities:null,wallHits:0});
       subRef.child("nav").set({x:0,depth:200,heading:0,mode:"moonpool"});
       document.getElementById("coralStatus").textContent="inativo";
       document.getElementById("coralStatus").style.color="var(--ink-dim)";
@@ -604,6 +613,20 @@
     return base * (1 - age) * (1 - age) * (1 + 2*age);
   }
 
+  // Rotação heading-up: world-relative → display (sub aponta pra cima no canvas)
+  function rotByHdg(pos) {
+    if (!pos) return null;
+    const α = (currentSubNav.heading||0) * Math.PI / 180 - Math.PI;
+    const ca = Math.cos(α), sa = Math.sin(α);
+    return { dx: pos.dx*ca - pos.dy*sa, dy: pos.dx*sa + pos.dy*ca };
+  }
+  // Inversa: display (canvas) → world-relative
+  function unrotByHdg(rdx, rdy) {
+    const α = (currentSubNav.heading||0) * Math.PI / 180 - Math.PI;
+    const ca = Math.cos(α), sa = Math.sin(α);
+    return { dx: rdx*ca + rdy*sa, dy: -rdx*sa + rdy*ca };
+  }
+
   // ---- helpers de desenho ----
   function drawGrid() {
     sctx.strokeStyle="#0d2010"; sctx.lineWidth=1;
@@ -618,9 +641,9 @@
     sctx.textAlign="left";
     [25,50,75].forEach(m=>sctx.fillText(m+"m", S_CX+m*S_SCALE+2, S_CY-2));
     sctx.fillStyle="#0e3018"; sctx.textAlign="center";
-    sctx.fillText("RASO",S_CX,11); sctx.fillText("FUNDO",S_CX,S_H-3);
-    sctx.textAlign="right"; sctx.fillText("LAT",S_W-3,S_CY-3);
-    sctx.textAlign="left";  sctx.fillText("LAT",3,S_CY-3);
+    sctx.fillText("↑ FRENTE",S_CX,11); sctx.fillText("↓ TRÁS",S_CX,S_H-3);
+    sctx.textAlign="right"; sctx.fillText("DIR",S_W-3,S_CY-3);
+    sctx.textAlign="left";  sctx.fillText("ESQ",3,S_CY-3);
   }
 
   function drawSub() {
@@ -679,28 +702,49 @@
     }
 
     if (displayPos && alpha > 0.01) {
-      const bx=S_CX+displayPos.dx*S_SCALE, by=S_CY+displayPos.dy*S_SCALE;
+      const rp=rotByHdg(displayPos);
+      const bx=S_CX+rp.dx*S_SCALE, by=S_CY+rp.dy*S_SCALE;
       const cx=Math.max(6,Math.min(S_W-6,bx)), cy=Math.max(6,Math.min(S_H-6,by));
-      // Linha tracejada do centro à ameaça
       sctx.setLineDash([4,4]);
       sctx.strokeStyle=`rgba(180,70,70,${alpha*0.45})`; sctx.lineWidth=1;
       sctx.beginPath(); sctx.moveTo(S_CX,S_CY); sctx.lineTo(cx,cy); sctx.stroke();
       sctx.setLineDash([]);
       drawRedBlip(cx,cy,alpha);
-      // Label
       const dist=Math.hypot(displayPos.dx,displayPos.dy);
       sctx.fillStyle=`rgba(214,90,90,${alpha})`; sctx.font="8px monospace";
       sctx.textAlign=cx>S_CX?"left":"right";
       sctx.fillText(`AMEAÇA  ${dist.toFixed(0)}m`, cx+(cx>S_CX?8:-8), cy-7);
     } else if (!threatPos) {
-      // Dica de clique quando sem ameaça
       sctx.fillStyle="#152015"; sctx.font="9px monospace"; sctx.textAlign="center";
       sctx.fillText("clique pra posicionar ameaça", S_CX, S_H-14);
     }
 
+    // Entidades extras (GM vê triângulo azul)
+    Object.entries(entities).forEach(([id,ent])=>{
+      if(!ent) return;
+      const rp=rotByHdg(ent);
+      const ex=S_CX+rp.dx*S_SCALE, ey=S_CY+rp.dy*S_SCALE;
+      if(ex<2||ex>S_W-2||ey<2||ey>S_H-2) return;
+      sctx.globalAlpha=0.85;
+      sctx.strokeStyle="#88aaff"; sctx.lineWidth=1.5;
+      const r=5;
+      sctx.beginPath(); sctx.moveTo(ex,ey-r); sctx.lineTo(ex+r*0.87,ey+r*0.5); sctx.lineTo(ex-r*0.87,ey+r*0.5); sctx.closePath(); sctx.stroke();
+      sctx.fillStyle="#5577cc"; sctx.beginPath(); sctx.arc(ex,ey,2.5,0,Math.PI*2); sctx.fill();
+      sctx.globalAlpha=1;
+    });
+
     drawSub();
 
-    // Status GM
+    // Dica de drag se mouse estiver perto de uma entidade
+    if(mouseOverCanvas){
+      const hov=entityAtCanvas(mouseCanvasX,mouseCanvasY);
+      if(hov){ sctx.fillStyle="#334466"; sctx.font="8px monospace"; sctx.textAlign="center"; sctx.fillText("arrastar",S_CX,S_H-14); }
+      else if(!Object.keys(entities).length){
+        sctx.fillStyle="#152015"; sctx.font="9px monospace"; sctx.textAlign="center";
+        sctx.fillText("E+mouse = nova entidade", S_CX, S_H-4);
+      }
+    }
+
     const el=document.getElementById("sonarStatus");
     if (displayPos && alpha>0.01) {
       const dist=Math.hypot(displayPos.dx,displayPos.dy);
@@ -708,8 +752,8 @@
       el.textContent=`AMEAÇA: ${dist.toFixed(0)}m / ${ang.toFixed(0)}°`;
       el.style.color="var(--danger)";
     } else {
-      el.textContent="nenhuma ameaça";
-      el.style.color="var(--ink-dim)";
+      el.textContent=Object.keys(entities).length ? `${Object.keys(entities).length} entidade(s)` : "nenhuma ameaça";
+      el.style.color=Object.keys(entities).length?"var(--live)":"var(--ink-dim)";
     }
   }
 
@@ -726,40 +770,64 @@
 
     drawGrid();
 
+    const tnow=Date.now(), tsec=tnow/1000;
+
     // Blip ativo (ameaça em movimento)
     if (blipPos && sonarState !== "void") {
-      const pulseAge=(Date.now()-blipBorn)/2000;
+      const pulseAge=(tnow-blipBorn)/2000;
       const pulseAlpha=Math.max(0.15, 1-pulseAge*0.85);
-      const t=Date.now()/1000;
-      const j=threatJitter(t);
-      drawGreenBlip(S_CX+(blipPos.dx+j.dx)*S_SCALE, S_CY+(blipPos.dy+j.dy)*S_SCALE, pulseAlpha);
+      const j=threatJitter(tsec);
+      const rp=rotByHdg(blipPos);
+      drawGreenBlip(S_CX+(rp.dx+j.dx)*S_SCALE, S_CY+(rp.dy+j.dy)*S_SCALE, pulseAlpha);
     }
 
     // Blip em fade (ameaça desaparecendo)
     if (fadingPos && fadeStart && sonarState==="void") {
       const fa=getFadeAlpha(0.8);
-      if(fa>0.01) drawGreenBlip(S_CX+fadingPos.dx*S_SCALE, S_CY+fadingPos.dy*S_SCALE, fa);
+      const rp=rotByHdg(fadingPos);
+      if(fa>0.01) drawGreenBlip(S_CX+rp.dx*S_SCALE, S_CY+rp.dy*S_SCALE, fa);
     }
+
+    // Blips de entidades extras
+    let entIdx=0;
+    Object.entries(entityBlips).forEach(([id,eb])=>{
+      if(!eb||!eb.pos) return;
+      const pulseAge=(tnow-eb.born)/2000;
+      const pa=Math.max(0.12, 1-pulseAge*0.85);
+      const j=threatJitter(tsec+entIdx*1.37);
+      const rp=rotByHdg(eb.pos);
+      drawGreenBlip(S_CX+(rp.dx+j.dx)*S_SCALE, S_CY+(rp.dy+j.dy)*S_SCALE, pa);
+      entIdx++;
+    });
 
     drawSub();
 
     const el=document.getElementById("sonarStatus");
-    const hasBlip=(blipPos&&sonarState!=="void")||(fadingPos&&fadeStart&&getFadeAlpha(1)>0.01);
-    el.textContent=hasBlip?"1 objeto em movimento":"nenhum movimento";
-    el.style.color=hasBlip?"var(--live)":"var(--ink-dim)";
+    const nblips=(blipPos&&sonarState!=="void"?1:0) + Object.keys(entityBlips).length;
+    const hasFade=fadingPos&&fadeStart&&getFadeAlpha(1)>0.01;
+    const total=nblips+(hasFade?1:0);
+    el.textContent=total?`${total} objeto${total>1?"s":""} em movimento`:"nenhum movimento";
+    el.style.color=total?"var(--live)":"var(--ink-dim)";
   }
 
   function drawSonar() {
     if(sonarView==="gm") drawSonarGM(); else drawSonarPlayer();
   }
 
-  // Tick do sensor: atualiza blipPos a cada 2s (para vista jogadores)
+  // Tick do sensor: atualiza blipPos e entityBlips a cada 2s (para vista jogadores)
   function sonarTick() {
     const pos=getCurrentDisplayPos();
     if(sonarState!=="void" && pos){
       blipPos={...pos};
       blipBorn=Date.now();
     }
+    // Entidades: cria/atualiza blip; mantém born original (pulso coerente)
+    const t=Date.now();
+    Object.entries(entities).forEach(([id,ent])=>{
+      if(!ent) return;
+      entityBlips[id]={ pos:{...ent}, born: entityBlips[id]?entityBlips[id].born:t };
+    });
+    Object.keys(entityBlips).forEach(id=>{ if(!entities[id]) delete entityBlips[id]; });
     sonarScanT=Date.now();
   }
 
@@ -767,23 +835,56 @@
   setInterval(drawSonar,100); // 10fps — suficiente pro anel + jitter
   sonarTick(); drawSonar();
 
-  // ---- Click no canvas: posiciona a ameaça ----
+  // ---- Click no canvas: posiciona a ameaça (bloqueia se foi drag de entidade) ----
   sonarCanvas.addEventListener("click",e=>{
+    if(justDraggedEntity){ justDraggedEntity=false; return; }
     const rect=sonarCanvas.getBoundingClientRect();
     const px=e.clientX-rect.left, py=e.clientY-rect.top;
-    const dx=(px-S_CX)/S_SCALE, dy=(py-S_CY)/S_SCALE;
+    const wr=unrotByHdg((px-S_CX)/S_SCALE,(py-S_CY)/S_SCALE);
+    const {dx,dy}=wr;
     const ang=(Math.atan2(dx,-dy)*180/Math.PI+360)%360;
-    const update={
-      threatPos:{dx,dy},
-      threatDir:Math.round(ang)
-    };
+    const update={threatPos:{dx,dy},threatDir:Math.round(ang)};
     if(threatMode==="approach"){
-      update.threatWorld={
-        x:(currentSubNav.x||0)+dx,
-        depth:(currentSubNav.depth||200)+dy
-      };
+      update.threatWorld={x:(currentSubNav.x||0)+dx,depth:(currentSubNav.depth||200)+dy};
     }
     subRef.update(update);
+  });
+
+  // ---- Drag de entidades + hover + tecla E ----
+  function getCanvasXY(e){ const r=sonarCanvas.getBoundingClientRect(); return {px:e.clientX-r.left,py:e.clientY-r.top}; }
+  function entityAtCanvas(px,py){
+    let best=null, bestD=14;
+    Object.entries(entities).forEach(([id,ent])=>{
+      if(!ent) return;
+      const rp=rotByHdg(ent);
+      const d=Math.hypot(px-(S_CX+rp.dx*S_SCALE),py-(S_CY+rp.dy*S_SCALE));
+      if(d<bestD){bestD=d;best=id;}
+    });
+    return best;
+  }
+  sonarCanvas.addEventListener("mouseenter",()=>mouseOverCanvas=true);
+  sonarCanvas.addEventListener("mouseleave",()=>{ mouseOverCanvas=false; dragEntityId=null; });
+  sonarCanvas.addEventListener("mousedown",e=>{ const {px,py}=getCanvasXY(e); dragEntityId=entityAtCanvas(px,py); });
+  sonarCanvas.addEventListener("mouseup",()=>{ dragEntityId=null; });
+  sonarCanvas.addEventListener("mousemove",e=>{
+    const {px,py}=getCanvasXY(e);
+    mouseCanvasX=px; mouseCanvasY=py;
+    if(dragEntityId!==null){
+      justDraggedEntity=true;
+      const wr=unrotByHdg((px-S_CX)/S_SCALE,(py-S_CY)/S_SCALE);
+      entities[dragEntityId]={dx:wr.dx,dy:wr.dy};
+      const n=Date.now();
+      if(n-entDragThrottle>80){ entDragThrottle=n; subRef.child("entities/"+dragEntityId).set({dx:wr.dx,dy:wr.dy}); }
+    }
+  });
+  document.addEventListener("keydown",e=>{
+    if(e.code==="KeyE" && mouseOverCanvas){
+      e.preventDefault();
+      const id="e"+Date.now().toString(36);
+      const wr=unrotByHdg((mouseCanvasX-S_CX)/S_SCALE,(mouseCanvasY-S_CY)/S_SCALE);
+      entities[id]={dx:wr.dx,dy:wr.dy};
+      subRef.child("entities/"+id).set({dx:wr.dx,dy:wr.dy});
+    }
   });
 
   // ---- Controles de modo/vista ----
@@ -823,6 +924,10 @@
 
   document.getElementById("threatClear").addEventListener("click",()=>{
     subRef.update({threatPos:null,threatWorld:null,threatDir:null});
+  });
+  document.getElementById("entClear").addEventListener("click",()=>{
+    subRef.child("entities").set(null);
+    entities={}; entityBlips={};
   });
 
   // ---- Listener Firebase do submarino ----
@@ -884,6 +989,14 @@
     const tm    = s.threatMode || "fixed";
     threatMode  = tm;
     currentSubNav = s.nav || {x:0,depth:200,heading:0};
+
+    // Entidades e blips
+    entities = s.entities || {};
+    Object.keys(entityBlips).forEach(id=>{ if(!entities[id]) delete entityBlips[id]; });
+
+    // Contador de colisões
+    const whEl=document.getElementById("wallHits");
+    if(whEl) whEl.textContent=s.wallHits||0;
 
     // Highlight modo
     document.getElementById("modeFixed").classList.toggle("is-on",tm==="fixed");
