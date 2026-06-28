@@ -185,6 +185,33 @@
   const ref=sessionRef.child("submarine");
   const presenceRef=ref.child("viewers/"+MY_ID);
 
+  // ===== SPRITES DE PEIXE =====
+  // spritesheet 1408×768 = 4 cols × 4 linhas de 352×192px. background verde removido.
+  // 8 direções de visão: [linha,coluna] no sheet, mapeadas a 0°..315° (frente, horário).
+  const FISH_FW=352, FISH_FH=192;
+  const FISH_FRAMES=[[0,0],[0,1],[0,2],[0,3],[1,3],[1,0],[1,1],[1,2]];
+  let fishSprite=null;
+  let fishEntities={};
+  {
+    const fimg=new Image();
+    fimg.src='img/fish.png';
+    fimg.onload=()=>{
+      const oc=document.createElement('canvas');
+      oc.width=fimg.width; oc.height=fimg.height;
+      const ox=oc.getContext('2d');
+      ox.drawImage(fimg,0,0);
+      const id=ox.getImageData(0,0,oc.width,oc.height);
+      const d=id.data;
+      for(let i=0;i<d.length;i+=4){
+        const r=d[i],g=d[i+1],b=d[i+2];
+        // remove background verde-escuro (G muito maior que R e B)
+        if(g>r*1.6&&g>b*1.3&&g>25) d[i+3]=0;
+      }
+      ox.putImageData(id,0,0);
+      fishSprite=oc;
+    };
+  }
+
   // ====== CANYON: corredor 2D com paredes reais ======
   // linha central que serpenteia descendo; o submarino navega em (x, depth).
   // ===== MUNDO EM GRID (Wolfenstein/Doom-style) =====
@@ -428,6 +455,85 @@
     x.globalAlpha=1;
   }
 
+  // ===== SPRITES BILLBOARD (Doom-style): peixes no mundo 3D =====
+  // cada peixe tem posição absoluta (wx, wd), oscila ±50wu no eixo X, e gira para
+  // mostrar o frame correto de acordo com o ângulo câmera-peixe vs. direção de nado.
+  function drawFishSprites(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_){
+    if(!fishSprite) return;
+    const ents=Object.values(fishEntities).filter(e=>e&&e.visible!==false);
+    if(!ents.length) return;
+    const now=t*0.016; // tempo em segundos aproximado (t incrementa por frame ~60fps)
+    const hdg=nav.heading*Math.PI/180;
+    const cosH=Math.cos(-hdg), sinH=Math.sin(-hdg);
+    const FOV_=Math.PI*78/180, halfFov=FOV_/2;
+    const planeMag=Math.tan(halfFov);
+
+    // ordena de longe a perto para overdraw correto
+    ents.sort((a,b)=>{
+      const da=Math.hypot((a.wx||0)-nav.x,(a.wd||0)-nav.depth);
+      const db=Math.hypot((b.wx||0)-nav.x,(b.wd||0)-nav.depth);
+      return db-da;
+    });
+
+    for(const ent of ents){
+      // posição do peixe com glide: oscila ±50wu no eixo X a partir da posição fixa
+      const phase=now*0.6+(ent.fishPhase||0);
+      const glideX=Math.sin(phase)*50;
+      const glideVel=Math.cos(phase); // >0 = movendo p/ +X
+      const fishX=(ent.wx||0)+glideX;
+      const fishD=(ent.wd||nav.depth);
+
+      // transforma p/ espaço de câmera (rotaciona pelo heading)
+      const rx=fishX-nav.x, rd=fishD-nav.depth;
+      const camX=rx*cosH - rd*sinH;
+      const camZ=rx*sinH + rd*cosH;
+      if(camZ<=4) continue; // atrás da câmera ou muito perto
+
+      // projeção de tela
+      const projH=Math.min(h*1.8, WALLH_/camZ);
+      const projW=projH*(FISH_FW/FISH_FH);
+      const screenX=w/2 + (camX/camZ/planeMag)*(w/2);
+      const y0=h/2-projH/2;
+      const x0=screenX-projW/2, x1=screenX+projW/2;
+      if(x1<0||x0>w) continue;
+
+      // escolhe o frame: ângulo câmera→peixe relativo à direção de nado do peixe
+      // fishFacing: 90° = peixe nadando p/ +X, 270° = p/ -X (heading onde 0=olhar p/ +depth)
+      const fishFacing=glideVel>=0?Math.PI/2:-Math.PI/2; // heading em rad
+      const camAngleFish=Math.atan2(nav.x-fishX, nav.depth-fishD); // ângulo do sub visto do peixe
+      let viewSlice=((camAngleFish-fishFacing)/(Math.PI*2)*8+16)%8;
+      const frameIdx=Math.floor(viewSlice+0.5)%8;
+      const [fRow,fCol]=FISH_FRAMES[frameIdx];
+      const srcX=fCol*FISH_FW, srcY=fRow*FISH_FH;
+
+      // fog por distância (igual às paredes)
+      const fog=Math.max(0,Math.min(1,1-camZ/(VIS_WALL_*0.9)));
+      if(fog<0.04) continue;
+
+      // desenha em segmentos que passam no zbuffer (colunas onde peixe está na frente da parede)
+      x.save();
+      x.globalAlpha=fog*fog;
+      const sx0=Math.max(0,Math.floor(x0));
+      const sx1=Math.min(w-1,Math.ceil(x1));
+      let segStart=-1;
+      const flush=(end)=>{
+        if(segStart<0) return;
+        x.save();
+        x.beginPath(); x.rect(segStart,y0,end-segStart,projH); x.clip();
+        x.drawImage(fishSprite,srcX,srcY,FISH_FW,FISH_FH,x0,y0,projW,projH);
+        x.restore();
+        segStart=-1;
+      };
+      for(let sx=sx0;sx<=sx1;sx++){
+        const col=Math.min(COLS_-1,Math.floor(sx/colW_));
+        if(camZ<zBuf[col]){ if(segStart<0) segStart=sx; }
+        else flush(sx);
+      }
+      flush(sx1+1);
+      x.restore();
+    }
+  }
+
   let t=0;
   function draw(){
     t+=1;
@@ -522,14 +628,17 @@
       }
 
       // ---- PAREDES (raycasting) ----
+      // parede de escuridão: invisível antes de 550m, aparece lá e vai encolhendo até 180u no fundo.
+      const VIS_DEPTH_THRESHOLD=5500;
+      const VIS_WALL = depth<=VIS_DEPTH_THRESHOLD ? MAXD+STEP : Math.max(180, MAXD - (depth-VIS_DEPTH_THRESHOLD)/(MAX_DEPTH-VIS_DEPTH_THRESHOLD)*(MAXD-180));
+      const WALL_SIGHT = Math.min(MAXD,VIS_WALL)*0.9;
+      // zbuffer: distância perpendicular de cada coluna (para sprite depth test)
+      const zBuffer = new Float32Array(COLS).fill(MAXD);
       // direção de cada raio: varre de -FOV/2 a +FOV/2 em torno do heading.
       for(let i=0;i<COLS;i++){
         const a = hdg + (i/(COLS-1) - 0.5)*FOV;   // ângulo absoluto do raio
         const camAng = (i/(COLS-1)-0.5)*FOV;       // ângulo relativo (p/ corrigir fish-eye)
         const dx=Math.sin(a), dd=Math.cos(a);      // passo lateral / profundidade
-        // distância máxima de visão: além disso é breu (parede de escuridão que acompanha o sub).
-        // encolhe com a profundidade — vê-se menos longe no fundo da twilight zone.
-        const VIS_WALL = Math.max(180, 580 - depthN*400); // 580u superfície -> 180u no fundo
         // marcha o raio até bater em algo: margem do corredor, parede de fundo, pilar, ou escuridão.
         let rx=nav.x, rd=nav.depth, dist=0, hitSide=0, hitKind="wall";
         for(let s=STEP;s<=MAXD;s+=STEP){
@@ -547,6 +656,7 @@
         if(!dist) continue;  // (não deve ocorrer — a escuridão sempre fecha)
         // corrige distorção fish-eye: distância perpendicular
         const perp=Math.max(8, dist*Math.cos(camAng));
+        zBuffer[i]=perp;
         const colX=(i+0.5)*colW;
         // PAREDE DE ESCURIDÃO: parede preta sólida na distância máxima de visão, com a MESMA
         // altura projetada de uma parede do corredor naquela distância (fecha o corredor ao fundo).
@@ -562,7 +672,6 @@
         const sh2=Math.min(h*1.4, WALLH/perp);
         const y0=h/2 - sh2/2, y1=h/2 + sh2/2;
         // sombreamento por distância: visão limitada, longe some no breu (mesmo princípio do chão)
-        const WALL_SIGHT=VIS_WALL*0.9; // fog das paredes acompanha o limite de visão
         const fog=Math.max(0, Math.min(1, 1 - dist/WALL_SIGHT));
         const fog2=fog*fog;     // queda acentuada
         // textura: faixa de rocha que rola verticalmente com a profundidade + ruído por coluna
@@ -596,6 +705,10 @@
         x.fillStyle=`rgba(0,0,0,${(0.3*fog+0.2).toFixed(2)})`;
         x.fillRect(colX-colW/2-0.5, y0, colW+1, Math.max(1,sh2*0.06));
         x.fillRect(colX-colW/2-0.5, y1-Math.max(1,sh2*0.06), colW+1, Math.max(1,sh2*0.06));
+      }
+      // sprites de peixe: objetos billboard no mundo, renderizados com depth test pelo zbuffer
+      if(mode==="diving"||mode==="reeling"){
+        drawFishSprites(w,h,zBuffer,COLS,colW,WALLH,VIS_WALL);
       }
     }
 
@@ -1056,6 +1169,15 @@
   ref.child("shutter").on("value",snap=>{
     const v=snap.val();
     shutterOverride=(v==="force_open"||v==="force_closed")?v:"auto";
+  });
+
+  // entidades do mundo: peixes (mode="fish") são renderizados como sprites no visor
+  ref.child("entities").on("value",snap=>{
+    fishEntities={};
+    const val=snap.val()||{};
+    Object.entries(val).forEach(([id,ent])=>{
+      if(ent&&ent.mode==="fish") fishEntities[id]=ent;
+    });
   });
 
   // aplica o modo SEM animação (usado na carga inicial): mostra direto o estado certo
