@@ -798,7 +798,7 @@
     if(entityAtCanvas(mouseCanvasX,mouseCanvasY)) return;
     const rect=sonarCanvas.getBoundingClientRect();
     const px=e.clientX-rect.left, py=e.clientY-rect.top;
-    const wr=unrotByHdg((px-S_CX)/S_SCALE,(py-S_CY)/S_SCALE);
+    const wr=unrotByHdg((px-S_CX)/S_SCALE*UNITS_PER_M,(py-S_CY)/S_SCALE*UNITS_PER_M);
     addEntity(wr.dx, wr.dy);
   });
 
@@ -810,7 +810,7 @@
       if(!ent) return;
       const pos=entDisplayPos(ent);
       const rp=rotByHdg(pos);
-      const d=Math.hypot(px-(S_CX+rp.dx*S_SCALE),py-(S_CY+rp.dy*S_SCALE));
+      const d=Math.hypot(px-(S_CX+rp.dx/UNITS_PER_M*S_SCALE),py-(S_CY+rp.dy/UNITS_PER_M*S_SCALE));
       if(d<bestD){bestD=d;best=id;}
     });
     return best;
@@ -824,11 +824,11 @@
     mouseCanvasX=px; mouseCanvasY=py;
     if(dragEntityId!==null && entities[dragEntityId]){
       justDraggedEntity=true;
-      const wr=unrotByHdg((px-S_CX)/S_SCALE,(py-S_CY)/S_SCALE);
+      const wr=unrotByHdg((px-S_CX)/S_SCALE*UNITS_PER_M,(py-S_CY)/S_SCALE*UNITS_PER_M);
       const ent=entities[dragEntityId];
       let patch;
       if(ent.mode==="approach"){
-        const wx=(currentSubNav.x||0)+wr.dx, wd=(currentSubNav.depth||200)+wr.dy;
+        const wx=(currentSubNav.x||0)+wr.dx, wd=(currentSubNav.depth||1000)+wr.dy;
         entities[dragEntityId]=Object.assign({},ent,{wx,wd}); patch={wx,wd};
       } else {
         entities[dragEntityId]=Object.assign({},ent,{dx:wr.dx,dy:wr.dy}); patch={dx:wr.dx,dy:wr.dy};
@@ -903,8 +903,8 @@
     if(mb){
       const id=mb.dataset.id, m=mb.dataset.m, ent=entities[id]; if(!ent) return;
       const upd=Object.assign({},ent,{mode:m});
-      if(m==="approach"){ upd.wx=(currentSubNav.x||0)+(ent.dx||0); upd.wd=(currentSubNav.depth||200)+(ent.dy||0); }
-      else { upd.dx=typeof ent.wx==="number"?ent.wx-(currentSubNav.x||0):(ent.dx||0); upd.dy=typeof ent.wd==="number"?ent.wd-(currentSubNav.depth||200):(ent.dy||0); }
+      if(m==="approach"){ upd.wx=(currentSubNav.x||0)+(ent.dx||0); upd.wd=(currentSubNav.depth||1000)+(ent.dy||0); }
+      else { upd.dx=typeof ent.wx==="number"?ent.wx-(currentSubNav.x||0):(ent.dx||0); upd.dy=typeof ent.wd==="number"?ent.wd-(currentSubNav.depth||1000):(ent.dy||0); }
       entities[id]=upd; subRef.child("entities/"+id).set(upd); renderEntityList(); return;
     }
     const rm=e.target.closest(".ent-rm");
@@ -923,8 +923,8 @@
     Object.entries(entities).forEach(([id,ent])=>{
       if(!ent||ent.mode!=="approach"||(ent.speed||0)<=0) return;
       const wx=typeof ent.wx==="number"?ent.wx:(currentSubNav.x||0)+(ent.dx||0);
-      const wd=typeof ent.wd==="number"?ent.wd:(currentSubNav.depth||200)+(ent.dy||0);
-      const dirX=(currentSubNav.x||0)-wx, dirD=(currentSubNav.depth||200)-wd;
+      const wd=typeof ent.wd==="number"?ent.wd:(currentSubNav.depth||1000)+(ent.dy||0);
+      const dirX=(currentSubNav.x||0)-wx, dirD=(currentSubNav.depth||1000)-wd;
       const dist=Math.hypot(dirX,dirD);
       if(dist<1) return;
       const spd=Math.min(ent.speed||5,25);
@@ -944,7 +944,7 @@
   document.addEventListener("keydown",e=>{
     if(e.code==="KeyE" && mouseOverCanvas){
       e.preventDefault();
-      const wr=unrotByHdg((mouseCanvasX-S_CX)/S_SCALE,(mouseCanvasY-S_CY)/S_SCALE);
+      const wr=unrotByHdg((mouseCanvasX-S_CX)/S_SCALE*UNITS_PER_M,(mouseCanvasY-S_CY)/S_SCALE*UNITS_PER_M);
       addEntity(wr.dx, wr.dy);
     }
   });
@@ -963,7 +963,7 @@
 
   document.getElementById("entAdd").addEventListener("click",()=>{
     const hdgRad=(currentSubNav.heading||0)*Math.PI/180;
-    addEntity(Math.sin(hdgRad)*50, Math.cos(hdgRad)*50);
+    addEntity(Math.sin(hdgRad)*500, Math.cos(hdgRad)*500);
   });
   document.getElementById("entClear").addEventListener("click",()=>{
     subRef.child("entities").set(null);
