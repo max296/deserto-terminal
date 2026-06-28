@@ -455,61 +455,65 @@
     x.globalAlpha=1;
   }
 
-  // ===== SPRITES BILLBOARD (Doom-style): peixes no mundo 3D =====
-  // cada peixe tem posição absoluta (wx, wd), oscila ±50wu no eixo X, e gira para
-  // mostrar o frame correto de acordo com o ângulo câmera-peixe vs. direção de nado.
+  // ===== SPRITES BILLBOARD (Doom-style, fórmula lodev raycasting3) =====
+  // Transformação correta: inversa da matriz câmera (dir + plane vectors).
+  // transformY = profundidade perpendicular → diretamente comparável ao zbuffer.
+  // screenX via lodev: w/2 * (1 + transformX/transformY) — SEM divisão extra por planeMag.
   function drawFishSprites(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_){
     if(!fishSprite) return;
     const ents=Object.values(fishEntities).filter(e=>e&&e.visible!==false);
     if(!ents.length) return;
-    const now=t*0.016; // tempo em segundos aproximado (t incrementa por frame ~60fps)
+    const now=t*0.016;
     const hdg=nav.heading*Math.PI/180;
-    const cosH=Math.cos(-hdg), sinH=Math.sin(-hdg);
-    const FOV_=Math.PI*78/180, halfFov=FOV_/2;
-    const planeMag=Math.tan(halfFov);
+    // vetores câmera (idênticos ao raycaster)
+    const dirX=Math.sin(hdg), dirY=Math.cos(hdg);
+    const planeMag=Math.tan(Math.PI*78/360); // tan(39°) = FOV/2
+    // invDet = 1/(planeX*dirY - dirX*planeY)
+    // planeX=cos(hdg)*planeMag, planeY=-sin(hdg)*planeMag
+    // planeX*dirY - dirX*planeY = cos*cos*pm + sin*sin*pm = planeMag → invDet=1/planeMag
+    const invDet=1.0/planeMag;
 
-    // ordena de longe a perto para overdraw correto
+    // ordena de longe a perto
     ents.sort((a,b)=>{
-      const da=Math.hypot((a.wx||0)-nav.x,(a.wd||0)-nav.depth);
-      const db=Math.hypot((b.wx||0)-nav.x,(b.wd||0)-nav.depth);
-      return db-da;
+      return Math.hypot((b.wx||0)-nav.x,(b.wd||0)-nav.depth)
+           - Math.hypot((a.wx||0)-nav.x,(a.wd||0)-nav.depth);
     });
 
     for(const ent of ents){
-      // glide suave ±15wu (1.5m) — não dominante, só dá vida
+      // glide suave ±15wu (1.5m)
       const phase=now*0.5+(ent.fishPhase||0);
       const glideX=Math.sin(phase)*15;
-      const glideVel=Math.cos(phase); // >0 = movendo p/ +X
+      const glideVel=Math.cos(phase);
       const fishX=(ent.wx||0)+glideX;
-      const fishD=(ent.wd||nav.depth);
+      const fishD=ent.wd||nav.depth;
 
-      // transforma p/ espaço de câmera
+      // lodev transform: spriteRel → camera space via inversa da matriz câmera
       const rx=fishX-nav.x, rd=fishD-nav.depth;
-      const camX=rx*cosH - rd*sinH;
-      const camZ=rx*sinH + rd*cosH;
-      if(camZ<=4) continue;
+      const transformX=invDet*(dirY*rx - dirX*rd);          // posição horizontal câmera
+      const transformY=dirX*rx + dirY*rd; // profundidade perpendicular = dot(dir, sprite)
+      if(transformY<=0.5) continue; // atrás da câmera ou muito perto
 
-      // projeção: ~30% da altura de parede equivalente → peixe pequeno no mundo
-      const projH=Math.min(h*0.65, WALLH_*0.3/camZ);
+      // screenX lodev: w/2*(1 + transformX/transformY) — planeMag já embutido em transformX
+      const screenX=w/2*(1 + transformX/transformY);
+      // altura: mesma escala WALLH do raycaster * fator de tamanho do peixe
+      const projH=Math.min(h*0.65, WALLH_*0.28/transformY);
       const projW=projH*(FISH_FW/FISH_FH);
-      const screenX=w/2 + (camX/camZ/planeMag)*(w/2);
       const y0=h/2-projH/2;
       const x0=screenX-projW/2, x1=screenX+projW/2;
       if(x1<0||x0>w) continue;
 
-      // frame baseado na direção de nado (vista lateral): row 0 = direita, row 1 = esquerda
-      // col 2 = vista frontal do broadside (mais expressivo). inset 2px p/ evitar bleeding.
+      // frame: col 2 = vista lateral (broadside). row 0 = nadando p/ +X, row 1 = -X.
       const fRow=glideVel>=0?0:1;
-      const srcX=2*FISH_FW+2, srcY=fRow*FISH_FH+2; // col 2, com inset de 2px
+      const srcX=2*FISH_FW+2, srcY=fRow*FISH_FH+2; // inset 2px evita bleeding
       const srcW=FISH_FW-4, srcH=FISH_FH-4;
 
-      // fog de distância — peixe opaco em distâncias médias
-      const fog=Math.max(0,Math.min(1,1-camZ/(VIS_WALL_*0.9)));
+      // fog — transformY é comparável ao zbuffer (ambos = distância perpendicular)
+      const fog=Math.max(0,Math.min(1,1-transformY/(VIS_WALL_*0.9)));
       if(fog<0.05) continue;
 
-      // desenha por segmentos passando no zbuffer
+      // desenha colunas que passam no zbuffer (transformY < perp da parede)
       x.save();
-      x.globalAlpha=Math.min(0.92, fog);
+      x.globalAlpha=Math.min(0.92,fog);
       const sx0=Math.max(0,Math.floor(x0));
       const sx1=Math.min(w-1,Math.ceil(x1));
       let segStart=-1;
@@ -523,7 +527,7 @@
       };
       for(let sx=sx0;sx<=sx1;sx++){
         const col=Math.min(COLS_-1,Math.floor(sx/colW_));
-        if(camZ<zBuf[col]){ if(segStart<0) segStart=sx; }
+        if(transformY<zBuf[col]){ if(segStart<0) segStart=sx; }
         else flush(sx);
       }
       flush(sx1+1);
