@@ -397,23 +397,26 @@
     if(dHead>180)dHead-=360; if(dHead<-180)dHead+=360;
     _pLastD=depth; _pLastX=nav.x; _pLastH=nav.heading;
     const hdg=nav.heading*Math.PI/180;
-    // avanço "para frente" no plano (pra escoamento radial leve = sensação de atravessar a água)
-    const fwdMove = dDepth*Math.cos(hdg) + dX*Math.sin(hdg);
+    // decompõe movimento em câmera-space:
+    // fwdMove = componente na direção do olhar (radial na tela)
+    // rightMove = componente lateral da câmera (deslizamento horizontal na tela)
+    const fwdMove  =  dX*Math.sin(hdg) + dDepth*Math.cos(hdg);
+    const rightMove=  dX*Math.cos(hdg) - dDepth*Math.sin(hdg);
     for(const m of motes){
-      // escoamento radial leve do centro pras bordas conforme avança (vêm em tua direção)
+      // escoamento radial ao avançar
       m.pz += Math.abs(fwdMove)*0.010;
       if(m.pz>1) m.pz-=1;
       const spread=0.4+m.pz*0.7;
       let px=(m.sx-0.5)*w*spread + w/2;
       let py=(m.sy-0.5)*h*spread + h/2;
-      // DESLIZAMENTO VERTICAL pela mudança de profundidade: descer (dDepth>0) -> as partículas
-      // ficam pra trás/acima -> SOBEM na tela. subir (dDepth<0) -> descem. (sinal invertido)
-      m.scrollY = (m.scrollY||0) - dDepth*3.0;
-      // DESLIZAMENTO HORIZONTAL por giro e movimento lateral
-      m.scrollX = (m.scrollX||0) - (dX*2.2 + dHead*4.0);
+      // corrente ambiente: turbulência suave mesmo com o sub parado
+      const ambX=Math.sin(t*0.018+m.ph*2.1)*0.28+Math.cos(t*0.011+m.ph*1.3)*0.13;
+      const ambY=Math.cos(t*0.014+m.ph*1.7)*0.22+Math.sin(t*0.009+m.ph*0.9)*0.10;
+      // acumuladores com leve atrito (evita deriva infinita)
+      m.scrollX=(m.scrollX||0)*0.97 - rightMove*2.8 - dHead*3.5 + ambX;
+      m.scrollY=(m.scrollY||0)*0.97 - dDepth*3.0 + ambY;
       px += m.scrollX;
       py += m.scrollY;
-      // wrap nos dois eixos (campo contínuo de partículas)
       px=((px%w)+w)%w;
       py=((py%h)+h)%h;
       const sz=m.r*(0.7+m.pz*0.5);
