@@ -713,7 +713,10 @@
       const pa=Math.max(0.12, 1-pulseAge*0.85);
       const j=threatJitter(tsec+entIdx*1.37);
       const rp=rotByHdg(eb.pos);
-      drawGreenBlip(S_CX+(rp.dx+j.dx)*S_SCALE, S_CY+(rp.dy+j.dy)*S_SCALE, pa);
+      // clampa à borda (entidades além do alcance aparecem no perímetro)
+      const rawX=S_CX+(rp.dx+j.dx)*S_SCALE, rawY=S_CY+(rp.dy+j.dy)*S_SCALE;
+      const bx=Math.max(4,Math.min(S_W-4,rawX)), by=Math.max(4,Math.min(S_H-4,rawY));
+      drawGreenBlip(bx, by, pa);
       entIdx++;
     });
 
@@ -735,7 +738,7 @@
     Object.entries(entities).forEach(([id,ent])=>{
       if(!ent||ent.visible===false){ delete entityBlips[id]; return; }
       const pos=entDisplayPos(ent);
-      entityBlips[id]={ pos:{...pos}, born: entityBlips[id]?entityBlips[id].born:t };
+      entityBlips[id]={ pos:{...pos}, born:t }; // born resetado em cada tick → fade começa do zero
     });
     Object.keys(entityBlips).forEach(id=>{ if(!entities[id]||entities[id].visible===false) delete entityBlips[id]; });
     sonarScanT=Date.now();
