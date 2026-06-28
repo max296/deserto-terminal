@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SUBMERSIBLE // VIEWPORT [GRID-DDA]</title>
+<title>SUBMERSIBLE // VIEWPORT</title>
 <style>
   :root{--font:"SFMono-Regular",ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace}
   *{box-sizing:border-box;margin:0;padding:0}
@@ -102,6 +102,8 @@
   .cbtn.active{background:rgba(120,180,180,.2);border-color:#8cc;color:#dee}
   .hint-drag{position:absolute;bottom:9.5vh;left:0;right:0;text-align:center;font-size:9px;letter-spacing:.2em;color:#2e3e3e;z-index:9;pointer-events:none}
 
+  #shutter{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:8;transform:translateY(-110%);transition:transform 1.8s cubic-bezier(0.2,0,0.5,1.0);pointer-events:none}
+  #coralFlash{position:absolute;inset:0;background:#000;z-index:9;display:none;opacity:0;pointer-events:none}
   /* tremida calma do submersivel na moonpool (aplicada ao viewport inteiro) */
   #sub.bobbing #viewport{animation:bob 6s ease-in-out infinite}
   @keyframes bob{
@@ -132,6 +134,8 @@
       <div id="glassCurve"></div>
       <div id="glassReflect"></div>
       <div id="viewportVignette"></div>
+      <img id="shutter" src="img/shutter.png" alt="">
+      <div id="coralFlash"></div>
     </div>
 
     <!-- casco por cima -->
@@ -226,38 +230,6 @@
     return depth>=STATION_TOP && depth<STATION_TOP+10;
   }
 
-  // ===== GRID DE TILES (DDA raycaster — etapa 2 da migração) =====
-  // MAP[linha][coluna]: 0=agua, 1=rocha, 2=pilar, 3=parede_estacao
-  // TILE=40u, 10 colunas laterais (X de -200 a +200), ~80 linhas de profundidade.
-  const TILE=40, X_MIN_G=-200;
-  const COLS_G=10;                              // (200-(-200))/40
-  const ROWS_G=Math.ceil(MAX_DEPTH/TILE)+2;    // ~80 linhas
-  const MAP=(function(){
-    const m=[];
-    for(let row=0;row<ROWS_G;row++){
-      m[row]=new Array(COLS_G).fill(1);        // default: rocha sólida
-      const d=row*TILE;
-      if(d>=STATION_TOP && d<STATION_TOP+10){  // parede da estrutura (fecha por cima)
-        for(let col=0;col<COLS_G;col++) m[row][col]=3;
-        continue;
-      }
-      if(d>=STATION_PILLARS_LO && d<=STATION_PILLARS_HI){ // zona dos pilares grossos
-        const c=corridorAt(d);
-        for(let col=0;col<COLS_G;col++){
-          const wx=X_MIN_G+(col+0.5)*TILE;
-          if(Math.abs(wx-c.cx)<=c.hw) m[row][col]=isPillar(wx,d)?2:0;
-        }
-        continue;
-      }
-      const c=corridorAt(d);                   // corredor normal
-      for(let col=0;col<COLS_G;col++){
-        const wx=X_MIN_G+(col+0.5)*TILE;
-        if(Math.abs(wx-c.cx)<=c.hw) m[row][col]=0;
-      }
-    }
-    return m;
-  })();
-
   // ====== navegação compartilhada ======
   // estado autoritativo: submarine/nav = { x, depth, heading, mode }
   // x = posição lateral no corredor; depth = profundidade; heading = pra onde aponta (0=descer)
@@ -271,6 +243,7 @@
   let STATE={};
   let imgEl=null, imgReady=false;
   let curHull=null;
+  let coralActive=false, shutterClosed=false;
   let moonScroll=0; // 0 = na superficie (moonpool visivel), 1 = submerso
 
   const cv=document.getElementById("abyss"), x=cv.getContext("2d");
@@ -424,7 +397,7 @@
       }
 
       // CHÃO (sempre) via floor casting (técnica lodev). escurece com a distância (breu).
-      const GRID=16;
+      const GRID=28;
       const SIGHT=13;
       for(let y=Math.floor(horizon)+1; y<h; y+=ROWH){
         const p = y - horizon;
@@ -453,86 +426,83 @@
         }
       }
 
-      // ---- PAREDES via DDA (lodev/Wolfenstein) ----
-      // posição em tile-coords com epsilon pra nunca ficar exatamente na borda de célula.
-      const posGX=(posX-X_MIN_G)/TILE+1e-6;
-      const posGY=posY/TILE+1e-6;
-      const VIS_WALL=320-depthN*120;          // alcance de visão: ~320u→~200u com profundidade
-      const VIS_TILES=VIS_WALL/TILE;
-
+      // ---- PAREDES (raycasting) ----
+      // direção de cada raio: varre de -FOV/2 a +FOV/2 em torno do heading.
       for(let i=0;i<COLS;i++){
-        const camX=2*i/(COLS-1)-1;             // -1 (esq) a +1 (dir) no plano da câmera
-        const rayDX=dirX+planeX*camX;
-        const rayDY=dirY+planeY*camX;
-        const colX=(i+0.5)*colW;
-
-        // DDA: avança de célula em célula até bater em parede ou atingir VIS_WALL.
-        // perpWallDist é a distância PERPENDICULAR — sem fish-eye por construção (lodev).
-        let mx=Math.floor(posGX), my=Math.floor(posGY);
-        const ddx=Math.abs(rayDX)<1e-9?1e30:Math.abs(1/rayDX);
-        const ddy=Math.abs(rayDY)<1e-9?1e30:Math.abs(1/rayDY);
-        const sx=rayDX<0?-1:1, sy=rayDY<0?-1:1;
-        let sdx=rayDX<0?(posGX-mx)*ddx:(mx+1-posGX)*ddx;
-        let sdy=rayDY<0?(posGY-my)*ddy:(my+1-posGY)*ddy;
-        let side=0, hitKind="wall", perpD=0, hit=false;
-
-        for(let iter=0;iter<200;iter++){
-          if(sdx<sdy){sdx+=ddx;mx+=sx;side=0;}
-          else{sdy+=ddy;my+=sy;side=1;}
-          perpD=side===0?sdx-ddx:sdy-ddy;
-          if(perpD>=VIS_TILES){perpD=VIS_TILES;hitKind="dark";hit=true;break;}
-          if(mx<0||mx>=COLS_G||my<0||my>=ROWS_G){hitKind="dark";hit=true;break;}
-          const cell=MAP[my][mx];
-          if(cell>0){hitKind=cell===2?"pillar":cell===3?"station_wall":"wall";hit=true;break;}
+        const a = hdg + (i/(COLS-1) - 0.5)*FOV;   // ângulo absoluto do raio
+        const camAng = (i/(COLS-1)-0.5)*FOV;       // ângulo relativo (p/ corrigir fish-eye)
+        const dx=Math.sin(a), dd=Math.cos(a);      // passo lateral / profundidade
+        // distância máxima de visão: além disso é breu (parede de escuridão que acompanha o sub).
+        // encolhe com a profundidade — vê-se menos longe no fundo da twilight zone.
+        const VIS_WALL = 320 - depthN*120;          // ~320u perto da superfície -> ~200u no fundo
+        // marcha o raio até bater em algo: margem do corredor, parede de fundo, pilar, ou escuridão.
+        let rx=nav.x, rd=nav.depth, dist=0, hitSide=0, hitKind="wall";
+        for(let s=STEP;s<=MAXD;s+=STEP){
+          rx=nav.x+dx*s; rd=nav.depth+dd*s;
+          // parede sólida no FUNDO do canyon
+          if(rd>=MAX_DEPTH){ dist=s; hitSide=0; hitKind="floor_end"; break; }
+          // parede de fundo da estrutura da petroleira (atrás dos pilares)
+          if(isStationBackWall(rd)){ dist=s; hitSide=0; hitKind="station_wall"; break; }
+          // PILARES grossos da petroleira perto do começo (fonte única: isPillar)
+          if(isPillar(rx,rd)){ dist=s; hitSide=0; hitKind="pillar"; break; }
+          const cc=corridorAt(rd);
+          if(rx < cc.cx-cc.hw){ dist=s; hitSide=-1; break; }   // margem esquerda
+          if(rx > cc.cx+cc.hw){ dist=s; hitSide=1;  break; }   // margem direita
+          // nada bateu ainda: ao atingir a distância máxima de visão, vira PAREDE DE ESCURIDÃO
+          if(s>=VIS_WALL){ dist=s; hitSide=0; hitKind="dark"; break; }
         }
-        if(!hit) continue;
-
-        const dist=Math.max(8,perpD*TILE);     // distância em unidades de mundo (mín 8u)
-        const hitSide=side===0?(sx<0?-1:1):0;  // face vertical: esq mais escura
-
-        // PAREDE DE ESCURIDÃO: breu absoluto na distância máxima de visão
+        if(!dist) continue;  // (não deve ocorrer — a escuridão sempre fecha)
+        // corrige distorção fish-eye: distância perpendicular
+        const perp=Math.max(8, dist*Math.cos(camAng));
+        const colX=(i+0.5)*colW;
+        // PAREDE DE ESCURIDÃO: parede preta sólida na distância máxima de visão, com a MESMA
+        // altura projetada de uma parede do corredor naquela distância (fecha o corredor ao fundo).
+        // é escuridão ABSOLUTA — a lanterna não a alcança (preto puro), pra não parecer parede.
         if(hitKind==="dark"){
-          const shD=Math.min(h*1.4,WALLH/dist);
+          const shD=Math.min(h*1.4, WALLH/perp);
+          const y0d=h/2 - shD/2, y1d=h/2 + shD/2;
           x.fillStyle="#000";
-          x.fillRect(colX-colW/2-0.5,h/2-shD/2,colW+1,shD);
+          x.fillRect(colX-colW/2-0.5, y0d, colW+1, y1d-y0d);
           continue;
         }
-
-        const sh2=Math.min(h*1.4,WALLH/dist);
-        const y0=h/2-sh2/2, y1=h/2+sh2/2;
-
-        const WALL_SIGHT=340;
-        const fog=Math.max(0,Math.min(1,1-dist/WALL_SIGHT));
-        const fog2=fog*fog;
-        // textura: ponto exato de impacto (não o tile inteiro) → variação contínua sem saltos
-        const wallU=(side===0?(posGY+perpD*rayDY):(posGX+perpD*rayDX))*TILE;
-        const tex=0.5+0.5*Math.sin(wallU*0.18+i*0.4)*Math.sin(wallU*0.05+i*0.13);
-
+        // altura da tira (perto = alta)
+        const sh2=Math.min(h*1.4, WALLH/perp);
+        const y0=h/2 - sh2/2, y1=h/2 + sh2/2;
+        // sombreamento por distância: visão limitada, longe some no breu (mesmo princípio do chão)
+        const WALL_SIGHT=340;   // alcance de visão das paredes (acompanha a parede de escuridão)
+        const fog=Math.max(0, Math.min(1, 1 - dist/WALL_SIGHT));
+        const fog2=fog*fog;     // queda acentuada
+        // textura: faixa de rocha que rola verticalmente com a profundidade + ruído por coluna
+        const wallU = (hitSide<0 ? rd : rd*1.0);
+        const tex = 0.5 + 0.5*Math.sin(wallU*0.18 + i*0.4) * Math.sin(wallU*0.05+ i*0.13);
+        // luz do facho: clareia a coluna se o facho aponta perto dela (x e y)
         let lit=0;
         if(lightOn){
-          const bxw=beamX*w,byh=beamY*h;
+          const bxw=beamX*w, byh=beamY*h;
           lit=Math.max(0,1-Math.abs(bxw-colX)/(w*0.42))*Math.max(0,1-Math.abs(byh-h/2)/(h*0.6));
         }
-
-        const sideShade=hitSide<0?0.82:1.0;
-        let base=((16+tex*26)*sideShade*fog2*(0.4+ambLight*0.75)+lit*fog*(isOld?70:90));
+        // cor base cinza; margem esquerda levemente mais escura (sombreamento direcional).
+        // a base (luz ambiente) decai com a profundidade; o termo da lanterna (lit) NÃO.
+        const sideShade = hitSide<0 ? 0.82 : 1.0;
+        let base = ((16 + tex*26)*sideShade*fog2*(0.4+ambLight*0.75) + lit*fog*(isOld?70:90));
         base=Math.min(190,base);
         let r,g,b;
         if(hitKind==="pillar"){
+          // pilares da estação: metálico, mais frio e liso (estrutura, não rocha)
           const pb=Math.min(200,(30+tex*18)*fog2+lit*fog*95);
-          r=pb*0.82|0;g=pb*0.88|0;b=pb*0.96|0;
-        } else if(hitKind==="station_wall"){
+          r=pb*0.82|0; g=pb*0.88|0; b=pb*0.96|0;
+        } else if(hitKind==="floor_end" || hitKind==="station_wall"){
+          // parede de rocha maciça mais escura (fundo do canyon ou fundo da estação)
           const fb=Math.min(170,(14+tex*20)*fog2+lit*fog*(isOld?60:78));
-          if(isOld){r=fb*0.95|0;g=fb*0.85|0;b=fb*0.66|0;}
-          else{r=fb*0.88|0;g=fb*0.96|0;b=fb*1.0|0;}
-        } else if(isOld){r=base*1.0|0;g=base*0.9|0;b=base*0.72|0;}
-        else{r=base*0.92|0;g=base*1.0|0;b=base*1.06|0;}
-
+          if(isOld){ r=fb*0.95|0; g=fb*0.85|0; b=fb*0.66|0; } else { r=fb*0.88|0; g=fb*0.96|0; b=fb*1.0|0; }
+        } else if(isOld){ r=base*1.0|0; g=base*0.9|0; b=base*0.72|0; }   // luz quente do velho
+        else { r=base*0.92|0; g=base*1.0|0; b=base*1.06|0; }      // luz fria neurostat
         x.fillStyle=`rgb(${r},${g},${b})`;
-        x.fillRect(colX-colW/2-0.5,y0,colW+1,y1-y0);
+        x.fillRect(colX-colW/2-0.5, y0, colW+1, y1-y0);
+        // linha de sombra no topo/base da parede (junção com o breu)
         x.fillStyle=`rgba(0,0,0,${(0.3*fog+0.2).toFixed(2)})`;
-        x.fillRect(colX-colW/2-0.5,y0,colW+1,Math.max(1,sh2*0.06));
-        x.fillRect(colX-colW/2-0.5,y1-Math.max(1,sh2*0.06),colW+1,Math.max(1,sh2*0.06));
+        x.fillRect(colX-colW/2-0.5, y0, colW+1, Math.max(1,sh2*0.06));
+        x.fillRect(colX-colW/2-0.5, y1-Math.max(1,sh2*0.06), colW+1, Math.max(1,sh2*0.06));
       }
     }
 
@@ -542,26 +512,6 @@
     drawParticles(w,h,depth);
 
 
-
-    // AMEACA direcional
-    if(["distant","passing","close"].includes(st)){
-      let delta=((STATE.threatDir!=null?STATE.threatDir:90)-heading+540)%360-180;
-      if(Math.abs(delta)<=85){
-        const cx=w/2+(delta/70)*(w*0.6), cy=h*0.52;
-        const scale=st==="close"?1:(st==="passing"?0.6:0.4);
-        if(STATE.imgUrl && imgReady){
-          const iw=Math.min(w,h)*0.7*scale, ih=iw*(imgEl.height/imgEl.width||1);
-          x.save();x.globalAlpha=0.88;x.filter="brightness(.62) contrast(1.12)";
-          x.drawImage(imgEl,cx-iw/2,cy-ih/2,iw,ih);x.restore();
-        } else {
-          x.save();x.filter=`blur(${st==="close"?6:10}px)`;x.fillStyle="rgba(3,9,10,.93)";
-          x.beginPath();
-          const R=Math.min(w,h)*0.30*scale;
-          for(let a=0;a<6.28;a+=0.3){const rr=R*(0.78+0.32*Math.sin(a*3+t*0.018));const px=cx+Math.cos(a)*rr,py=cy+Math.sin(a)*rr*1.25;a===0?x.moveTo(px,py):x.lineTo(px,py);}
-          x.closePath();x.fill();x.restore();
-        }
-      }
-    }
 
     // (a parede de escuridão é uma superfície sólida no mundo, tratada pelo raycaster — ver acima)
     if(mode==="diving" || mode==="reeling"){
@@ -623,6 +573,11 @@
     // reflexo do vidro reage à luz: mais brilho quando o facho está aceso
     const gr=document.getElementById("glassReflect");
     if(gr) gr.style.opacity = lightOn ? "0.8" : "0.5";
+
+    // red tint persistente quando o coral cresce
+    if(coralActive){
+      x.save(); x.fillStyle="rgba(110,0,0,0.28)"; x.fillRect(0,0,w,h); x.restore();
+    }
 
     // FOCO: blur de base sempre leve, focar reduz quase a zero (na frente de tudo)
     focusAmt += ((focusing?1:0)-focusAmt)*0.1;
@@ -757,7 +712,7 @@
 
   // loop de simulação local (~60fps): movimento livre Iron Lung em 2D
   let lastT=performance.now();
-  const SPEED=42, TURN=52; // unidades/s e graus/s
+  const SPEED=22, TURN=52; // unidades/s e graus/s
   function navLoop(now){
     const dt=Math.min((now-lastT)/1000, 0.05); lastT=now;
 
@@ -835,6 +790,14 @@
       } else {
         nav.x=corridorAt(START_DEPTH).cx; nav.mode="moonpool"; pushNav();
       }
+    }
+
+    // blast shutter: fecha a 1000m
+    const needShutter = nav.depth >= 1000;
+    if(needShutter !== shutterClosed){
+      shutterClosed = needShutter;
+      const elShutter = document.getElementById("shutter");
+      elShutter.style.transform = shutterClosed ? "translateY(0)" : "translateY(-110%)";
     }
 
     // HUD local
@@ -1007,6 +970,20 @@
 
     const read=(STATE.readout||"").trim();
     document.getElementById("hudread").innerHTML=read?`<span class="line">${esc(read)}</span>`:"";
+
+    // coral growth: flash preto 2s + red tint persistente
+    const newCoral = !!STATE.coralGrowth;
+    if(newCoral && !coralActive){
+      coralActive = true;
+      const fl = document.getElementById("coralFlash");
+      fl.style.opacity = "1"; fl.style.display = "block";
+      setTimeout(()=>{
+        fl.style.transition = "opacity 0.6s";
+        fl.style.opacity = "0";
+        setTimeout(()=>{ fl.style.display="none"; fl.style.transition=""; }, 650);
+      }, 2000);
+    }
+    if(!newCoral) coralActive = false;
   });
   function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 </script></body></html>
