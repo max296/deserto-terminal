@@ -286,7 +286,7 @@
   let STATE={};
   let imgEl=null, imgReady=false;
   let curHull=null;
-  let coralActive=false, shutterClosed=false;
+  let coralActive=false, shutterClosed=false, shutterOverride="auto";
   let moonScroll=0; // 0 = na superficie (moonpool visivel), 1 = submerso
 
   const cv=document.getElementById("abyss"), x=cv.getContext("2d");
@@ -837,8 +837,8 @@
       }
     }
 
-    // blast shutter: fecha a 1000m (10000wu com a nova escala)
-    const needShutter = nav.depth >= 10000;
+    // blast shutter: fecha a 1000m (10000wu); pode ser forçado via Firebase
+    const needShutter = shutterOverride==="force_closed" || (shutterOverride!=="force_open" && nav.depth>=10000);
     if(needShutter !== shutterClosed){
       shutterClosed = needShutter;
       const elShutter = document.getElementById("shutter");
@@ -969,6 +969,12 @@
         wallHitCount=0; ref.child("wallHits").set(0);
       }
     }
+  });
+
+  // escuta override do shutter (guardião ou monitor)
+  ref.child("shutter").on("value",snap=>{
+    const v=snap.val();
+    shutterOverride=(v==="force_open"||v==="force_closed")?v:"auto";
   });
 
   // aplica o modo SEM animação (usado na carga inicial): mostra direto o estado certo
