@@ -6,9 +6,16 @@
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     :root{
-      --bg:#060c06; --panel:#0a140a; --border:#1a2e1a;
-      --live:#7dff7d; --dim:#4a8a4a; --ink:#a0d8a0; --ink-dim:#5a885a;
-      --danger:#ff4040; --warn:#ffb020;
+      --bg:#04090f;
+      --panel:#070f19;
+      --border:#0c2236;
+      --live:#00c8ff;
+      --live-dim:#007aaa;
+      --dim:#004460;
+      --ink:#7ab8d4;
+      --ink-dim:#3a6880;
+      --danger:#ff4040;
+      --warn:#ffb020;
       --font:'Courier New',monospace;
     }
     html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--font);overflow:hidden}
@@ -16,91 +23,97 @@
 
     #header{
       display:flex;align-items:center;justify-content:space-between;
-      padding:8px 16px;border-bottom:1px solid var(--border);
-      font-size:11px;letter-spacing:.18em;flex-shrink:0;
+      padding:7px 16px;border-bottom:1px solid var(--border);
+      font-size:11px;letter-spacing:.2em;flex-shrink:0;
+      background:rgba(0,50,80,.18);
     }
-    #header .title{color:var(--dim)}
+    #header .title{color:var(--ink-dim)}
     #header .title b{color:var(--live)}
-    #connDot{width:7px;height:7px;border-radius:50%;background:#ff4040;display:inline-block;margin-right:6px;animation:blink 1s step-end infinite}
+    #connDot{width:7px;height:7px;border-radius:50%;background:var(--danger);display:inline-block;margin-right:6px;animation:blink 1s step-end infinite}
     #connDot.on{background:var(--live);animation:none}
     @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
 
-    #main{display:flex;flex:1;min-height:0;gap:0}
+    #main{display:flex;flex:1;min-height:0}
 
     /* === MAP === */
     #mapWrap{
-      position:relative;display:flex;flex-direction:column;align-items:center;
-      background:#030803;border-right:1px solid var(--border);
-      padding:10px 6px;flex-shrink:0;
+      display:flex;flex-direction:column;align-items:center;
+      background:#030810;border-right:1px solid var(--border);
+      padding:10px 8px;flex-shrink:0;
     }
-    #mapLbl{font-size:9px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:6px}
-    #mapCv{display:block;image-rendering:pixelated}
-    #mapScale{
-      font-size:8px;color:var(--ink-dim);margin-top:5px;letter-spacing:.06em;text-align:center;line-height:1.6
+    #mapLbl{font-size:9px;letter-spacing:.18em;color:var(--ink-dim);margin-bottom:6px}
+    #mapCv{
+      display:block;image-rendering:pixelated;
+      border:1px solid var(--border);
+      box-shadow:0 0 20px rgba(0,150,200,.08);
     }
+    #mapFooter{font-size:8px;color:var(--ink-dim);margin-top:5px;text-align:center;letter-spacing:.06em;line-height:1.6}
+    /* vignette nas bordas do mapa */
+    #mapVignette{
+      position:relative;pointer-events:none;
+    }
+    #mapVignette::before,#mapVignette::after{
+      content:'';position:absolute;left:0;right:0;height:28px;z-index:2;
+    }
+    #mapVignette::before{top:0;background:linear-gradient(to bottom,#030810,transparent)}
+    #mapVignette::after{bottom:0;background:linear-gradient(to top,#030810,transparent)}
 
     /* === SIDEBAR === */
     #sidebar{
-      flex:1;min-width:220px;max-width:280px;display:flex;flex-direction:column;
-      gap:0;overflow-y:auto;overflow-x:hidden;
+      flex:1;min-width:220px;max-width:280px;
+      display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;
     }
-    .panel{
-      border-bottom:1px solid var(--border);padding:12px 14px;flex-shrink:0;
-    }
-    .panel-lbl{font-size:9px;letter-spacing:.18em;color:var(--ink-dim);margin-bottom:9px}
+    .panel{border-bottom:1px solid var(--border);padding:11px 14px;flex-shrink:0}
+    .panel-lbl{font-size:9px;letter-spacing:.2em;color:var(--ink-dim);margin-bottom:9px}
 
     /* estado */
     #subStatus{
-      font-size:18px;letter-spacing:.2em;font-weight:bold;padding:8px 0 4px;
-      transition:color .3s;
+      font-size:16px;letter-spacing:.22em;font-weight:bold;padding:6px 0 4px;
+      transition:color .4s;
     }
     #subStatus.intacto{color:var(--live)}
     #subStatus.danificado{color:var(--warn)}
-    #subStatus.perigo{color:var(--danger);animation:pulse-danger .6s ease-in-out infinite alternate}
-    @keyframes pulse-danger{from{opacity:1}to{opacity:.4}}
-    #collisionBar{height:4px;background:var(--border);border-radius:2px;margin:7px 0 5px}
-    #collisionFill{height:100%;border-radius:2px;background:var(--live);width:0%;transition:width .4s,background .4s}
-    #collisionTxt{font-size:10px;color:var(--ink-dim);letter-spacing:.06em}
+    #subStatus.perigo{color:var(--danger);animation:pdanger .55s ease-in-out infinite alternate}
+    @keyframes pdanger{from{opacity:1}to{opacity:.35}}
+    .state-bar{height:3px;background:var(--border);border-radius:2px;margin-top:8px;overflow:hidden}
+    .state-fill{height:100%;border-radius:2px;width:0%;transition:width .5s,background .5s}
 
     /* telemetria */
-    .tele-row{display:flex;align-items:baseline;gap:6px;margin-bottom:4px}
-    .tele-k{font-size:9px;color:var(--ink-dim);letter-spacing:.14em;min-width:42px}
-    .tele-v{font-size:16px;letter-spacing:.12em;color:var(--live);min-width:50px;text-align:right}
-    .tele-u{font-size:10px;color:var(--dim)}
-    #tMode{font-size:12px;text-transform:uppercase;color:var(--ink)}
+    .tele-row{display:flex;align-items:baseline;gap:6px;margin-bottom:5px}
+    .tele-k{font-size:9px;color:var(--ink-dim);letter-spacing:.16em;min-width:44px}
+    .tele-v{font-size:16px;letter-spacing:.1em;color:var(--live);min-width:52px;text-align:right}
+    .tele-u{font-size:9px;color:var(--dim);letter-spacing:.08em}
 
-    /* shutter */
-    #shutterWrap{display:flex;gap:7px;margin-bottom:7px}
+    /* botões */
     .btn-mon{
-      flex:1;padding:6px 0;font-family:var(--font);font-size:10px;
-      letter-spacing:.12em;border:1px solid var(--border);background:var(--panel);
-      cursor:pointer;border-radius:3px;
+      width:100%;padding:8px 0;font-family:var(--font);font-size:10px;letter-spacing:.16em;
+      border:1px solid var(--border);background:var(--panel);color:var(--ink);
+      cursor:pointer;border-radius:3px;margin-bottom:5px;transition:background .15s,border-color .15s;
     }
-    .btn-mon:disabled{opacity:.35;cursor:default}
-    .btn-open{color:var(--live);border-color:#1a4a1a}
-    .btn-open:hover:not(:disabled){background:#0a2a0a}
-    .btn-close{color:var(--danger);border-color:#4a1a1a}
-    .btn-close:hover:not(:disabled){background:#2a0a0a}
+    .btn-mon:hover:not(:disabled){background:rgba(0,150,200,.12);border-color:var(--live-dim)}
+    .btn-mon:disabled{opacity:.3;cursor:default}
+    .btn-reel{color:var(--live);border-color:var(--live-dim)}
+    .btn-reel:hover:not(:disabled){background:rgba(0,200,255,.1)!important}
+    .btn-open{color:#80ffa0;border-color:#0a3a1a}
+    .btn-open:hover:not(:disabled){background:rgba(0,200,80,.08)!important}
+    .btn-close{color:var(--danger);border-color:#3a0a0a}
+    .btn-close:hover:not(:disabled){background:rgba(255,40,40,.08)!important}
+
     #monShutterDenied{
-      font-size:9px;color:var(--danger);letter-spacing:.04em;line-height:1.6;
-      padding:6px 8px;border:1px solid #4a1a1a;border-radius:3px;margin-bottom:6px;
+      font-size:9px;color:var(--danger);letter-spacing:.04em;line-height:1.7;
+      padding:6px 8px;border:1px solid #3a0a0a;border-radius:3px;margin-bottom:6px;
     }
-    .shutter-stat{font-size:10px;color:var(--ink-dim);letter-spacing:.06em}
+    .stat-txt{font-size:10px;color:var(--ink-dim);letter-spacing:.06em;margin-top:4px}
 
     /* sensor */
     #sensorList{display:flex;flex-direction:column;gap:5px}
     .sensor-empty{font-size:10px;color:var(--ink-dim);letter-spacing:.08em;padding:4px 0}
     .sensor-ent{
       display:flex;align-items:center;gap:8px;padding:5px 7px;
-      border:1px solid var(--border);border-radius:3px;background:var(--panel);
-      font-size:10px;letter-spacing:.06em;
+      border:1px solid var(--border);border-radius:3px;background:var(--panel);font-size:10px;letter-spacing:.06em;
     }
-    .sensor-blip{
-      width:8px;height:8px;border-radius:50%;flex-shrink:0;
-      animation:sensor-pulse 1s ease-in-out infinite alternate;
-    }
-    @keyframes sensor-pulse{from{opacity:1;box-shadow:0 0 4px currentColor}to{opacity:.3;box-shadow:none}}
-    .sensor-info{flex:1;color:var(--ink-dim)}
+    .sensor-blip{width:8px;height:8px;border-radius:50%;flex-shrink:0;animation:spulse .9s ease-in-out infinite alternate}
+    @keyframes spulse{from{opacity:1;box-shadow:0 0 5px currentColor}to{opacity:.25;box-shadow:none}}
     .sensor-dist{color:var(--live);min-width:44px;text-align:right}
   </style>
 </head>
@@ -111,18 +124,24 @@
     <span><span id="connDot"></span><span id="connTxt" style="font-size:10px;letter-spacing:.1em;color:var(--ink-dim)">CONECTANDO</span></span>
   </div>
   <div id="main">
+
     <div id="mapWrap">
-      <div id="mapLbl">MAPA — CORTE VERTICAL</div>
-      <canvas id="mapCv"></canvas>
-      <div id="mapScale">1 célula = 4m × 4m<br><span id="mapDepthRange" style="color:var(--dim)">—</span></div>
+      <div id="mapLbl">POSIÇÃO — SENSOR LOCAL</div>
+      <div id="mapVignette">
+        <canvas id="mapCv"></canvas>
+      </div>
+      <div id="mapFooter">
+        raio: ~120m<br>
+        <span id="mapDepthLbl" style="color:var(--dim)">—</span>
+      </div>
     </div>
+
     <div id="sidebar">
 
       <div class="panel">
-        <div class="panel-lbl">ESTADO DO SUBMERSÍVEL</div>
-        <div id="subStatus" class="sub-status intacto">INTACTO</div>
-        <div id="collisionBar"><div id="collisionFill"></div></div>
-        <div id="collisionTxt">colisões: 0 / 30</div>
+        <div class="panel-lbl">INTEGRIDADE DO CASCO</div>
+        <div id="subStatus" class="intacto">INTACTO</div>
+        <div class="state-bar"><div id="stateFill" class="state-fill"></div></div>
       </div>
 
       <div class="panel">
@@ -139,18 +158,24 @@
         </div>
         <div class="tele-row">
           <span class="tele-k">MODO</span>
-          <span id="tMode" class="tele-v" style="font-size:12px">--</span>
+          <span id="tMode" class="tele-v" style="font-size:11px;letter-spacing:.08em">--</span>
         </div>
       </div>
 
       <div class="panel">
+        <div class="panel-lbl">CONTROLE DE EMERGÊNCIA</div>
+        <button id="btnReel" class="btn-mon btn-reel" disabled>↑ PUXAR DE VOLTA</button>
+        <div id="reelStatus" class="stat-txt">—</div>
+      </div>
+
+      <div class="panel">
         <div class="panel-lbl">SHUTTER DO VISOR</div>
-        <div id="shutterWrap">
-          <button id="monShutterOpen" class="btn-mon btn-open">ABRIR</button>
-          <button id="monShutterClose" class="btn-mon btn-close">FECHAR</button>
+        <div id="shutterWrap" style="display:flex;gap:6px;margin-bottom:6px">
+          <button id="monShutterOpen" class="btn-mon btn-open" style="width:auto;flex:1;margin:0">ABRIR</button>
+          <button id="monShutterClose" class="btn-mon btn-close" style="width:auto;flex:1;margin:0">FECHAR</button>
         </div>
-        <div id="monShutterDenied" style="display:none">ACESSO NEGADO.<br>Perigo a Integridade do Submarino.</div>
-        <div id="monShutterStatus" class="shutter-stat">—</div>
+        <div id="monShutterDenied" style="display:none">ACESSO NEGADO.<br>Perigo à Integridade do Submarino.</div>
+        <div id="monShutterStatus" class="stat-txt">—</div>
       </div>
 
       <div class="panel" style="flex:1">
@@ -177,246 +202,214 @@
       for(let r=Math.max(0,r0);r<=Math.min(GRID_ROWS-1,r1);r++)
         for(let c=Math.max(0,c0);c<=Math.min(GRID_COLS-1,c1);c++) m[r][c]=0;
     };
-    open(25,29,9,11);
-    open(30,49,8,12);
-    open(50,74,8,12);
+    open(25,29,9,11);  open(30,49,8,12);   open(50,74,8,12);
     open(75,124,4,16);
     open(115,130,13,19); open(130,160,14,19); open(155,200,13,18); open(197,207,11,18);
     open(125,239,8,12);
     open(240,280,7,15);
     open(280,459,8,12);
-    open(460,472,7,13);
-    open(473,508,9,11);
-    open(509,589,8,12);
-    open(590,632,3,17);
-    open(100,130,3,6); open(130,180,2,6); open(175,192,2,9); open(185,225,4,7);
+    open(460,472,7,13); open(473,508,9,11); open(509,589,8,12); open(590,632,3,17);
+    open(100,130,3,6);  open(130,180,2,6);  open(175,192,2,9);  open(185,225,4,7);
     open(190,210,14,19); open(200,265,17,20); open(250,285,13,20); open(270,300,15,18);
     return m;
   })();
 
-  // ===== ESTADO LOCAL =====
-  const UNITS_DEPTH_SHUTTER = 10000; // 1000m display
-  let nav = {x:0, depth:2000, heading:0, mode:"moonpool"};
-  let wallHits = 0;
-  let entities = {};
-  let shutterVal = "auto";
-  let connected = false;
+  // ===== ESTADO =====
+  const DEPTH_SHUTTER = 10000; // 1000m wu
+  const HULL_WARN=20, HULL_CRIT=30;
+  const CELL_W=14, CELL_H=4;
+  // raio de visibilidade em linhas de tile acima e abaixo do sub
+  const VIS_ABOVE=15, VIS_BELOW=25;
 
-  const subRef = sessionRef.child("submarine");
+  let nav={x:0, depth:2000, heading:0, mode:"moonpool"};
+  let hullDamage=0;
+  let entities={};
+  let shutterVal="auto";
+
+  const subRef=sessionRef.child("submarine");
 
   // ===== CANVAS =====
-  const CELL_W = 14, CELL_H = 3;
-  const mcv = document.getElementById("mapCv");
-  const mctx = mcv.getContext("2d");
-  const mapWrap = document.getElementById("mapWrap");
+  const mcv=document.getElementById("mapCv");
+  const mctx=mcv.getContext("2d");
+  mcv.width=GRID_COLS*CELL_W;
+  mcv.height=(VIS_ABOVE+VIS_BELOW)*CELL_H;
 
-  function resizeCanvas(){
-    const h = mapWrap.clientHeight - 60; // label + scale
-    mcv.width = GRID_COLS * CELL_W;
-    mcv.height = Math.max(200, h);
-  }
-  window.addEventListener("resize", ()=>{ resizeCanvas(); drawMap(); });
-  resizeCanvas();
-
-  // ===== DESENHO DO MAPA =====
+  // ===== DESENHO =====
   function drawMap(){
-    const W = mcv.width, H = mcv.height;
-    const rowsVisible = H / CELL_H;
-    const subRow = nav.depth / TILE;
-    const subCol = (nav.x - X_MIN_W) / TILE;
+    const W=mcv.width, H=mcv.height;
+    const subRow=nav.depth/TILE;
+    const subCol=(nav.x-X_MIN_W)/TILE;
+    const viewStart=subRow-VIS_ABOVE;  // pode ser fracionário
 
-    // viewStart: sub fica em 35% de cima
-    const viewStart = Math.max(0, subRow - rowsVisible * 0.35);
+    mctx.fillStyle='#030810';
+    mctx.fillRect(0,0,W,H);
 
-    mctx.fillStyle = '#030803';
-    mctx.fillRect(0, 0, W, H);
-
-    // grade de tiles
-    for(let r = Math.floor(viewStart); r <= Math.ceil(viewStart + rowsVisible) && r < GRID_ROWS; r++){
-      const py = (r - viewStart) * CELL_H;
-      for(let c = 0; c < GRID_COLS; c++){
-        const px = c * CELL_W;
-        const isOpen = MAP[r] && MAP[r][c]===0;
-        if(!isOpen){
-          mctx.fillStyle = '#0f110f';
-        } else if(r < 50){
-          mctx.fillStyle = '#091424'; // área da estação
-        } else if(r >= 590){
-          mctx.fillStyle = '#0a1a14'; // caverna hive-mind
+    // tiles visíveis
+    const rStart=Math.floor(viewStart);
+    const rEnd=Math.ceil(viewStart+VIS_ABOVE+VIS_BELOW);
+    for(let r=Math.max(0,rStart);r<=Math.min(GRID_ROWS-1,rEnd);r++){
+      const py=(r-viewStart)*CELL_H;
+      for(let c=0;c<GRID_COLS;c++){
+        const px=c*CELL_W;
+        const open=MAP[r]&&MAP[r][c]===0;
+        if(!open){
+          mctx.fillStyle='#060f18';
+        } else if(r<50){
+          mctx.fillStyle='#06142a';
+        } else if(r>=590){
+          mctx.fillStyle='#04182a';
         } else {
-          mctx.fillStyle = '#081520'; // água aberta
+          mctx.fillStyle='#04111e';
         }
-        mctx.fillRect(px, py, CELL_W - 1, CELL_H - 1);
+        mctx.fillRect(px,py,CELL_W-1,CELL_H-1);
       }
     }
 
-    // marcadores de profundidade a cada 500m
-    mctx.font = '8px monospace';
-    for(let m500 = 0; m500 <= 2600; m500 += 100){
-      const depthWu = m500 * UNITS_PER_M;
-      const r = depthWu / TILE;
-      const py = (r - viewStart) * CELL_H;
-      if(py < -10 || py > H + 10) continue;
-      if(m500 % 500 === 0){
-        mctx.strokeStyle = 'rgba(80,140,80,0.35)';
-        mctx.lineWidth = 1;
-        mctx.beginPath(); mctx.moveTo(0,py); mctx.lineTo(W,py); mctx.stroke();
-        mctx.fillStyle = 'rgba(90,160,90,0.6)';
-        mctx.fillText(m500+'m', 2, py - 2);
-      } else if(m500 % 100 === 0){
-        mctx.strokeStyle = 'rgba(50,90,50,0.18)';
-        mctx.lineWidth = 1;
-        mctx.beginPath(); mctx.moveTo(0,py); mctx.lineTo(W,py); mctx.stroke();
+    // marcadores de profundidade a cada 200m
+    mctx.font='8px monospace';
+    for(let md=0;md<=2600;md+=100){
+      const r=(md*UNITS_PER_M)/TILE;
+      const py=(r-viewStart)*CELL_H;
+      if(py<-8||py>H+8) continue;
+      mctx.strokeStyle=md%200===0?'rgba(0,100,160,.3)':'rgba(0,60,100,.14)';
+      mctx.lineWidth=1;
+      mctx.beginPath(); mctx.moveTo(0,py); mctx.lineTo(W,py); mctx.stroke();
+      if(md%200===0){
+        mctx.fillStyle='rgba(0,120,180,.55)';
+        mctx.fillText(md+'m',2,py-2);
       }
     }
 
-    // entidades visíveis em modo approach (sensor de movimento)
-    const now = Date.now();
-    Object.values(entities).forEach(ent => {
-      if(!ent || ent.visible===false || ent.mode!=="approach") return;
-      if(typeof ent.wx !== "number") return;
-      const er = ent.wd / TILE;
-      const ec = (ent.wx - X_MIN_W) / TILE;
-      const px = ec * CELL_W;
-      const py = (er - viewStart) * CELL_H;
-      if(py < -20 || py > H + 20) return;
-      const col = ent.color || '#ff4040';
-      const pulse = 0.5 + 0.5 * Math.sin(now / 400);
-      const r=parseInt(col.slice(1,3),16), g=parseInt(col.slice(3,5),16), b=parseInt(col.slice(5,7),16);
-      const gr = mctx.createRadialGradient(px,py,0,px,py,10);
-      gr.addColorStop(0,`rgba(${r},${g},${b},${0.5*pulse})`);
+    // entidades em approach (sensor de movimento)
+    const now=Date.now();
+    Object.values(entities).forEach(ent=>{
+      if(!ent||ent.visible===false||ent.mode!=="approach") return;
+      if(typeof ent.wx!=="number") return;
+      const er=ent.wd/TILE, ec=(ent.wx-X_MIN_W)/TILE;
+      const px=ec*CELL_W, py=(er-viewStart)*CELL_H;
+      if(py<-20||py>H+20) return;
+      const col=ent.color||'#ff4040';
+      const pulse=0.4+0.6*Math.sin(now/400);
+      const [r,g,b]=[parseInt(col.slice(1,3),16),parseInt(col.slice(3,5),16),parseInt(col.slice(5,7),16)];
+      const gr=mctx.createRadialGradient(px,py,0,px,py,9);
+      gr.addColorStop(0,`rgba(${r},${g},${b},${0.55*pulse})`);
       gr.addColorStop(1,`rgba(${r},${g},${b},0)`);
-      mctx.fillStyle=gr; mctx.beginPath(); mctx.arc(px,py,10,0,Math.PI*2); mctx.fill();
-      mctx.fillStyle=col;
-      mctx.beginPath(); mctx.arc(px,py,2.5,0,Math.PI*2); mctx.fill();
+      mctx.fillStyle=gr; mctx.beginPath(); mctx.arc(px,py,9,0,Math.PI*2); mctx.fill();
+      mctx.fillStyle=col; mctx.beginPath(); mctx.arc(px,py,2,0,Math.PI*2); mctx.fill();
     });
 
-    // sub — glow + dot + linha de heading
-    const spx = subCol * CELL_W;
-    const spy = (subRow - viewStart) * CELL_H;
-    const pulse = 0.7 + 0.3 * Math.sin(now / 500);
-    const gr = mctx.createRadialGradient(spx,spy,0,spx,spy,14);
-    gr.addColorStop(0, `rgba(125,255,125,${0.6*pulse})`);
-    gr.addColorStop(1, 'rgba(125,255,125,0)');
-    mctx.fillStyle = gr;
-    mctx.beginPath(); mctx.arc(spx,spy,14,0,Math.PI*2); mctx.fill();
-    // heading: 0=baixo, ângulo em radianos
-    const hRad = nav.heading * Math.PI / 180;
-    const arrowLen = 9;
-    mctx.strokeStyle = '#7dff7d';
-    mctx.lineWidth = 1.5;
-    mctx.beginPath();
-    mctx.moveTo(spx, spy);
-    mctx.lineTo(spx + Math.sin(hRad)*arrowLen, spy + Math.cos(hRad)*arrowLen * (CELL_H/CELL_W) * 4);
+    // sub — glow azul + ponto + heading
+    const spx=subCol*CELL_W, spy=(subRow-viewStart)*CELL_H;
+    const pulse=0.65+0.35*Math.sin(now/520);
+    const gr=mctx.createRadialGradient(spx,spy,0,spx,spy,16);
+    gr.addColorStop(0,`rgba(0,200,255,${0.55*pulse})`);
+    gr.addColorStop(1,'rgba(0,200,255,0)');
+    mctx.fillStyle=gr; mctx.beginPath(); mctx.arc(spx,spy,16,0,Math.PI*2); mctx.fill();
+    const hRad=nav.heading*Math.PI/180;
+    mctx.strokeStyle='#00c8ff'; mctx.lineWidth=1.5;
+    mctx.beginPath(); mctx.moveTo(spx,spy);
+    // aspecto vertical comprimido: heading=0 = baixo
+    mctx.lineTo(spx+Math.sin(hRad)*10, spy+Math.cos(hRad)*10*(CELL_H/CELL_W)*3.5);
     mctx.stroke();
-    mctx.fillStyle = '#7dff7d';
-    mctx.beginPath(); mctx.arc(spx,spy,3,0,Math.PI*2); mctx.fill();
+    mctx.fillStyle='#00c8ff'; mctx.beginPath(); mctx.arc(spx,spy,3,0,Math.PI*2); mctx.fill();
 
-    // range info
-    const topM = Math.round(viewStart * TILE / UNITS_PER_M);
-    const botM = Math.round((viewStart + rowsVisible) * TILE / UNITS_PER_M);
-    document.getElementById("mapDepthRange").textContent = topM + 'm — ' + botM + 'm visível';
+    document.getElementById("mapDepthLbl").textContent=
+      Math.round(nav.depth/UNITS_PER_M)+'m — campo: '+(VIS_ABOVE+VIS_BELOW)*4+'m';
   }
 
   // ===== HUD LATERAL =====
-  const SHUTTER_STATUS = {
-    "auto":"modo: automático (profundidade)",
-    "force_open":"modo: FORÇADO ABERTO",
-    "force_closed":"modo: FORÇADO FECHADO"
+  const SHUTTER_LABELS={
+    "auto":"automático (profundidade)",
+    "force_open":"FORÇADO ABERTO",
+    "force_closed":"FORÇADO FECHADO"
   };
 
   function updateHUD(){
-    const depthM = Math.round(nav.depth / UNITS_PER_M);
-    document.getElementById("tDepth").textContent = String(depthM).padStart(4,"0");
-    document.getElementById("tHeading").textContent = String(Math.round(nav.heading)).padStart(3,"0");
-    document.getElementById("tMode").textContent = nav.mode || "--";
+    // telemetria
+    document.getElementById("tDepth").textContent=String(Math.round(nav.depth/UNITS_PER_M)).padStart(4,"0");
+    document.getElementById("tHeading").textContent=String(Math.round(nav.heading)).padStart(3,"0");
+    document.getElementById("tMode").textContent=(nav.mode||"--").toUpperCase();
 
-    // estado do submarino
-    const hits = wallHits || 0;
-    const pct = Math.min(100, (hits/30)*100);
-    document.getElementById("collisionFill").style.width = pct + "%";
-    document.getElementById("collisionFill").style.background =
-      hits >= 30 ? "var(--danger)" : hits >= 20 ? "var(--warn)" : "var(--live)";
-    document.getElementById("collisionTxt").textContent = "colisões: " + hits + " / 30";
-    const el = document.getElementById("subStatus");
-    if(hits >= 30){
-      el.textContent = "PERIGO IMEDIATO"; el.className = "sub-status perigo";
-    } else if(hits >= 20){
-      el.textContent = "DANIFICADO"; el.className = "sub-status danificado";
+    // integridade do casco (sem números)
+    const el=document.getElementById("subStatus");
+    const fill=document.getElementById("stateFill");
+    const pct=Math.min(100,(hullDamage/HULL_CRIT)*100);
+    fill.style.width=pct+"%";
+    if(hullDamage>=HULL_CRIT){
+      el.textContent="PERIGO IMEDIATO"; el.className="perigo";
+      fill.style.background="var(--danger)";
+    } else if(hullDamage>=HULL_WARN){
+      el.textContent="DANIFICADO"; el.className="danificado";
+      fill.style.background="var(--warn)";
     } else {
-      el.textContent = "INTACTO"; el.className = "sub-status intacto";
+      el.textContent="INTACTO"; el.className="intacto";
+      fill.style.background="var(--live)";
+    }
+
+    // puxar de volta
+    const btnReel=document.getElementById("btnReel");
+    const reelSt=document.getElementById("reelStatus");
+    if(nav.mode==="moonpool"){
+      btnReel.disabled=true; reelSt.textContent="submersível na superfície";
+    } else if(nav.mode==="reeling"){
+      btnReel.disabled=true; reelSt.textContent="RECOLHENDO...";
+    } else {
+      btnReel.disabled=false; reelSt.textContent="disponível";
     }
 
     // shutter
-    const depthOk = nav.depth < UNITS_DEPTH_SHUTTER;
-    const denied = document.getElementById("monShutterDenied");
-    const wrap = document.getElementById("shutterWrap");
-    denied.style.display = depthOk ? "none" : "block";
-    wrap.style.display = depthOk ? "flex" : "none";
-    document.getElementById("monShutterStatus").textContent = SHUTTER_STATUS[shutterVal] || "—";
+    const depthOk=nav.depth<DEPTH_SHUTTER;
+    document.getElementById("monShutterDenied").style.display=depthOk?"none":"block";
+    document.getElementById("shutterWrap").style.display=depthOk?"flex":"none";
+    document.getElementById("monShutterStatus").textContent=SHUTTER_LABELS[shutterVal]||"—";
 
     // sensor de movimento
-    const moving = Object.entries(entities).filter(([,e])=>e&&e.visible!==false&&e.mode==="approach"&&typeof e.wx==="number");
-    const list = document.getElementById("sensorList");
+    const moving=Object.entries(entities).filter(([,e])=>e&&e.visible!==false&&e.mode==="approach"&&typeof e.wx==="number");
+    const list=document.getElementById("sensorList");
     if(!moving.length){
-      list.innerHTML = '<div class="sensor-empty">nenhuma leitura</div>';
+      list.innerHTML='<div class="sensor-empty">nenhuma leitura</div>';
     } else {
-      list.innerHTML = moving.map(([id,e])=>{
-        const dx = e.wx - nav.x;
-        const dd = e.wd - nav.depth;
-        const dist = Math.round(Math.hypot(dx,dd) / UNITS_PER_M);
-        const bearing = Math.round(Math.atan2(dx,dd) * 180/Math.PI + 360) % 360;
-        const col = e.color || '#ff4040';
+      list.innerHTML=moving.map(([,e])=>{
+        const dx=e.wx-nav.x, dd=e.wd-nav.depth;
+        const dist=Math.round(Math.hypot(dx,dd)/UNITS_PER_M);
+        const brg=((Math.round(Math.atan2(dx,dd)*180/Math.PI)%360)+360)%360;
+        const col=e.color||'#ff4040';
         return `<div class="sensor-ent">
           <div class="sensor-blip" style="background:${col};box-shadow:0 0 5px ${col}"></div>
-          <div class="sensor-info">BRG ${String(bearing).padStart(3,"0")}°</div>
-          <div class="sensor-dist">${dist}m</div>
+          <span style="color:var(--ink-dim)">BRG ${String(brg).padStart(3,"0")}°</span>
+          <span class="sensor-dist">${dist}m</span>
         </div>`;
       }).join("");
     }
   }
 
-  // ===== LOOP DE RENDERIZAÇÃO =====
-  let rafId = null;
-  function loop(){
-    drawMap();
-    updateHUD();
-    rafId = requestAnimationFrame(loop);
-  }
+  // ===== LOOP =====
+  function loop(){ drawMap(); updateHUD(); requestAnimationFrame(loop); }
 
   // ===== FIREBASE =====
-  const connRef = firebase.database().ref(".info/connected");
-  connRef.on("value", s=>{
-    connected = !!s.val();
-    document.getElementById("connDot").className = connected ? "on" : "";
-    document.getElementById("connTxt").textContent = connected ? "CONECTADO" : "RECONECTANDO";
+  firebase.database().ref(".info/connected").on("value",s=>{
+    const on=!!s.val();
+    document.getElementById("connDot").className=on?"on":"";
+    document.getElementById("connTxt").textContent=on?"CONECTADO":"RECONECTANDO";
+  });
+  subRef.child("nav").on("value",s=>{const n=s.val();if(!n)return;if(typeof n.x==="number")nav.x=n.x;if(typeof n.depth==="number")nav.depth=n.depth;if(typeof n.heading==="number")nav.heading=n.heading;if(n.mode)nav.mode=n.mode;});
+  subRef.child("hullDamage").on("value",s=>{hullDamage=s.val()||0;});
+  subRef.child("entities").on("value",s=>{entities=s.val()||{};});
+  subRef.child("shutter").on("value",s=>{shutterVal=s.val()||"auto";});
+
+  // puxar de volta
+  document.getElementById("btnReel").addEventListener("click",()=>{
+    if(nav.mode==="diving"||nav.mode==="reeling") subRef.child("nav/mode").set("reeling");
   });
 
-  subRef.child("nav").on("value", s=>{
-    const n = s.val(); if(!n) return;
-    if(typeof n.x==="number") nav.x=n.x;
-    if(typeof n.depth==="number") nav.depth=n.depth;
-    if(typeof n.heading==="number") nav.heading=n.heading;
-    if(n.mode) nav.mode=n.mode;
-  });
-
-  subRef.child("wallHits").on("value", s=>{ wallHits = s.val()||0; });
-
-  subRef.child("entities").on("value", s=>{ entities = s.val()||{}; });
-
-  subRef.child("shutter").on("value", s=>{ shutterVal = s.val()||"auto"; });
-
-  // shutter buttons (só disponíveis se depth < 1000m)
+  // shutter (só <1000m)
   document.getElementById("monShutterOpen").addEventListener("click",()=>{
-    if(nav.depth >= UNITS_DEPTH_SHUTTER) return;
-    subRef.child("shutter").set("force_open");
+    if(nav.depth<DEPTH_SHUTTER) subRef.child("shutter").set("force_open");
   });
   document.getElementById("monShutterClose").addEventListener("click",()=>{
-    if(nav.depth >= UNITS_DEPTH_SHUTTER) return;
-    subRef.child("shutter").set("force_closed");
+    if(nav.depth<DEPTH_SHUTTER) subRef.child("shutter").set("force_closed");
   });
 
-  resizeCanvas();
   loop();
 </script>
 </body>
