@@ -236,7 +236,7 @@
   let nav={x:0, depth:START_DEPTH, heading:0, mode:"moonpool"};
   let navReady=false;
   const keys={};
-  let lastWallHit=0;
+  let lastWallHit=0, wallHitCount=0;
 
   let heading=0, lightMode=false, lightOn=false, focusing=false;
   let beamX=0.5, beamY=0.5, focusAmt=0;
@@ -712,7 +712,7 @@
 
   // loop de simulação local (~60fps): movimento livre Iron Lung em 2D
   let lastT=performance.now();
-  const SPEED=22, TURN=52; // unidades/s e graus/s
+  const SPEED=30, TURN=52; // unidades/s e graus/s
   function navLoop(now){
     const dt=Math.min((now-lastT)/1000, 0.05); lastT=now;
 
@@ -768,6 +768,8 @@
         // só sinaliza impacto quando DE FATO raspa a parede lateral (não nos limites de profundidade)
         if(hitWall && Math.abs(stepX)>0.5 && now-lastWallHit>450){
           lastWallHit=now; elWallHit.classList.remove("hit"); void elWallHit.offsetWidth; elWallHit.classList.add("hit");
+          wallHitCount++;
+          ref.child("wallHits").set(wallHitCount);
         }
       }
     }
@@ -919,6 +921,10 @@
       document.getElementById("sub").classList.toggle("bobbing", nav.mode==="moonpool");
       if(diveAnim){clearInterval(diveAnim);diveAnim=null;}
       updateMoonpoolByMode(prev);
+      // volta pra moonpool: zera o contador de colisões
+      if(nav.mode==="moonpool" && prev && prev!=="moonpool"){
+        wallHitCount=0; ref.child("wallHits").set(0);
+      }
     }
   });
 
