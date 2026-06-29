@@ -298,7 +298,7 @@
       mctx.lineTo(spx,spy);
       mctx.stroke(); mctx.setLineDash([]); mctx.restore();
     }
-    const pulse=0.65+0.35*Math.sin(now/520);
+    const pulse=0.65+0.35*Math.sin(Date.now()/520);
     const gr=mctx.createRadialGradient(spx,spy,0,spx,spy,16);
     gr.addColorStop(0,`rgba(76,143,200,${0.55*pulse})`);
     gr.addColorStop(1,'rgba(76,143,200,0)');
