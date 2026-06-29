@@ -1088,26 +1088,25 @@
         pushNav();
         if(nav.depth<=START_DEPTH){ nav.x=0; nav.mode="moonpool"; pushNav(); }
       } else {
-        // string pulling: varre o caminho inteiro até bater num canto sem LOS
-        // — como uma corda esticada: fica reto até onde enxerga, dobra no canto
-        let tgtIdx=reelingWpIdx;
-        for(let i=reelingWpIdx-1;i>=0;i--){
-          if(lineOfSight(nav.x,nav.depth,navPath[i].x,navPath[i].depth)) tgtIdx=i;
-          else break;
-        }
-        const target=navPath[tgtIdx];
+        const target=navPath[reelingWpIdx];
         const dx=target.x-nav.x, dd=target.depth-nav.depth;
         const dist=Math.hypot(dx,dd);
         if(dist<25){
-          // chegou: consome todos os waypoints até tgtIdx inclusive
-          reelingWpIdx=tgtIdx-1;
+          reelingWpIdx--;
           ref.child("navPath").set(reelingWpIdx>=0?navPath.slice(0,reelingWpIdx+1):null);
         } else {
-          nav.x+=(dx/dist)*reelingSpeed*dt;
-          nav.depth+=(dd/dist)*reelingSpeed*dt;
+          // move com collision detection igual ao diving — não trava em parede
+          const R=22, stepX=(dx/dist)*reelingSpeed*dt, stepD=(dd/dist)*reelingSpeed*dt;
+          let nx=nav.x+stepX, nd=nav.depth+stepD;
+          if(isWall(nx,nd)||isWall(nx-R,nd)||isWall(nx+R,nd)||isPillar(nx,nd)){
+            if(!isWall(nav.x,nd)&&!isWall(nav.x-R,nd)&&!isWall(nav.x+R,nd)&&!isPillar(nav.x,nd)) nx=nav.x;
+            else if(!isWall(nx,nav.depth)&&!isWall(nx-R,nav.depth)&&!isWall(nx+R,nav.depth)&&!isPillar(nx,nav.depth)) nd=nav.depth;
+            else { nx=nav.x; nd=nav.depth; }
+          }
+          nav.x=nx; nav.depth=nd;
           pushNav();
-          // mantém cabo no Firebase sincronizado com o alvo atual (throttle 200ms)
-          if(now-navPathWriteT>200){navPathWriteT=now;ref.child("navPath").set(navPath.slice(0,tgtIdx+1));}
+          // mantém cabo no Firebase trimado até o waypoint atual (throttle 200ms)
+          if(now-navPathWriteT>200){navPathWriteT=now;ref.child("navPath").set(navPath.slice(0,reelingWpIdx+1));}
         }
       }
     }
