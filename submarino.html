@@ -316,6 +316,11 @@
   const keys={};
   let lastWallHit=0, wallHitCount=0;
   let navPath=[], lastPathPoint=null, reelingWpIdx=-1, reelingSpeed=80;
+  let navPathWriteT=0;
+  function pushNavPath(){
+    // sync do navPath para Firebase: guardião e monitor desenham o cabo
+    ref.child("navPath").set(navPath.length ? navPath : null);
+  }
 
   let heading=0, lightMode=false, lightOn=false, focusing=false;
   let beamX=0.5, beamY=0.5, focusAmt=0;
@@ -648,7 +653,7 @@
 
       // CHÃO (sempre) via floor casting (técnica lodev). escurece com a distância (breu).
       const GRID=10;   // grid em metros (depois de dividir por UNITS_PER_M)
-      const SIGHT=13;
+      const SIGHT=40;
       for(let y=Math.floor(horizon)+1; y<h; y+=ROWH){
         const p = y - horizon;
         const rowDist = (h*0.5) / p;
@@ -979,7 +984,7 @@
 
   // loop de simulação local (~60fps): movimento livre Iron Lung em 2D
   let lastT=performance.now();
-  const SPEED=30, TURN=52; // unidades/s e graus/s
+  let NAV_SPEED=18; const TURN=52; // unidades/s e graus/s
   function navLoop(now){
     const dt=Math.min((now-lastT)/1000, 0.05); lastT=now;
 
@@ -997,8 +1002,8 @@
       if(drive!==0){
         const rad=nav.heading*Math.PI/180;
         // plano de cima: heading 0 = descer (+depth), 90 = +x (direita)
-        const stepX = Math.sin(rad)*SPEED*dt*drive;
-        const stepD = Math.cos(rad)*SPEED*dt*drive;
+        const stepX = Math.sin(rad)*NAV_SPEED*dt*drive;
+        const stepD = Math.cos(rad)*NAV_SPEED*dt*drive;
 
         // limite de profundidade: pode subir até o topo da estação (lá a parede/pilares barram).
         // o fundo é MAX_DEPTH. assim a estrutura da petroleira fica visível acima do início.
@@ -1009,8 +1014,8 @@
         // tenta mover X; se sair do corredor, encosta na parede (desliza, não trava tudo).
         let nx = nav.x + stepX;
         let hitWall=false;
-        // colisão com o grid: testa com margem lateral de 15wu
-        const R=15;
+        // colisão com o grid: margem lateral da hitbox do sub
+        const R=22;
         if(isWall(nx,nd)||isWall(nx-R,nd)||isWall(nx+R,nd)){
           if(!isWall(nav.x,nd)&&!isWall(nav.x-R,nd)&&!isWall(nav.x+R,nd)){
             nx=nav.x; hitWall=true;          // desliza em depth
@@ -1040,6 +1045,8 @@
         if(Math.hypot(nav.x-lastPathPoint.x,nav.depth-lastPathPoint.depth)>60){
           navPath.push({x:nav.x,depth:nav.depth});
           lastPathPoint={x:nav.x,depth:nav.depth};
+          // sync throttled (3s) — guardião/monitor desenham o cabo no mapa
+          if(now-navPathWriteT>3000){ navPathWriteT=now; pushNavPath(); }
         }
 
         // só sinaliza impacto quando DE FATO raspa a parede lateral (não nos limites de profundidade)
@@ -1082,7 +1089,7 @@
     // Criatura: quando chasing=true, move em direção ao sub (cliente é autoridade de posição)
     Object.entries(creatureEntities).forEach(([id,ent])=>{
       if(!ent||!ent.chasing) return;
-      const spd=(ent.speed||20)*dt;
+      const spd=(ent.speed||20)*(NAV_SPEED/18)*dt;
       const dx=nav.x-(ent.wx||0), dd=nav.depth-(ent.wd||0);
       const dist=Math.hypot(dx,dd);
       if(dist<8) return;
@@ -1190,8 +1197,9 @@
   ref.child("nav").on("value",snap=>{
     const n=snap.val();
     if(!n){ navReady=true; firstNavLoad=false; lastMode=nav.mode; applyModeInstant(); return; }
-    // adota o estado remoto quando ESTE cliente não está mexendo nas teclas
-    const meActive = Object.values(keys).some(Boolean) || dragging;
+    // adota o estado remoto quando ESTE cliente não está no controle
+    // durante reeling: sub É a autoridade de posição; não deixar Firebase sobrescrever
+    const meActive = Object.values(keys).some(Boolean) || dragging || nav.mode==="reeling";
     if(!meActive){
       if(typeof n.heading==="number") nav.heading=n.heading;
       if(typeof n.depth==="number")  nav.depth=n.depth;
@@ -1217,12 +1225,15 @@
       if(nav.mode==="moonpool" && prev && prev!=="moonpool"){
         wallHitCount=0;
         navPath=[]; lastPathPoint=null;  // moonpool reseta o caminho
+        ref.child("navPath").set(null);  // limpa cabo no Firebase
       }
       if(nav.mode==="reeling" && prev!=="reeling"){
         reelingWpIdx=navPath.length-1;   // inicia recolhimento pelo último breadcrumb
+        pushNavPath();                   // escreve cabo imediatamente para o mapa
       }
       if(nav.mode==="diving" && prev==="moonpool"){
         navPath=[]; lastPathPoint=null;  // nova descida: limpa caminho anterior
+        ref.child("navPath").set(null);
       }
     }
   });
@@ -1230,6 +1241,11 @@
   // velocidade do recolhimento (configurada pelo guardião)
   ref.child("reelingSpeed").on("value",snap=>{
     const v=snap.val(); if(typeof v==="number"&&v>0) reelingSpeed=v;
+  });
+
+  // velocidade de navegação (configurada pelo guardião)
+  ref.child("navSpeed").on("value",snap=>{
+    const v=snap.val(); if(typeof v==="number"&&v>0) NAV_SPEED=v;
   });
 
   // escuta override do shutter (guardião ou monitor)
