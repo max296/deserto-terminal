@@ -322,7 +322,8 @@
   let navReady=false;
   const keys={};
   let lastWallHit=0, wallHitCount=0;
-  let navPath=[], lastPathPoint=null, reelingWpIdx=-1, reelingSpeed=80;
+  let navPath=[], lastPathPoint=null, reelingSpeed=80;
+  let reelingPath=[], reelingWpIdx=-1;  // reelingPath = caminho esticado calculado ao iniciar reeling
   let navPathWriteT=0;
   function pushNavPath(){
     // sync do navPath para Firebase: guardião e monitor desenham o cabo
@@ -1003,6 +1004,28 @@
     return true;
   }
 
+  // Calcula o caminho esticado (taut) do sub até o início do navPath.
+  // String pulling: começa do sub, pula para o waypoint mais longe com LOS,
+  // repete até chegar em navPath[0]. Resultado = array shallow→deep (ordem Firebase).
+  function computeTautPath(){
+    if(!navPath.length) return [];
+    let px=nav.x, pd=nav.depth;
+    let i=navPath.length-1;
+    const pivots=[];
+    while(i>=0){
+      let tgt=i;
+      for(let j=i-1;j>=0;j--){
+        if(lineOfSight(px,pd,navPath[j].x,navPath[j].depth)) tgt=j;
+        else break;
+      }
+      pivots.push(navPath[tgt]);
+      px=navPath[tgt].x; pd=navPath[tgt].depth;
+      i=tgt-1;
+    }
+    pivots.reverse(); // deixa shallow (moonpool) primeiro, igual ao navPath
+    return pivots;
+  }
+
   // loop de simulação local (~60fps): movimento livre Iron Lung em 2D
   let lastT=performance.now();
   let NAV_SPEED=30; const TURN=52; // unidades/s e graus/s
@@ -1081,21 +1104,22 @@
       }
     }
     else if(nav.mode==="reeling"){
-      if(reelingWpIdx<0||navPath.length===0){
-        // sem waypoints: centraliza e sobe até a profundidade inicial
-        nav.x += (0-nav.x)*Math.min(1,dt*3);
-        nav.depth = Math.max(START_DEPTH, nav.depth - reelingSpeed*dt);
+      if(reelingWpIdx<0){
+        // todos os pivôs consumidos: centraliza e sobe à profundidade inicial
+        nav.x+=(0-nav.x)*Math.min(1,dt*3);
+        nav.depth=Math.max(START_DEPTH,nav.depth-reelingSpeed*dt);
         pushNav();
         if(nav.depth<=START_DEPTH){ nav.x=0; nav.mode="moonpool"; pushNav(); }
       } else {
-        const target=navPath[reelingWpIdx];
+        const target=reelingPath[reelingWpIdx];
         const dx=target.x-nav.x, dd=target.depth-nav.depth;
         const dist=Math.hypot(dx,dd);
         if(dist<25){
           reelingWpIdx--;
-          ref.child("navPath").set(reelingWpIdx>=0?navPath.slice(0,reelingWpIdx+1):null);
+          // poda o cabo: remove o pivô chegado
+          ref.child("navPath").set(reelingWpIdx>=0?reelingPath.slice(0,reelingWpIdx+1):null);
         } else {
-          // move com collision detection igual ao diving — não trava em parede
+          // move com collision detection — não trava em parede
           const R=22, stepX=(dx/dist)*reelingSpeed*dt, stepD=(dd/dist)*reelingSpeed*dt;
           let nx=nav.x+stepX, nd=nav.depth+stepD;
           if(isWall(nx,nd)||isWall(nx-R,nd)||isWall(nx+R,nd)||isPillar(nx,nd)){
@@ -1105,8 +1129,6 @@
           }
           nav.x=nx; nav.depth=nd;
           pushNav();
-          // mantém cabo no Firebase trimado até o waypoint atual (throttle 200ms)
-          if(now-navPathWriteT>200){navPathWriteT=now;ref.child("navPath").set(navPath.slice(0,reelingWpIdx+1));}
         }
       }
     }
@@ -1257,19 +1279,20 @@
       if(nav.mode==="moonpool" && prev && prev!=="moonpool"){
         wallHitCount=0;
         elImpactBox.classList.remove("active","fresh"); elImpactVal.textContent="0";
-        navPath=[]; lastPathPoint=null;  // moonpool reseta o caminho
-        ref.child("navPath").set(null);  // limpa cabo no Firebase
+        navPath=[]; lastPathPoint=null; reelingPath=[]; reelingWpIdx=-1;
+        ref.child("navPath").set(null);
       }
       if(nav.mode==="reeling" && prev!=="reeling"){
-        // garante que posição atual está no caminho (pode estar até 60wu além do último breadcrumb)
+        // garante que posição atual está no caminho
         const lastWp=navPath[navPath.length-1];
         if(!lastWp||Math.hypot(nav.x-lastWp.x,nav.depth-lastWp.depth)>30) navPath.push({x:nav.x,depth:nav.depth});
-        reelingWpIdx=navPath.length-1;
-        navPathWriteT=0;  // reseta throttle para próxima write de cabo disparar imediatamente
-        pushNavPath();
+        // calcula o caminho esticado UMA VEZ — evita seguir loops/voltas do sub
+        reelingPath=computeTautPath();
+        reelingWpIdx=reelingPath.length-1;
+        ref.child("navPath").set(reelingPath.length?reelingPath:null);
       }
       if(nav.mode==="diving" && prev==="moonpool"){
-        navPath=[]; lastPathPoint=null;  // nova descida: limpa caminho anterior
+        navPath=[]; lastPathPoint=null; reelingPath=[]; reelingWpIdx=-1;
         ref.child("navPath").set(null);
       }
     }
