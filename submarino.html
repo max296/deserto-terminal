@@ -1243,4 +1243,15 @@
     const newCoral = !!STATE.coralGrowth;
     if(newCoral && !coralActive){
       coralActive = true;
-      const fl = document.getElementById("
+      const fl = document.getElementById("coralFlash");
+      fl.style.opacity = "1"; fl.style.display = "block";
+      setTimeout(()=>{
+        fl.style.transition = "opacity 0.6s";
+        fl.style.opacity = "0";
+        setTimeout(()=>{ fl.style.display="none"; fl.style.transition=""; }, 650);
+      }, 2000);
+    }
+    if(!newCoral) coralActive = false;
+  });
+  function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+</script></body></html>
