@@ -226,6 +226,7 @@
   let hullDamage=0;
   let entities={};
   let shutterVal="auto";
+  let navPathData=[];
 
   const subRef=sessionRef.child("submarine");
 
@@ -283,6 +284,20 @@
 
     // sub — glow azul + ponto + heading
     const spx=subCol*CELL_W, spy=(subRow-viewStart)*CELL_H;
+    // cabo
+    if(navPathData.length>0){
+      const moonPy=(1000/TILE-viewStart)*CELL_H;
+      const moonPx=((-X_MIN_W)/TILE)*CELL_W;
+      mctx.save();
+      mctx.strokeStyle='rgba(100,170,255,0.3)';
+      mctx.lineWidth=1; mctx.setLineDash([2,3]);
+      mctx.beginPath(); mctx.moveTo(moonPx,moonPy);
+      navPathData.forEach(pt=>{
+        mctx.lineTo(((pt.x||0)-X_MIN_W)/TILE*CELL_W, ((pt.depth||0)/TILE-viewStart)*CELL_H);
+      });
+      mctx.lineTo(spx,spy);
+      mctx.stroke(); mctx.setLineDash([]); mctx.restore();
+    }
     const pulse=0.65+0.35*Math.sin(now/520);
     const gr=mctx.createRadialGradient(spx,spy,0,spx,spy,16);
     gr.addColorStop(0,`rgba(76,143,200,${0.55*pulse})`);
@@ -433,7 +448,9 @@
     Object.entries(entities).forEach(([id,ent])=>{
       if(!ent||ent.visible===false){ delete entityBlipsM[id]; return; }
       let wx, wd;
-      if(ent.mode==="approach"&&typeof ent.wx==="number"){
+      if((ent.mode==="fish"||ent.mode==="creature")&&typeof ent.wx==="number"){
+        wx=ent.wx; wd=ent.wd;
+      } else if(ent.mode==="approach"&&typeof ent.wx==="number"){
         const pos=getApproachPos(ent,t); wx=pos.wx; wd=pos.wd;
       } else {
         wx=(nav.x||0)+(ent.dx||0); wd=(nav.depth||1000)+(ent.dy||0);
@@ -462,6 +479,7 @@
   subRef.child("hullDamage").on("value",s=>{hullDamage=s.val()||0;});
   subRef.child("entities").on("value",s=>{entities=s.val()||{};});
   subRef.child("shutter").on("value",s=>{shutterVal=s.val()||"auto";});
+  subRef.child("navPath").on("value",s=>{const v=s.val(); navPathData=v?Object.values(v):[];});
 
   // puxar de volta
   document.getElementById("btnReel").addEventListener("click",()=>{
