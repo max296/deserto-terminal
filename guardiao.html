@@ -220,6 +220,16 @@
             <div id="hullStatLbl" style="font-size:10px;color:var(--ink-dim);margin-top:5px;letter-spacing:.08em">INTACTO</div>
           </div>
           <div>
+            <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">VELOCIDADE DE NAVEGAÇÃO</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:10px;color:var(--ink-dim)">lento</span>
+              <input id="navSpeedSlider" type="range" min="5" max="60" value="18"
+                style="flex:1;accent-color:var(--live-dim);cursor:pointer">
+              <span style="font-size:10px;color:var(--ink-dim)">rápido</span>
+              <b id="navSpeedVal" style="min-width:42px;color:var(--live);font-size:11px;text-align:right">18wu/s</b>
+            </div>
+          </div>
+          <div>
             <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">VELOCIDADE DO RECOLHIMENTO</div>
             <div style="display:flex;align-items:center;gap:8px">
               <span style="font-size:10px;color:var(--ink-dim)">lento</span>
@@ -1235,6 +1245,20 @@
   subRef.child("navPath").on("value",snap=>{
     const v=snap.val(); navPathData=v?Object.values(v):[];
   });;
+
+  // ---- Velocidade de navegação ----
+  const elNavSpd=document.getElementById("navSpeedSlider");
+  const elNavSpdVal=document.getElementById("navSpeedVal");
+  elNavSpd.addEventListener("input",()=>{
+    const v=parseInt(elNavSpd.value)||18;
+    elNavSpdVal.textContent=v+"wu/s";
+    subRef.child("navSpeed").set(v);
+  });
+  subRef.child("navSpeed").on("value",s=>{
+    const v=s.val()||18;
+    elNavSpd.value=v;
+    elNavSpdVal.textContent=v+"wu/s";
+  });
 
   // ---- Velocidade do recolhimento ----
   const elReelingSpd=document.getElementById("reelingSpeedSlider");
