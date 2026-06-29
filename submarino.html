@@ -1254,4 +1254,64 @@
   function applyModeInstant(){
     document.getElementById("sub").classList.toggle("bobbing", nav.mode==="moonpool");
     if(diveAnim){clearInterval(diveAnim);diveAnim=null;}
-    i
+    if(splashActive){ splashCv.style.display="none"; splashActive=false; }
+    if(nav.mode==="moonpool"){ elMoon.style.display="block"; positionMoon(); }
+    else { elMoon.style.display="none"; }  // submerso ou reeling: breu direto, sem moonpool
+  }
+
+  function updateMoonpoolByMode(prev){
+    if(nav.mode==="moonpool"){
+      elMoon.style.display="block"; positionMoon();
+      // voltando de submersos/reeling: toca a transição (subindo pela superfície)
+      if(prev==="reeling"||prev==="diving"){ animateDive(true); }
+    }
+    else if(nav.mode==="diving"){
+      // descendo a partir da moonpool: toca a transição de furar a água
+      if(prev==="moonpool"||prev==null){ elMoon.style.display="block"; animateDive(false); }
+      else { elMoon.style.display="none"; }
+    }
+    else { // reeling
+      elMoon.style.display="none";
+    }
+  }
+
+  // ===== escuta DM (casco, ameaça, leitura) =====
+  ref.on("value",snap=>{
+    STATE=snap.val()||{};
+    const online=!!STATE.online;
+    document.getElementById("standby").style.display=online?"none":"flex";
+    document.getElementById("sub").classList.toggle("on",online);
+
+    let skin=STATE.skin||"old";
+    let hull = skin==="neurostat" ? "neurostat" : (STATE.cracked?"old_cracked":"old_intact");
+    setHull(hull);
+
+    // estado textual no HUD: usa nav.mode (pilotagem) + ameaça do DM
+    const modeLabels={moonpool:"IN MOONPOOL",diving:"DESCENDING",reeling:"REELING IN"};
+    const threatLabels={distant:"CONTACT — DISTANT",passing:"MOVEMENT",close:"CONTACT — CLOSE"};
+    const tl = threatLabels[STATE.state];
+    document.getElementById("hudstate").textContent = tl || modeLabels[nav.mode] || "—";
+
+    if(STATE.imgUrl){
+      if(!imgEl||imgEl.src!==STATE.imgUrl){imgReady=false;imgEl=new Image();imgEl.crossOrigin="anonymous";imgEl.onload=()=>imgReady=true;imgEl.src=STATE.imgUrl;}
+    } else {imgEl=null;imgReady=false;}
+
+    const read=(STATE.readout||"").trim();
+    document.getElementById("hudread").innerHTML=read?`<span class="line">${esc(read)}</span>`:"";
+
+    // coral growth: flash preto 2s + red tint persistente
+    const newCoral = !!STATE.coralGrowth;
+    if(newCoral && !coralActive){
+      coralActive = true;
+      const fl = document.getElementById("coralFlash");
+      fl.style.opacity = "1"; fl.style.display = "block";
+      setTimeout(()=>{
+        fl.style.transition = "opacity 0.6s";
+        fl.style.opacity = "0";
+        setTimeout(()=>{ fl.style.display="none"; fl.style.transition=""; }, 650);
+      }, 2000);
+    }
+    if(!newCoral) coralActive = false;
+  });
+  function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+</script></body></html>
