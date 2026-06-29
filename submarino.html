@@ -1101,10 +1101,17 @@
         const dist=Math.hypot(dx,dd);
         if(dist<25){
           reelingWpIdx=visIdx-1; // pulou até aqui — descarta tudo no caminho
+          // poda Firebase: cabo só mostra waypoints ainda não percorridos
+          ref.child("navPath").set(reelingWpIdx>=0 ? navPath.slice(0,reelingWpIdx+1) : null);
         } else {
           nav.x  += (dx/dist)*reelingSpeed*dt;
           nav.depth += (dd/dist)*reelingSpeed*dt;
           pushNav();
+          // sync periódico do cabo podado (1.5s)
+          if(now-navPathWriteT>1500){
+            navPathWriteT=now;
+            ref.child("navPath").set(navPath.slice(0,reelingWpIdx+1));
+          }
         }
       }
     }
@@ -1140,9 +1147,8 @@
     elDepthVal.textContent=String(dm).padStart(4,"0");
     elDepthBox.classList.toggle("beyond", nav.depth>CORAL_DEPTH);
 
-    requestAnimationFrame(navLoop);
   }
-  requestAnimationFrame(navLoop);
+  setInterval(()=>navLoop(performance.now()), 16);
 
   let dragging=false,lastX=0,lastY=0;
   const surface=document.getElementById("sub");
