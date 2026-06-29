@@ -1081,7 +1081,6 @@
       }
     }
     else if(nav.mode==="reeling"){
-      // recolhimento: corda esticada — pula direto pro waypoint mais longe com LOS limpa
       if(reelingWpIdx<0||navPath.length===0){
         // sem waypoints: centraliza e sobe até a profundidade inicial
         nav.x += (0-nav.x)*Math.min(1,dt*3);
@@ -1089,17 +1088,27 @@
         pushNav();
         if(nav.depth<=START_DEPTH){ nav.x=0; nav.mode="moonpool"; pushNav(); }
       } else {
-        const target=navPath[reelingWpIdx];
+        // string pulling: acha o waypoint mais longe com linha de visão direta (sem parede)
+        // — corta atalhos em trechos retos, segue curvas onde não tem LOS
+        let tgtIdx=reelingWpIdx;
+        const lookBack=Math.max(0,reelingWpIdx-5);
+        for(let i=reelingWpIdx-1;i>=lookBack;i--){
+          if(lineOfSight(nav.x,nav.depth,navPath[i].x,navPath[i].depth)) tgtIdx=i;
+          else break;
+        }
+        const target=navPath[tgtIdx];
         const dx=target.x-nav.x, dd=target.depth-nav.depth;
         const dist=Math.hypot(dx,dd);
         if(dist<25){
-          reelingWpIdx--;
-          // poda Firebase: retira waypoints já percorridos — cabo encolhe sem formar loops
-          ref.child("navPath").set(reelingWpIdx>=0 ? navPath.slice(0,reelingWpIdx+1) : null);
+          // chegou: consome todos os waypoints até tgtIdx inclusive
+          reelingWpIdx=tgtIdx-1;
+          ref.child("navPath").set(reelingWpIdx>=0?navPath.slice(0,reelingWpIdx+1):null);
         } else {
-          nav.x  += (dx/dist)*reelingSpeed*dt;
-          nav.depth += (dd/dist)*reelingSpeed*dt;
+          nav.x+=(dx/dist)*reelingSpeed*dt;
+          nav.depth+=(dd/dist)*reelingSpeed*dt;
           pushNav();
+          // mantém cabo no Firebase sincronizado com o alvo atual (throttle 200ms)
+          if(now-navPathWriteT>200){navPathWriteT=now;ref.child("navPath").set(navPath.slice(0,tgtIdx+1));}
         }
       }
     }
@@ -1254,8 +1263,12 @@
         ref.child("navPath").set(null);  // limpa cabo no Firebase
       }
       if(nav.mode==="reeling" && prev!=="reeling"){
-        reelingWpIdx=navPath.length-1;   // inicia recolhimento pelo último breadcrumb
-        pushNavPath();                   // escreve cabo imediatamente para o mapa
+        // garante que posição atual está no caminho (pode estar até 60wu além do último breadcrumb)
+        const lastWp=navPath[navPath.length-1];
+        if(!lastWp||Math.hypot(nav.x-lastWp.x,nav.depth-lastWp.depth)>30) navPath.push({x:nav.x,depth:nav.depth});
+        reelingWpIdx=navPath.length-1;
+        navPathWriteT=0;  // reseta throttle para próxima write de cabo disparar imediatamente
+        pushNavPath();
       }
       if(nav.mode==="diving" && prev==="moonpool"){
         navPath=[]; lastPathPoint=null;  // nova descida: limpa caminho anterior
