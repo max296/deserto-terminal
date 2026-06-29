@@ -984,7 +984,7 @@
 
   // loop de simulação local (~60fps): movimento livre Iron Lung em 2D
   let lastT=performance.now();
-  let NAV_SPEED=18; const TURN=52; // unidades/s e graus/s
+  let NAV_SPEED=30; const TURN=52; // unidades/s e graus/s
   function navLoop(now){
     const dt=Math.min((now-lastT)/1000, 0.05); lastT=now;
 
