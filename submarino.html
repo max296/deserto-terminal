@@ -1089,29 +1089,17 @@
         pushNav();
         if(nav.depth<=START_DEPTH){ nav.x=0; nav.mode="moonpool"; pushNav(); }
       } else {
-        // busca o waypoint mais distante (menor índice = mais perto da moonpool)
-        // com linha de visão limpa da posição atual — corda sempre tensa
-        let visIdx=reelingWpIdx;
-        for(let i=reelingWpIdx-1; i>=Math.max(0,reelingWpIdx-25); i--){
-          if(lineOfSight(nav.x,nav.depth,navPath[i].x,navPath[i].depth)) visIdx=i;
-          else break;
-        }
-        const target=navPath[visIdx];
+        const target=navPath[reelingWpIdx];
         const dx=target.x-nav.x, dd=target.depth-nav.depth;
         const dist=Math.hypot(dx,dd);
         if(dist<25){
-          reelingWpIdx=visIdx-1; // pulou até aqui — descarta tudo no caminho
-          // poda Firebase: cabo só mostra waypoints ainda não percorridos
+          reelingWpIdx--;
+          // poda Firebase: retira waypoints já percorridos — cabo encolhe sem formar loops
           ref.child("navPath").set(reelingWpIdx>=0 ? navPath.slice(0,reelingWpIdx+1) : null);
         } else {
           nav.x  += (dx/dist)*reelingSpeed*dt;
           nav.depth += (dd/dist)*reelingSpeed*dt;
           pushNav();
-          // sync periódico do cabo podado (1.5s)
-          if(now-navPathWriteT>1500){
-            navPathWriteT=now;
-            ref.child("navPath").set(navPath.slice(0,reelingWpIdx+1));
-          }
         }
       }
     }
