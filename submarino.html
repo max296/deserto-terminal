@@ -187,15 +187,17 @@
 
   // ===== SPRITES DE PEIXE =====
   // spritesheet 1408×768 = 4 cols × 4 linhas de 352×192px. background verde removido.
-  // 8 direções de visão: [linha,coluna] no sheet, mapeadas a 0°..315° (frente, horário).
+  // FISH_FRAMES: sequência de animação [col, row]. Pre-cortados em canvases individuais
+  // para eliminar bleeding de bordas — cada canvas tem exatamente 352×192px isolados.
   const FISH_FW=352, FISH_FH=192;
   const FISH_FRAMES=[[0,0],[0,1],[0,2],[0,3],[1,3],[1,0],[1,1],[1,2]];
-  let fishSprite=null;
+  let fishFrames=[];   // array de 8 canvases pre-cortados
   let fishEntities={};
   {
     const fimg=new Image();
     fimg.src='img/fish.png';
     fimg.onload=()=>{
+      // 1. key out green background no sheet completo
       const oc=document.createElement('canvas');
       oc.width=fimg.width; oc.height=fimg.height;
       const ox=oc.getContext('2d');
@@ -204,11 +206,16 @@
       const d=id.data;
       for(let i=0;i<d.length;i+=4){
         const r=d[i],g=d[i+1],b=d[i+2];
-        // remove background verde-escuro (G muito maior que R e B)
         if(g>r*1.6&&g>b*1.3&&g>25) d[i+3]=0;
       }
       ox.putImageData(id,0,0);
-      fishSprite=oc;
+      // 2. pre-corta cada frame em canvas próprio (sem risco de bleeding)
+      fishFrames = FISH_FRAMES.map(([fc,fr])=>{
+        const cv=document.createElement('canvas');
+        cv.width=FISH_FW; cv.height=FISH_FH;
+        cv.getContext('2d').drawImage(oc, fc*FISH_FW, fr*FISH_FH, FISH_FW, FISH_FH, 0, 0, FISH_FW, FISH_FH);
+        return cv;
+      });
     };
   }
 
@@ -460,7 +467,7 @@
   // transformY = profundidade perpendicular → diretamente comparável ao zbuffer.
   // screenX via lodev: w/2 * (1 + transformX/transformY) — SEM divisão extra por planeMag.
   function drawFishSprites(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_){
-    if(!fishSprite) return;
+    if(!fishFrames.length) return;
     const ents=Object.values(fishEntities).filter(e=>e&&e.visible!==false);
     if(!ents.length) return;
     const now=t*0.016;
@@ -502,10 +509,12 @@
       const x0=screenX-projW/2, x1=screenX+projW/2;
       if(x1<0||x0>w) continue;
 
-      // frame: col 2 = vista lateral (broadside). row 0 = nadando p/ +X, row 1 = -X.
-      const fRow=glideVel>=0?0:1;
-      const srcX=2*FISH_FW+2, srcY=fRow*FISH_FH+2; // inset 2px evita bleeding
-      const srcW=FISH_FW-4, srcH=FISH_FH-4;
+      // frame: ciclo de 8 frames de animação (FISH_FRAMES). 4 frames por segundo.
+      // quando nada para -X, percorre o ciclo ao contrário para dar sensação de direção.
+      const animStep = Math.floor(now * 4) % 8;
+      const fIdx = glideVel >= 0 ? animStep : (8 - animStep) % 8;
+      const fCanvas = fishFrames[fIdx];
+      if(!fCanvas) continue;
 
       // fog — transformY é comparável ao zbuffer (ambos = distância perpendicular)
       const fog=Math.max(0,Math.min(1,1-transformY/(VIS_WALL_*0.9)));
@@ -521,7 +530,7 @@
         if(segStart<0) return;
         x.save();
         x.beginPath(); x.rect(segStart,y0,end-segStart,projH); x.clip();
-        x.drawImage(fishSprite,srcX,srcY,srcW,srcH,x0,y0,projW,projH);
+        x.drawImage(fCanvas, 0, 0, FISH_FW, FISH_FH, x0, y0, projW, projH);
         x.restore();
         segStart=-1;
       };
@@ -629,10 +638,10 @@
       }
 
       // ---- PAREDES (raycasting) ----
-      // parede de escuridão: invisível antes de 550m, aparece lá e vai encolhendo até 180u no fundo.
-      const VIS_DEPTH_THRESHOLD=5500;
-      const VIS_WALL = depth<VIS_DEPTH_THRESHOLD ? MAXD+STEP : Math.max(180, MAXD - (depth-VIS_DEPTH_THRESHOLD)/(MAX_DEPTH-VIS_DEPTH_THRESHOLD)*(MAXD-180));
-      const WALL_SIGHT = Math.min(MAXD,VIS_WALL)*0.9;
+      // parede de escuridão: 320wu (32m) no início, encolhe para 180wu (18m) no fundo.
+      // depthN já calculado acima (0 em START_DEPTH, 1 em MAX_DEPTH).
+      const VIS_WALL = Math.max(180, 320 - depthN*140);
+      const WALL_SIGHT = VIS_WALL*0.9;
       // zbuffer: distância perpendicular de cada coluna (para sprite depth test)
       const zBuffer = new Float32Array(COLS).fill(MAXD);
       // direção de cada raio: varre de -FOV/2 a +FOV/2 em torno do heading.
@@ -1234,15 +1243,4 @@
     const newCoral = !!STATE.coralGrowth;
     if(newCoral && !coralActive){
       coralActive = true;
-      const fl = document.getElementById("coralFlash");
-      fl.style.opacity = "1"; fl.style.display = "block";
-      setTimeout(()=>{
-        fl.style.transition = "opacity 0.6s";
-        fl.style.opacity = "0";
-        setTimeout(()=>{ fl.style.display="none"; fl.style.transition=""; }, 650);
-      }, 2000);
-    }
-    if(!newCoral) coralActive = false;
-  });
-  function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-</script></body></html>
+      const fl = document.getElementById("
