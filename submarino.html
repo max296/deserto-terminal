@@ -90,6 +90,12 @@
   #depthbox.beyond .dval{color:#e88}
   #depthbox.beyond .dlabel{color:#d65a5a}
 
+  #impactbox{position:absolute;top:2.5vh;left:3vw;font-size:10px;letter-spacing:.22em;color:#6a4a4a;pointer-events:none;display:none}
+  #impactbox.active{display:block}
+  #impactbox.fresh{color:#cc6060;text-shadow:0 0 8px rgba(200,80,80,.6)}
+  #sub.old #impactbox{color:#7a5030}
+  #sub.old #impactbox.fresh{color:#e09050;text-shadow:0 0 8px rgba(200,130,50,.6)}
+
   /* flash de colisao com a parede */
   #wallHit{position:absolute;inset:0;z-index:7;pointer-events:none;opacity:0}
   #wallHit.hit{animation:wallflash .4s ease}
@@ -151,6 +157,7 @@
     <div id="wallHit"></div>
 
     <div id="hud">
+      <div id="impactbox">IMPACTS <span id="impactval">0</span></div>
       <div class="hud-top"><div class="compass" id="compass">BRG 000</div></div>
       <div class="hud-state" id="hudstate">—</div>
       <div class="hud-read" id="hudread"></div>
@@ -968,6 +975,8 @@
   const elDepthVal=document.getElementById("depthval");
   const elDepthBox=document.getElementById("depthbox");
   const elWallHit=document.getElementById("wallHit");
+  const elImpactBox=document.getElementById("impactbox");
+  const elImpactVal=document.getElementById("impactval");
 
   // throttle de escrita do nav no firebase (10x/s)
   let navDirty=false;
@@ -981,6 +990,18 @@
     });
     presenceRef.update({heading:Math.round(nav.heading),depth:dm,at:Date.now()});
   },100);
+
+  // linha de visão: verifica se a reta de (x1,d1) a (x2,d2) cruza alguma parede do grid
+  function lineOfSight(x1,d1,x2,d2){
+    const dist=Math.hypot(x2-x1,d2-d1);
+    const steps=Math.max(2,Math.ceil(dist/(TILE*0.45)));
+    for(let i=1;i<steps;i++){
+      const t=i/steps;
+      const cx=x1+(x2-x1)*t, cd=d1+(d2-d1)*t;
+      if(isWall(cx,cd)||isWall(cx-22,cd)||isWall(cx+22,cd)) return false;
+    }
+    return true;
+  }
 
   // loop de simulação local (~60fps): movimento livre Iron Lung em 2D
   let lastT=performance.now();
@@ -1053,23 +1074,33 @@
         if(hitWall && Math.abs(stepX)>0.5 && now-lastWallHit>450){
           lastWallHit=now; elWallHit.classList.remove("hit"); void elWallHit.offsetWidth; elWallHit.classList.add("hit");
           wallHitCount++;
+          elImpactBox.classList.add("active","fresh");
+          elImpactVal.textContent=wallHitCount;
+          clearTimeout(elImpactBox._ft); elImpactBox._ft=setTimeout(()=>elImpactBox.classList.remove("fresh"),1200);
         }
       }
     }
     else if(nav.mode==="reeling"){
-      // recolhimento: segue breadcrumbs em reverso (caminho real do sub)
-      const target = reelingWpIdx>=0 ? navPath[reelingWpIdx] : null;
-      if(!target){
-        // sem breadcrumbs restantes: centraliza e sobe direto
+      // recolhimento: corda esticada — pula direto pro waypoint mais longe com LOS limpa
+      if(reelingWpIdx<0||navPath.length===0){
+        // sem waypoints: centraliza e sobe até a profundidade inicial
         nav.x += (0-nav.x)*Math.min(1,dt*3);
         nav.depth = Math.max(START_DEPTH, nav.depth - reelingSpeed*dt);
         pushNav();
         if(nav.depth<=START_DEPTH){ nav.x=0; nav.mode="moonpool"; pushNav(); }
       } else {
+        // busca o waypoint mais distante (menor índice = mais perto da moonpool)
+        // com linha de visão limpa da posição atual — corda sempre tensa
+        let visIdx=reelingWpIdx;
+        for(let i=reelingWpIdx-1; i>=Math.max(0,reelingWpIdx-25); i--){
+          if(lineOfSight(nav.x,nav.depth,navPath[i].x,navPath[i].depth)) visIdx=i;
+          else break;
+        }
+        const target=navPath[visIdx];
         const dx=target.x-nav.x, dd=target.depth-nav.depth;
         const dist=Math.hypot(dx,dd);
         if(dist<25){
-          reelingWpIdx--; // chegou neste waypoint, vai pro anterior
+          reelingWpIdx=visIdx-1; // pulou até aqui — descarta tudo no caminho
         } else {
           nav.x  += (dx/dist)*reelingSpeed*dt;
           nav.depth += (dd/dist)*reelingSpeed*dt;
@@ -1089,7 +1120,7 @@
     // Criatura: quando chasing=true, move em direção ao sub (cliente é autoridade de posição)
     Object.entries(creatureEntities).forEach(([id,ent])=>{
       if(!ent||!ent.chasing) return;
-      const spd=(ent.speed||20)*(NAV_SPEED/18)*dt;
+      const spd=(ent.speed||20)*(NAV_SPEED/30)*dt;
       const dx=nav.x-(ent.wx||0), dd=nav.depth-(ent.wd||0);
       const dist=Math.hypot(dx,dd);
       if(dist<8) return;
@@ -1224,6 +1255,7 @@
       updateMoonpoolByMode(prev);
       if(nav.mode==="moonpool" && prev && prev!=="moonpool"){
         wallHitCount=0;
+        elImpactBox.classList.remove("active","fresh"); elImpactVal.textContent="0";
         navPath=[]; lastPathPoint=null;  // moonpool reseta o caminho
         ref.child("navPath").set(null);  // limpa cabo no Firebase
       }
