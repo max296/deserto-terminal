@@ -316,31 +316,37 @@
 
         <div class="sonar-sidebar">
 
+          <!-- CRIATURA 3D -->
           <div>
-            <div class="s-lbl">ENTIDADES / AMEAÇAS</div>
-            <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
-              <button class="btn" id="entAdd" style="flex:1;font-size:10px">+ ameaça</button>
+            <div class="s-lbl">CRIATURA 3D</div>
+            <div style="display:flex;gap:6px;margin-bottom:4px">
+              <button class="btn" id="entDeadFish" style="flex:1;font-size:10px;color:#c86030">+ spawnar</button>
+              <button class="btn" id="entDeadFishClear" style="font-size:10px;color:var(--danger)">remover</button>
+            </div>
+          </div>
+
+          <!-- PEIXES -->
+          <div style="margin-top:10px">
+            <div class="s-lbl">PEIXES (no mapa)</div>
+            <div style="display:flex;gap:6px;margin-bottom:4px">
               <button class="btn" id="entFish" style="flex:1;font-size:10px;color:#44aacc">+ peixe</button>
-              <button class="btn" id="entClear" style="flex:1;font-size:10px;color:var(--danger)">limpar</button>
+              <button class="btn" id="entFishClear" style="font-size:10px;color:var(--danger)">limpar peixes</button>
             </div>
-            <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
-              <button class="btn" id="entDeadFish" style="flex:1;font-size:10px;color:#c86030">+ peixe morto</button>
-              <button class="btn" id="entDeadFishClear" style="font-size:10px;color:var(--danger);padding:4px 10px">remover</button>
-            </div>
-            <div id="creatureBehBox" style="display:none;gap:5px;margin-bottom:8px;flex-wrap:wrap">
-              <div style="font-size:9px;color:var(--ink-dim);width:100%;letter-spacing:.1em;margin-bottom:2px">COMPORTAMENTO</div>
-              <button class="beh-btn btn" data-beh="wander" style="flex:1;font-size:9px">PASSEAR</button>
-              <button class="beh-btn btn" data-beh="stalk" style="flex:1;font-size:9px;color:var(--warn)">STALKAR</button>
-              <button class="beh-btn btn" data-beh="chase" style="flex:1;font-size:9px;color:var(--danger)">PERSEGUIR</button>
-            </div>
-            <div id="entityList" style="display:flex;flex-direction:column;gap:5px;max-height:340px;overflow-y:auto;overflow-x:hidden"></div>
           </div>
 
-          <div style="font-size:9px;color:var(--ink-dim);line-height:1.7">
-            E+canvas · clique · "+ nova" = criar<br>arrastar = mover
+          <!-- AMEAÇAS SONAR -->
+          <div style="margin-top:10px">
+            <div class="s-lbl">AMEAÇAS (sonar)</div>
+            <div style="display:flex;gap:6px;margin-bottom:4px">
+              <button class="btn" id="entAdd" style="flex:1;font-size:10px">+ ameaça</button>
+              <button class="btn" id="entClear" style="font-size:10px;color:var(--danger)">limpar</button>
+            </div>
           </div>
 
-          <div style="border-top:1px solid var(--line);padding-top:10px;font-size:10px;color:var(--ink-dim);line-height:2.1;letter-spacing:.02em">
+          <!-- LISTA UNIFICADA -->
+          <div id="entityList" style="display:flex;flex-direction:column;gap:4px;max-height:380px;overflow-y:auto;overflow-x:hidden;margin-top:10px"></div>
+
+          <div style="border-top:1px solid var(--line);padding-top:10px;margin-top:8px;font-size:10px;color:var(--ink-dim);line-height:2.1;letter-spacing:.02em">
             <div style="letter-spacing:.12em;margin-bottom:4px">LEGENDA</div>
             <div><span class="sonar-dot" style="background:#1eff60;box-shadow:0 0 3px #1eff60"></span>Sub (centro)</div>
             <div><span class="sonar-dot" style="background:#00ff80;box-shadow:0 0 5px #00ff80"></span>Blip (jogadores)</div>
@@ -1073,72 +1079,134 @@
     renderEntityList();
   }
 
+  // ---- renderEntityList: 3 seções separadas (criaturas / peixes / ameaças sonar) ----
+  const BEH_COLORS={wander:"var(--live)",stalk:"var(--warn)",chase:"var(--danger)"};
+  const BEH_BORDER={wander:"var(--live-dim)",stalk:"var(--warn-dim)",chase:"var(--danger)"};
+
   function renderEntityList() {
     const list=document.getElementById("entityList"); if(!list) return;
     const ids=Object.keys(entities).filter(id=>entities[id]);
+    const creatures=ids.filter(id=>entities[id].mode==="creature");
+    const fishes=ids.filter(id=>entities[id].mode==="fish");
+    const threats=ids.filter(id=>entities[id].mode!=="creature"&&entities[id].mode!=="fish");
+
     if(!ids.length){
-      list.innerHTML='<div style="font-size:10px;color:var(--ink-dim);padding:4px 2px;line-height:1.6">Sem entidades.<br>Clique no canvas para criar.</div>';
+      list.innerHTML='<div style="font-size:10px;color:var(--ink-dim);padding:4px 2px;line-height:1.6;opacity:.5">Sem entidades no mundo.</div>';
       return;
     }
-    list.innerHTML=ids.map((id,i)=>{
+    let html="";
+
+    // ── CRIATURAS ──
+    creatures.forEach((id,i)=>{
       const ent=entities[id];
-      const col=ent.color||"#d65a5a";
       const vis=ent.visible!==false;
-      const mode=ent.mode||"fixed";
-      const isFish=mode==="fish";
-      const isCreature=mode==="creature";
-      const spd=typeof ent.speed==="number"?ent.speed:0;
-      const pos=entDisplayPos(ent);
-      const dist=Math.hypot(pos.dx,pos.dy);
+      const beh=ent.behavior||"wander";
       const open=expandedEntities.has(id);
-      const modeTag=isFish?" · peixe":isCreature?" · criatura":mode==="approach"?" · ↗":"";
-      const cardCol=isCreature?"#ff440044":col+"44";
-      return `<div style="border:1px solid ${cardCol};border-radius:4px;padding:5px 7px;background:#0a100a;font-size:10px">
+      html+=`<div style="border:1px solid #3a1a0a;border-radius:4px;padding:5px 7px;background:#0c0806;font-size:10px">
         <div style="display:flex;align-items:center;gap:6px;cursor:pointer" data-toggle="${id}">
-          <span style="width:8px;height:8px;border-radius:${isCreature?"2":"50%"};background:${col};flex-shrink:0;opacity:${vis?1:0.4};box-shadow:0 0 5px ${col}88"></span>
-          <span style="flex:1;color:${vis?"var(--ink)":"var(--ink-dim)"}">E${i+1} · ${dist.toFixed(0)}m${vis?"":" · oculto"}${modeTag}${isCreature&&ent.chasing?" ⚠":""}</span>
+          <span style="width:8px;height:8px;border-radius:2px;background:#ff4400;flex-shrink:0;opacity:${vis?1:0.35}"></span>
+          <span style="flex:1;color:${vis?"#ff7744":"var(--ink-dim)"}">C${i+1} · ${beh}${ent.chasing?" ⚠":""}${vis?"":" · oculto"}</span>
           <span style="color:var(--ink-dim)">${open?"▴":"▾"}</span>
         </div>
-        <div id="ent-body-${id}" style="display:${open?"flex":"none"};flex-direction:column;gap:5px;margin-top:6px;padding-top:6px;border-top:1px solid #1a2a1a">
+        <div id="ent-body-${id}" style="display:${open?"flex":"none"};flex-direction:column;gap:5px;margin-top:6px;padding-top:6px;border-top:1px solid #2a1208">
           <div style="display:flex;gap:4px">
             <button class="btn ent-vis-btn" data-id="${id}" data-val="true" style="flex:1;font-size:9px${vis?";color:var(--live);border-color:var(--live-dim)":""}">VISÍVEL</button>
             <button class="btn ent-vis-btn" data-id="${id}" data-val="false" style="flex:1;font-size:9px${!vis?";color:var(--ink-dim);border-color:var(--ink-dim)":""}">OCULTO</button>
           </div>
-          ${isFish
-            ?`<div style="font-size:9px;color:#44aacc;padding:2px 0">PEIXE — sprite 3D</div>`
-            :isCreature
-            ?`<div style="font-size:9px;color:#ff4400;padding:2px 0">CRIATURA — perseguição 3D</div>
-              <div style="display:flex;align-items:center;gap:6px">
-                <input type="range" class="ent-spd" data-id="${id}" min="5" max="120" step="1" value="${spd}" style="flex:1">
-                <span id="sv-${id}" style="font-size:9px;color:var(--ink-dim);min-width:50px">${spd} wu/s</span>
-              </div>
-              <button class="btn ent-chase-btn" data-id="${id}" style="font-size:9px;width:100%;${ent.chasing?"color:#ff4400;border-color:#ff4400":""}">
-                ${ent.chasing?"⚠ PARAR PERSEGUIÇÃO":"PERSEGUIR"}
-              </button>`
-            :`<div style="display:flex;gap:4px;flex-wrap:wrap">
-                ${ENT_COLORS.map(c=>`<button class="btn ent-col-btn" data-id="${id}" data-c="${c}" style="width:18px;height:18px;padding:0;background:${c};border-radius:50%;border:2px solid ${col===c?"#fff":"transparent"};min-width:0"></button>`).join("")}
-              </div>
-              <div style="display:flex;gap:4px">
-                <button class="btn ent-mode-btn" data-id="${id}" data-m="fixed" style="flex:1;font-size:9px${mode==="fixed"?";color:var(--live);border-color:var(--live-dim)":""}">FIXO</button>
-                <button class="btn ent-mode-btn" data-id="${id}" data-m="approach" style="flex:1;font-size:9px${mode==="approach"?";color:var(--live);border-color:var(--live-dim)":""}">APROX.</button>
-              </div>
-              ${mode==="approach"?`<div style="display:flex;align-items:center;gap:6px">
-                <input type="range" class="ent-spd" data-id="${id}" min="0" max="200" step="1" value="${spd}" style="flex:1">
-                <span id="sv-${id}" style="font-size:9px;color:var(--ink-dim);min-width:42px">${spd} wu/s</span>
-              </div>`:""}`
-          }
+          <div style="font-size:9px;color:var(--ink-dim);letter-spacing:.08em;margin-top:2px">COMPORTAMENTO</div>
+          <div style="display:flex;gap:4px">
+            <button class="btn beh-btn" data-id="${id}" data-beh="wander" style="flex:1;font-size:9px${beh==="wander"?";color:"+BEH_COLORS.wander+";border-color:"+BEH_BORDER.wander:""}">PASSEAR</button>
+            <button class="btn beh-btn" data-id="${id}" data-beh="stalk" style="flex:1;font-size:9px${beh==="stalk"?";color:"+BEH_COLORS.stalk+";border-color:"+BEH_BORDER.stalk:""}">STALKAR</button>
+            <button class="btn beh-btn" data-id="${id}" data-beh="chase" style="flex:1;font-size:9px${beh==="chase"?";color:"+BEH_COLORS.chase+";border-color:"+BEH_BORDER.chase:""}">PERSEGUIR</button>
+          </div>
           <button class="btn ent-rm" data-id="${id}" style="font-size:9px;color:var(--danger);margin-top:2px">remover</button>
         </div>
       </div>`;
-    }).join("");
+    });
+
+    // ── PEIXES ──
+    if(fishes.length){
+      if(creatures.length) html+=`<div style="height:1px;background:var(--line);margin:6px 0"></div>`;
+      html+=`<div style="font-size:9px;letter-spacing:.1em;color:#44aacc;margin-bottom:3px">${fishes.length} PEIXE${fishes.length>1?"S":""} NO MAPA</div>`;
+      fishes.forEach((id,i)=>{
+        const ent=entities[id];
+        const vis=ent.visible!==false;
+        const open=expandedEntities.has(id);
+        html+=`<div style="border:1px solid #0a1e2e;border-radius:4px;padding:4px 7px;background:#060a0e;font-size:10px">
+          <div style="display:flex;align-items:center;gap:6px;cursor:pointer" data-toggle="${id}">
+            <span style="width:7px;height:7px;border-radius:50%;background:#44aacc;flex-shrink:0;opacity:${vis?1:0.35}"></span>
+            <span style="flex:1;color:${vis?"#88ddee":"var(--ink-dim)"}">P${i+1}${vis?"":" · oculto"}</span>
+            <span style="color:var(--ink-dim)">${open?"▴":"▾"}</span>
+          </div>
+          <div id="ent-body-${id}" style="display:${open?"flex":"none"};flex-direction:column;gap:4px;margin-top:5px;padding-top:5px;border-top:1px solid #0a1e2e">
+            <div style="display:flex;gap:4px">
+              <button class="btn ent-vis-btn" data-id="${id}" data-val="true" style="flex:1;font-size:9px${vis?";color:var(--live);border-color:var(--live-dim)":""}">VISÍVEL</button>
+              <button class="btn ent-vis-btn" data-id="${id}" data-val="false" style="flex:1;font-size:9px${!vis?";color:var(--ink-dim);border-color:var(--ink-dim)":""}">OCULTO</button>
+            </div>
+            <button class="btn ent-rm" data-id="${id}" style="font-size:9px;color:var(--danger)">remover</button>
+          </div>
+        </div>`;
+      });
+    }
+
+    // ── AMEAÇAS SONAR ──
+    if(threats.length){
+      if(creatures.length||fishes.length) html+=`<div style="height:1px;background:var(--line);margin:6px 0"></div>`;
+      html+=`<div style="font-size:9px;letter-spacing:.1em;color:var(--ink-dim);margin-bottom:3px">${threats.length} AMEAÇA${threats.length>1?"S":""} NO SONAR</div>`;
+      threats.forEach((id,i)=>{
+        const ent=entities[id];
+        const col=ent.color||"#d65a5a";
+        const vis=ent.visible!==false;
+        const mode=ent.mode||"fixed";
+        const spd=typeof ent.speed==="number"?ent.speed:0;
+        const pos=entDisplayPos(ent);
+        const dist=Math.hypot(pos.dx,pos.dy);
+        const open=expandedEntities.has(id);
+        html+=`<div style="border:1px solid ${col}33;border-radius:4px;padding:4px 7px;background:#0a0c0a;font-size:10px">
+          <div style="display:flex;align-items:center;gap:6px;cursor:pointer" data-toggle="${id}">
+            <span style="width:7px;height:7px;border-radius:50%;background:${col};flex-shrink:0;opacity:${vis?1:0.35};box-shadow:0 0 4px ${col}88"></span>
+            <span style="flex:1;color:${vis?"var(--ink)":"var(--ink-dim)"}">A${i+1}${mode==="approach"?" ↗":""} · ${dist.toFixed(0)}wu${vis?"":" · oculto"}</span>
+            <span style="color:var(--ink-dim)">${open?"▴":"▾"}</span>
+          </div>
+          <div id="ent-body-${id}" style="display:${open?"flex":"none"};flex-direction:column;gap:4px;margin-top:5px;padding-top:5px;border-top:1px solid #1a1e1a">
+            <div style="display:flex;gap:4px">
+              <button class="btn ent-vis-btn" data-id="${id}" data-val="true" style="flex:1;font-size:9px${vis?";color:var(--live);border-color:var(--live-dim)":""}">VISÍVEL</button>
+              <button class="btn ent-vis-btn" data-id="${id}" data-val="false" style="flex:1;font-size:9px${!vis?";color:var(--ink-dim);border-color:var(--ink-dim)":""}">OCULTO</button>
+            </div>
+            <div style="display:flex;gap:3px;flex-wrap:wrap">
+              ${ENT_COLORS.map(c=>`<button class="btn ent-col-btn" data-id="${id}" data-c="${c}" style="width:16px;height:16px;padding:0;background:${c};border-radius:50%;border:2px solid ${col===c?"#fff":"transparent"};min-width:0"></button>`).join("")}
+            </div>
+            <div style="display:flex;gap:4px">
+              <button class="btn ent-mode-btn" data-id="${id}" data-m="fixed" style="flex:1;font-size:9px${mode==="fixed"?";color:var(--live);border-color:var(--live-dim)":""}">FIXO</button>
+              <button class="btn ent-mode-btn" data-id="${id}" data-m="approach" style="flex:1;font-size:9px${mode==="approach"?";color:var(--live);border-color:var(--live-dim)":""}">APROX.</button>
+            </div>
+            ${mode==="approach"?`<div style="display:flex;align-items:center;gap:6px">
+              <input type="range" class="ent-spd" data-id="${id}" min="0" max="200" step="1" value="${spd}" style="flex:1">
+              <span id="sv-${id}" style="font-size:9px;color:var(--ink-dim);min-width:42px">${spd} wu/s</span>
+            </div>`:""}
+            <button class="btn ent-rm" data-id="${id}" style="font-size:9px;color:var(--danger)">remover</button>
+          </div>
+        </div>`;
+      });
+    }
+
+    list.innerHTML=html;
   }
 
-  // Event delegation para ações na lista de entidades
+  // ---- Event delegation: lista de entidades ----
   document.getElementById("entityList").addEventListener("click",e=>{
     const tog=e.target.closest("[data-toggle]");
     if(tog){ const id=tog.dataset.toggle; if(expandedEntities.has(id)){expandedEntities.delete(id);}else{expandedEntities.add(id);} renderEntityList(); return; }
     const vb=e.target.closest(".ent-vis-btn");
     if(vb){ const id=vb.dataset.id; const vis=vb.dataset.val==="true"; entities[id]=Object.assign({},entities[id],{visible:vis}); subRef.child("entities/"+id+"/visible").set(vis); renderEntityList(); return; }
+    const bh=e.target.closest(".beh-btn");
+    if(bh){
+      const id=bh.dataset.id, beh=bh.dataset.beh; if(!id||!entities[id]) return;
+      const chasing=(beh==="chase");
+      entities[id]={...entities[id],behavior:beh,chasing};
+      subRef.child("entities/"+id).update({behavior:beh,chasing});
+      renderEntityList(); return;
+    }
     const cb=e.target.closest(".ent-col-btn");
     if(cb){ const id=cb.dataset.id; const col=cb.dataset.c; entities[id]=Object.assign({},entities[id],{color:col}); subRef.child("entities/"+id+"/color").set(col); renderEntityList(); return; }
     const mb=e.target.closest(".ent-mode-btn");
@@ -1149,8 +1217,6 @@
       else { upd.dx=typeof ent.wx==="number"?ent.wx-(currentSubNav.x||0):(ent.dx||0); upd.dy=typeof ent.wd==="number"?ent.wd-(currentSubNav.depth||1000):(ent.dy||0); }
       entities[id]=upd; subRef.child("entities/"+id).set(upd); renderEntityList(); return;
     }
-    const ch=e.target.closest(".ent-chase-btn");
-    if(ch){ const id=ch.dataset.id; const ent=entities[id]; if(!ent) return; const chasing=!ent.chasing; entities[id]={...ent,chasing}; subRef.child("entities/"+id+"/chasing").set(chasing); renderEntityList(); return; }
     const rm=e.target.closest(".ent-rm");
     if(rm){ const id=rm.dataset.id; delete entities[id]; delete entityBlips[id]; expandedEntities.delete(id); subRef.child("entities/"+id).set(null); renderEntityList(); return; }
   });
@@ -1242,7 +1308,6 @@
     subRef.child("entities/"+id).set(ent);
     expandedEntities.add(id);
     renderEntityList();
-    document.getElementById("creatureBehBox").style.display="flex";
   }
   document.getElementById("entDeadFish").addEventListener("click",()=>{
     const hdgRad=(currentSubNav.heading||0)*Math.PI/180;
@@ -1253,22 +1318,18 @@
   document.getElementById("entDeadFishClear").addEventListener("click",()=>{
     if(deadFishId){
       subRef.child("entities/"+deadFishId).remove();
-      delete entities[deadFishId]; deadFishId=null;
-      document.getElementById("creatureBehBox").style.display="none";
+      delete entities[deadFishId]; delete entityBlips[deadFishId];
+      expandedEntities.delete(deadFishId); deadFishId=null;
       renderEntityList();
     }
   });
-  document.querySelectorAll(".beh-btn").forEach(btn=>{
-    btn.addEventListener("click",()=>{
-      if(!deadFishId) return;
-      const beh=btn.dataset.beh;
-      const chasing=(beh==="chase");
-      subRef.child("entities/"+deadFishId).update({behavior:beh,chasing});
-      if(entities[deadFishId]) entities[deadFishId]={...entities[deadFishId],behavior:beh,chasing};
-      document.querySelectorAll(".beh-btn").forEach(b=>{ b.style.borderColor=""; b.style.color=""; });
-      const colors={wander:"var(--live)",stalk:"var(--warn)",chase:"var(--danger)"};
-      btn.style.borderColor=colors[beh]||""; btn.style.color=colors[beh]||"";
+  document.getElementById("entFishClear").addEventListener("click",()=>{
+    const fishIds=Object.keys(entities).filter(id=>entities[id]&&entities[id].mode==="fish");
+    fishIds.forEach(id=>{
+      subRef.child("entities/"+id).set(null);
+      delete entities[id]; delete entityBlips[id]; expandedEntities.delete(id);
     });
+    renderEntityList();
   });
 
   // ---- Listener Firebase do submarino ----
