@@ -291,8 +291,7 @@
         <span id="mapStatus" style="font-size:10px;letter-spacing:.1em;color:var(--ink-dim)"></span>
       </div>
       <div class="hint">
-        Clique em tile livre para spawnar. Clique em entidade para selecionar e controlar. Arraste para reposicionar.
-        <b>E+canvas</b> spawna no cursor. Scroll para zoom.
+        <b>E+canvas</b> spawna peixe ou criatura (conforme modo). Clique em entidade para selecionar. Arraste entidade para reposicionar. Arraste área vazia para panear. Scroll para zoom.
       </div>
       <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
 
@@ -656,13 +655,14 @@
   let dragEntityId=null, dragJustMoved=false, dragThrottle=0;
   let mouseMapX=0, mouseMapY=0, mouseOverCanvas=false;
   let deadFishId=null;
+  let mapPanOffsetRows=0, panActive=false, panLastY=0, panJustMoved=false;
 
   function getMapMetrics(){
     const visRows=Math.round(120/mapZoom);
     const cellH=M_H/(visRows*2), cellW=M_W/GRID_COLS;
     const subDepth=currentSubNav.depth||1000, subX=currentSubNav.x||0;
     const subRow=subDepth/TILE, subCol=(subX-X_MIN_W)/TILE;
-    const viewStart=subRow-visRows;
+    const viewStart=subRow-visRows+mapPanOffsetRows;
     return {visRows,cellH,cellW,subRow,subCol,viewStart,subPX:subCol*cellW,subPY:(subRow-viewStart)*cellH};
   }
   function worldToMapPx(wx,wd){
@@ -783,7 +783,7 @@
     mctx.fillStyle='rgba(0,130,190,.65)'; mctx.font='8px monospace'; mctx.textAlign='left';
     mctx.fillText(`${depthM}m  BRG ${String(hdg).padStart(3,'0')}  ×${mapZoom.toFixed(1)}  P:${fishCount} C:${crtCount}`,4,M_H-4);
     mctx.fillStyle=mapPlaceMode==='creature'?'#ff4400':'#44aacc'; mctx.textAlign='right';
-    mctx.fillText(mapPlaceMode==='creature'?'+ CRIATURA':'+ PEIXE',M_W-4,M_H-4);
+    mctx.fillText('E: '+(mapPlaceMode==='creature'?'CRIATURA':'PEIXE'),M_W-4,M_H-4);
 
     const el=document.getElementById('mapStatus');
     if(el) el.textContent=`${fishCount}P · ${crtCount}C`;
@@ -798,9 +798,9 @@
   },{passive:false});
   document.getElementById('mapZoomIn').addEventListener('click',()=>{mapZoom=Math.min(5.0,mapZoom*1.35);});
   document.getElementById('mapZoomOut').addEventListener('click',()=>{mapZoom=Math.max(0.3,mapZoom/1.35);});
-  document.getElementById('mapZoomReset').addEventListener('click',()=>{mapZoom=1.0;});
+  document.getElementById('mapZoomReset').addEventListener('click',()=>{mapZoom=1.0; mapPanOffsetRows=0;});
 
-  // ---- Modo de spawn ----
+  // ---- Modo de spawn (toggle via placeModeBtn) ----
   document.getElementById('placeModeBtn').addEventListener('click',()=>{
     mapPlaceMode=mapPlaceMode==='fish'?'creature':'fish';
     const btn=document.getElementById('placeModeBtn');
@@ -815,34 +815,36 @@
     const r=mapCanvas.getBoundingClientRect();
     const px=e.clientX-r.left, py=e.clientY-r.top;
     const hit=entityAtMapPx(px,py);
-    dragJustMoved=false;
-    if(hit){ dragEntityId=hit; selectedEntityId=hit; renderSelectedPanel(); renderEntityList(); }
-    else dragEntityId=null;
+    dragJustMoved=false; panJustMoved=false;
+    if(hit){ dragEntityId=hit; selectedEntityId=hit; panActive=false; renderSelectedPanel(); renderEntityList(); }
+    else { dragEntityId=null; panActive=true; panLastY=py; }
   });
   mapCanvas.addEventListener('mousemove',e=>{
     const r=mapCanvas.getBoundingClientRect();
     mouseMapX=e.clientX-r.left; mouseMapY=e.clientY-r.top;
-    if(!dragEntityId||!entities[dragEntityId]) return;
-    dragJustMoved=true;
-    const {wx,wd}=mapPxToWorld(mouseMapX,mouseMapY);
-    entities[dragEntityId]={...entities[dragEntityId],wx,wd};
-    const now=Date.now();
-    if(now-dragThrottle>80){ dragThrottle=now; subRef.child('entities/'+dragEntityId).update({wx,wd}); }
+    if(dragEntityId&&entities[dragEntityId]){
+      dragJustMoved=true;
+      const {wx,wd}=mapPxToWorld(mouseMapX,mouseMapY);
+      entities[dragEntityId]={...entities[dragEntityId],wx,wd};
+      const now=Date.now();
+      if(now-dragThrottle>80){ dragThrottle=now; subRef.child('entities/'+dragEntityId).update({wx,wd}); }
+    } else if(panActive){
+      const dy=mouseMapY-panLastY;
+      const {cellH}=getMapMetrics();
+      mapPanOffsetRows-=dy/cellH;
+      panLastY=mouseMapY;
+      panJustMoved=true;
+    }
   });
   mapCanvas.addEventListener('mouseup',e=>{
-    const wasDragging=dragJustMoved;
+    const wasDragging=dragJustMoved, wasPanning=panJustMoved;
     dragEntityId=null; dragJustMoved=false;
-    if(wasDragging) return;
+    panActive=false; panJustMoved=false;
+    if(wasDragging||wasPanning) return;
     const r=mapCanvas.getBoundingClientRect();
     const px=e.clientX-r.left, py=e.clientY-r.top;
     const hit=entityAtMapPx(px,py);
-    if(hit){
-      selectedEntityId=hit; renderSelectedPanel(); renderEntityList();
-    } else {
-      const {wx,wd}=mapPxToWorld(px,py);
-      if(mapPlaceMode==='creature') addDeadFishEntity(wx,wd);
-      else addFishEntity(wx,wd);
-    }
+    if(hit){ selectedEntityId=hit; renderSelectedPanel(); renderEntityList(); }
   });
 
   // ---- Painel SELECIONADO ----
@@ -956,7 +958,7 @@
     renderSelectedPanel(); renderEntityList();
   });
 
-  // ---- Tecla E + canvas ----
+  // ---- Tecla E + canvas: spawna peixe ou criatura conforme modo ----
   document.addEventListener('keydown',e=>{
     if(e.code==='KeyE'&&mouseOverCanvas){
       e.preventDefault();
