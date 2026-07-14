@@ -252,7 +252,7 @@
         if(d[i]>230&&d[i+1]>230&&d[i+2]>230) d[i+3]=0;
       }
       ox.putImageData(id,0,0);
-      const INS=2;
+      const INS=6;
       for(let r=0;r<DF_ROWS;r++) for(let c=0;c<DF_COLS;c++){
         const cv=document.createElement('canvas');
         cv.width=fw-INS*2; cv.height=fh-INS*2;
@@ -1476,12 +1476,17 @@
   let creatureWanderTargets={}, creatureWanderPhase={};
   let dfFramesFlip=[];  // frames espelhados horizontalmente para rotação Doom
   ref.child("entities").on("value",snap=>{
+    const prevCreatures={...creatureEntities};
     fishEntities={}; creatureEntities={};
     const val=snap.val()||{};
     Object.entries(val).forEach(([id,ent])=>{
       if(!ent) return;
       if(ent.mode==="fish") fishEntities[id]=ent;
-      else if(ent.mode==="creature") creatureEntities[id]=ent;
+      else if(ent.mode==="creature"){
+        const prev=prevCreatures[id];
+        // preserva _facing e posição local — AI corre neste cliente, Firebase só sincroniza
+        creatureEntities[id]=prev?{...ent,_facing:prev._facing,wx:prev.wx,wd:prev.wd}:ent;
+      }
     });
   });
 
