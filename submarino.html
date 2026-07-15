@@ -390,6 +390,7 @@
   // Laje/parede de fundo da estação logo acima do limite de subida do sub.
   const STATION_TOP=1550;      // topo da laje (155m)
   const MIN_DIVE_DEPTH=1700;   // limite de subida: o sub não passa dos 170m
+  const SPAWN_DEPTH=2450;      // sub entra na água NA FRENTE dos pilares (não entre eles)
   function isStationBackWall(depth){
     return depth>=STATION_TOP && depth<STATION_TOP+100;
   }
@@ -412,7 +413,7 @@
   // ====== navegação compartilhada ======
   // estado autoritativo: submarine/nav = { x, depth, heading, mode }
   // x = posição lateral no corredor; depth = profundidade; heading = pra onde aponta (0=descer)
-  let nav={x:0, depth:START_DEPTH, heading:0, mode:"moonpool"};
+  let nav={x:0, depth:SPAWN_DEPTH, heading:0, mode:"moonpool"};
   let navReady=false;
   const keys={};
   let lastWallHit=0, wallHitCount=0, lastWallShake=0;
@@ -881,21 +882,29 @@
     const elapsed=(performance.now()-grabStartT)/1000;
     const appear=Math.min(1,elapsed*2.2);
     if(appear<0.02) return;
-    const PING=(DF_COLS-1)*2;
-    const fi=(t*0.055)%PING;
-    const fi0=Math.floor(fi);
-    const animCol=fi0<DF_COLS?fi0:PING-fi0;
-    const frame=dfFrames[Math.min(dfFrames.length-1,4*DF_COLS+animCol)]; // row 4 = de frente
+    // agarrada, ela NÃO nada: alterna só entre a pose 100% frontal (col 0)
+    // e a vizinha (col 1), com crossfade lento — segurando, não circulando
+    const gph=(t*0.026)%2;
+    const blend=gph<1?gph:2-gph; // 0→1→0 (ping-pong suave)
+    const frameA=dfFrames[Math.min(dfFrames.length-1,4*DF_COLS)];
+    const frameB=dfFrames[Math.min(dfFrames.length-1,4*DF_COLS+1)];
     const breathe=1+0.045*Math.sin(t*0.06);
     const shX=Math.sin(t*0.31+1.7)*4+Math.cos(t*0.73+0.3)*2.5;
     const shY=Math.cos(t*0.26+0.9)*3+Math.sin(t*0.57)*1.8;
     // bbox real escalada pra estourar as bordas; entra crescendo (vem pro vidro)
-    const gw=w*1.34*breathe*(0.62+0.38*appear);
+    const gw=w*1.55*breathe*(0.62+0.38*appear);
     const gh2=gw*(_grabTrim.h/_grabTrim.w);
     const cx2=w/2+shX, cy2=h*0.54+shY;
-    x.save(); x.globalAlpha=Math.min(1,appear*1.15)*0.97;
-    x.drawImage(frame,_grabTrim.x,_grabTrim.y,_grabTrim.w,_grabTrim.h,
+    const baseAl=Math.min(1,appear*1.15)*0.97;
+    x.save();
+    x.globalAlpha=baseAl*(1-blend);
+    x.drawImage(frameA,_grabTrim.x,_grabTrim.y,_grabTrim.w,_grabTrim.h,
       cx2-gw/2, cy2-gh2/2, gw, gh2);
+    if(blend>0.02){
+      x.globalAlpha=baseAl*blend;
+      x.drawImage(frameB,_grabTrim.x,_grabTrim.y,_grabTrim.w,_grabTrim.h,
+        cx2-gw/2, cy2-gh2/2, gw, gh2);
+    }
     x.restore();
   }
 
@@ -1285,7 +1294,7 @@
     const bubbles=[]; for(let i=0;i<50;i++)bubbles.push({x:Math.random(),y:Math.random(),r:Math.random()*3+1,v:Math.random()*0.5+0.3});
     let st=0;
     const SPEED=0.0022;   // ~7.5s, transição mais longa e fluida
-    const MOON_DEPTH=1000, DIVE_DEPTH=START_DEPTH;  // 100m wu=1000, submerso wu=2000
+    const MOON_DEPTH=1000, DIVE_DEPTH=SPAWN_DEPTH;  // 100m wu=1000, submerso na frente dos pilares
     diveAnim=setInterval(()=>{
       p+=SPEED; st++;
       // anima o depth junto: descendo 100->200, subindo 200->100
@@ -1394,9 +1403,35 @@
     }
     return true;
   }
+  // versão LARGA: exige folga de 30wu perpendicular ao segmento — atalhos do
+  // string-pulling nunca raspam quinas (usada no arrasto do grab e no stalk)
+  function lineOfSightWide(x1,d1,x2,d2){
+    const dist=Math.hypot(x2-x1,d2-d1);
+    if(dist<1) return true;
+    const nx=-(d2-d1)/dist, nd=(x2-x1)/dist;
+    const steps=Math.max(2,Math.ceil(dist/(TILE*0.4)));
+    for(let i=1;i<steps;i++){
+      const t=i/steps;
+      const cx=x1+(x2-x1)*t, cd=d1+(d2-d1)*t;
+      if(isWall(cx,cd)||isWall(cx+nx*30,cd+nd*30)||isWall(cx-nx*30,cd-nd*30)) return false;
+    }
+    return true;
+  }
 
-  // BFS no grid: encontra caminho livre de (startX,startD) a (endX,endD)
-  function bfsPath(startX,startD,endX,endD){
+  // tile navegável COM FOLGA: ele e os 8 vizinhos são água (borda conta como parede)
+  function tileClear(r,c){
+    if(!MAP[r]||MAP[r][c]!==0) return false;
+    for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){
+      const rr=r+dr, cc=c+dc;
+      if(rr<0||rr>=GRID_ROWS||cc<0||cc>=GRID_COLS) return false;
+      if(MAP[rr][cc]!==0) return false;
+    }
+    return true;
+  }
+
+  // BFS no grid: encontra caminho livre de (startX,startD) a (endX,endD).
+  // clearance=true: só atravessa tiles com folga das paredes (destino é isento)
+  function bfsPath(startX,startD,endX,endD,clearance){
     const clampR=r=>Math.max(0,Math.min(GRID_ROWS-1,r));
     const clampC=c=>Math.max(0,Math.min(GRID_COLS-1,c));
     const r0=clampR(Math.floor(startD/TILE)), c0=clampC(Math.floor((startX-X_MIN_W)/TILE));
@@ -1412,6 +1447,7 @@
       for(const [dr,dc] of DIRS){
         const nr=clampR(r+dr), nc=clampC(c+dc);
         if(!MAP[nr]||MAP[nr][nc]!==0) continue;
+        if(clearance&&!(nr===r1&&nc===c1)&&!tileClear(nr,nc)) continue;
         const k=key(nr,nc);
         if(parent.has(k)) continue;
         parent.set(k,key(r,c));
@@ -1438,6 +1474,19 @@
     while(i<path.length-1){
       let j=path.length-1;
       while(j>i+1&&!lineOfSight(path[i].x,path[i].depth,path[j].x,path[j].depth)) j--;
+      out.push(path[j]);
+      i=j;
+    }
+    return out;
+  }
+  // string-pulling com folga (usa lineOfSightWide — atalhos não raspam paredes)
+  function smoothBfsPathW(path){
+    if(!path||path.length<=2) return path;
+    const out=[path[0]];
+    let i=0;
+    while(i<path.length-1){
+      let j=path.length-1;
+      while(j>i+1&&!lineOfSightWide(path[i].x,path[i].depth,path[j].x,path[j].depth)) j--;
       out.push(path[j]);
       i=j;
     }
@@ -1482,8 +1531,10 @@
         // sub preso: só se move se o guardião definiu um alvo (arrasto por BFS)
         if(grabTarget){
           if(!grabPath){
-            const raw=bfsPath(nav.x,nav.depth,grabTarget.x,grabTarget.depth);
-            grabPath=raw?smoothBfsPath(raw):null;
+            // caminho com FOLGA das paredes; se não existir, cai pro caminho justo
+            let raw=bfsPath(nav.x,nav.depth,grabTarget.x,grabTarget.depth,true);
+            if(!raw) raw=bfsPath(nav.x,nav.depth,grabTarget.x,grabTarget.depth);
+            grabPath=raw?smoothBfsPathW(raw):null;
             grabWpIdx=0;
           }
           if(grabPath&&grabWpIdx<grabPath.length){
@@ -1496,7 +1547,7 @@
               const spd=NAV_SPEED*0.55*dt;
               let nx=nav.x+gdx/gdist*spd;
               let nd=Math.max(MIN_DIVE_DEPTH,Math.min(MAX_DEPTH,nav.depth+gdd/gdist*spd));
-              const R=22;
+              const R=26;
               if(isWall(nx,nd)||isWall(nx-R,nd)||isWall(nx+R,nd)){
                 if(!isWall(nav.x,nd)&&!isWall(nav.x-R,nd)&&!isWall(nav.x+R,nd)) nx=nav.x;
                 else if(!isWall(nx,nav.depth)&&!isWall(nx-R,nav.depth)&&!isWall(nx+R,nav.depth)) nd=nav.depth;
@@ -1532,7 +1583,7 @@
           // profundidade só checava o centro — o nariz penetrava paredes norte/sul)
           let nx = nav.x + stepX;
           let hitWall=false;
-          const R=22;
+          const R=26;
           const blocked=(px,pd)=>isWall(px,pd)||isWall(px-R,pd)||isWall(px+R,pd)||isWall(px,pd-R)||isWall(px,pd+R);
           if(blocked(nx,nd)){
             if(!blocked(nav.x,nd)){
@@ -1586,9 +1637,9 @@
       if(reelingWpIdx<0){
         // todos os pivôs consumidos: centraliza e sobe à profundidade inicial
         nav.x+=(0-nav.x)*Math.min(1,dt*3);
-        nav.depth=Math.max(START_DEPTH,nav.depth-reelingSpeed*dt);
+        nav.depth=Math.max(SPAWN_DEPTH,nav.depth-reelingSpeed*dt);
         pushNav();
-        if(nav.depth<=START_DEPTH){ nav.x=0; nav.mode="moonpool"; pushNav(); }
+        if(nav.depth<=SPAWN_DEPTH){ nav.x=0; nav.mode="moonpool"; pushNav(); }
       } else {
         const target=reelingPath[reelingWpIdx];
         const dx=target.x-nav.x, dd=target.depth-nav.depth;
@@ -1599,7 +1650,7 @@
           ref.child("navPath").set(reelingWpIdx>=0?reelingPath.slice(0,reelingWpIdx+1):null);
         } else {
           // move com collision detection — não trava em parede
-          const R=22, stepX=(dx/dist)*reelingSpeed*dt, stepD=(dd/dist)*reelingSpeed*dt;
+          const R=26, stepX=(dx/dist)*reelingSpeed*dt, stepD=(dd/dist)*reelingSpeed*dt;
           let nx=nav.x+stepX, nd=nav.depth+stepD;
           if(isWall(nx,nd)||isWall(nx-R,nd)||isWall(nx+R,nd)||isPillar(nx,nd)){
             if(!isWall(nav.x,nd)&&!isWall(nav.x-R,nd)&&!isWall(nav.x+R,nd)&&!isPillar(nav.x,nd)) nx=nav.x;
@@ -1658,7 +1709,7 @@
         if(phase===null){
           if(dist>8){ const spd=entSpd*dt; vx=(dx/dist)*spd; vd=(dd/dist)*spd; }
           // gatilho de ataque ao se aproximar (bloqueado na moonpool e no cooldown)
-          if(dist<140&&nav.mode!=="moonpool"&&now-jumpscareT>jumpscareCD){
+          if(dist<110&&nav.mode!=="moonpool"&&now-jumpscareT>jumpscareCD){
             jumpscareT=now; collisionFlicker=1.0;
             const jf=document.getElementById("jflash");
             jf.style.display="block"; jf.style.transition="none"; jf.style.opacity="1";
@@ -1692,26 +1743,42 @@
           // vx=vd=0: criatura para
         }
       } else if(beh==="stalk"){
-        // mantém zona morta 280-440wu; navega pelas paredes com steerMove
-        const STALK_MIN=280, STALK_MAX=440;
-        if(dist>0){
-          const spd=entSpd*0.85*dt;
-          if(dist>STALK_MAX){
-            vx=(dx/dist)*spd; vd=(dd/dist)*spd;
-          } else if(dist<STALK_MIN){
-            // afasta: prefere se mover perpendicularmente ao sub (hugs walls)
-            const awayX=-(dx/dist), awayD=-(dd/dist);
-            const perpX=awayD, perpD=-awayX;
-            const sign=Math.sin(now*0.001+id.charCodeAt(0))>0?1:-1;
-            vx=(awayX*0.6+perpX*sign*0.8)*spd;
-            vd=(awayD*0.6+perpD*sign*0.8)*spd;
-          } else {
-            // dentro da zona: deriva lateralmente ao longo das paredes
-            const perp=Math.sin(now*0.0009+id.charCodeAt(0)*1.3);
-            const perpX=-dd/dist, perpD=dx/dist;
-            vx=perpX*perp*0.45*entSpd*dt;
-            vd=perpD*perp*0.45*entSpd*dt;
+        // STALK COM PATHFINDING: mantém um anel de ~380wu ao redor do sub,
+        // fugindo/aproximando por caminhos NAVEGÁVEIS (BFS com folga).
+        // A distância deixa a criatura como um pontinho de bioluminescência
+        // na fronteira da visão — só quem anda na direção certa vê.
+        const STALK_MIN=300, STALK_MAX=460, STALK_TGT=380;
+        let st=creatureStalkState[id];
+        const subMoved=st?Math.hypot(nav.x-st.subX,nav.depth-st.subD):1e9;
+        const pathDone=!st||!st.path||st.wpIdx>=st.path.length;
+        const needPath=pathDone||subMoved>80||now-st.calcT>2600||dist<STALK_MIN*0.9;
+        if(needPath&&(!st||now-st.calcT>700)){
+          const goal=findStalkPoint(ewx,ewd,STALK_TGT);
+          let path=null;
+          if(goal){
+            let raw=bfsPath(ewx,ewd,goal.x,goal.d,true);
+            if(!raw) raw=bfsPath(ewx,ewd,goal.x,goal.d);
+            path=raw?smoothBfsPathW(raw):null;
           }
+          creatureStalkState[id]=st={path,wpIdx:0,calcT:now,subX:nav.x,subD:nav.depth};
+        }
+        if(st&&st.path&&st.wpIdx<st.path.length){
+          const wp=st.path[st.wpIdx];
+          const dwx=wp.x-ewx, dwd=wp.depth-ewd;
+          const wdist=Math.hypot(dwx,dwd);
+          if(wdist<TILE*0.6){ st.wpIdx++; }
+          else{
+            // fugindo (perto demais) = rápida; reposicionando = lenta e paciente
+            const urgency=dist<STALK_MIN?1.35:0.75;
+            const spd=entSpd*urgency*dt;
+            vx=dwx/wdist*spd; vd=dwd/wdist*spd;
+          }
+        } else if(dist>=STALK_MIN&&dist<=STALK_MAX){
+          // no anel, sem caminho pendente: deriva lateral lenta (espreita)
+          const perp=Math.sin(now*0.0009+id.charCodeAt(0)*1.3);
+          const perpX=-dd/dist, perpD=dx/dist;
+          vx=perpX*perp*0.4*entSpd*dt;
+          vd=perpD*perp*0.4*entSpd*dt;
         }
       } else if(beh==='dismiss'){
         // afasta criatura e remove quando saiu do alcance visual do sub
@@ -1972,6 +2039,23 @@
   let collisionFlicker=0;
   let grabbedBy=null, grabTarget=null, grabPath=null, grabWpIdx=0;
   let creatureWanderTargets={}, creatureWanderPhase={};
+  let creatureStalkState={};
+  // acha um tile navegável (com folga) num anel de raio ~rTgt ao redor do SUB,
+  // o mais próximo possível da criatura — ela se move o mínimo pra manter o anel
+  function findStalkPoint(cx,cd,rTgt){
+    let best=null,bestD=1e9;
+    const r0=Math.max(0,Math.floor((nav.depth-rTgt-80)/TILE));
+    const r1=Math.min(GRID_ROWS-1,Math.ceil((nav.depth+rTgt+80)/TILE));
+    for(let r=r0;r<=r1;r++)for(let c=0;c<GRID_COLS;c++){
+      if(!tileClear(r,c)) continue;
+      const px=X_MIN_W+c*TILE+TILE/2, pd=r*TILE+TILE/2;
+      const dSub=Math.hypot(px-nav.x,pd-nav.depth);
+      if(dSub<rTgt-60||dSub>rTgt+70) continue;
+      const dCre=Math.hypot(px-cx,pd-cd);
+      if(dCre<bestD){bestD=dCre;best={x:px,d:pd};}
+    }
+    return best;
+  }
   let dfFramesFlip=[];  // frames espelhados horizontalmente para rotação Doom
   ref.child("entities").on("value",snap=>{
     const prevCreatures={...creatureEntities};
