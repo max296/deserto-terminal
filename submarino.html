@@ -378,11 +378,19 @@
 
   // Estrutura da petroleira acima do START_DEPTH (pilares decorativos + parede de fundo)
   const STATION_TOP=1200, STATION_PILLARS_LO=1500, STATION_PILLARS_HI=1950;
-  function isPillar(x, depth){
-    if(depth>STATION_PILLARS_HI || depth<STATION_PILLARS_LO) return false;
-    const cx=0, hw=80; // corredor da estação fixo centrado em X=0
-    const halfGap=hw*0.45, pillarR=hw*0.28;
-    return (Math.abs(x-(cx-halfGap))<pillarR || Math.abs(x-(cx+halfGap))<pillarR);
+  const STATION_PILLARS_FADE=2800; // pilares desaparecem gradualmente até aqui
+  function _pillarHit(x,depth){
+    if(depth<STATION_PILLARS_LO) return false;
+    const halfGap=36, pillarR=22; // hw=80: halfGap=0.45*80=36, pillarR=0.28*80=22
+    return (Math.abs(x-(-halfGap))<pillarR || Math.abs(x-halfGap)<pillarR);
+  }
+  function isPillar(x, depth){ // geometria sólida (colisão): range original
+    return depth<=STATION_PILLARS_HI && _pillarHit(x,depth);
+  }
+  function isPillarVisual(x, depth){ // valor 0..1: visual estendido com fade
+    if(depth>STATION_PILLARS_FADE || !_pillarHit(x,depth)) return 0;
+    if(depth<=STATION_PILLARS_HI) return 1.0;
+    return Math.max(0, 1-(depth-STATION_PILLARS_HI)/(STATION_PILLARS_FADE-STATION_PILLARS_HI));
   }
   function isStationBackWall(depth){
     return depth>=STATION_TOP && depth<STATION_TOP+100;
@@ -722,6 +730,16 @@
     }
   }
 
+  // pontos de bioluminescência ambiente: organismos fixos no canyon abaixo do coral
+  const BIOLUM_PTS=(()=>{
+    const pts=[]; let s=23;
+    const rng=()=>{ s=(s*1664525+1013904223)>>>0; return s/4294967296; };
+    for(let i=0;i<60;i++){
+      pts.push({wx:(rng()-0.5)*320, wd:CORAL_DEPTH+rng()*(MAX_DEPTH*0.62-CORAL_DEPTH), ph:rng()*6.28, spd:0.016+rng()*0.014});
+    }
+    return pts;
+  })();
+
   let grabStartT=0;
 
   // paleta de cor por profundidade: azul-teal raso → azul oceânico → verde-preto abissal (Subnautica)
@@ -753,29 +771,29 @@
     x.restore();
   }
 
-  // facho de lanterna como cone (não blob): núcleo estreito + halo largo
+  // facho como cone físico a partir do ponto de montagem do sub (não do centro da tela)
   function drawFlashlight(w,h,isOld_,beamAl_){
     if(!lightOn) return;
-    const cx=w/2,cy=h/2;
+    const cx=w*0.5, cy=h*0.56; // origem: ponto de montagem — abaixo do centro
     const angle=Math.atan2(beamY*h-cy,beamX*w-cx);
-    const len=Math.max(w,h)*1.5;
+    const len=Math.max(w,h)*1.6;
     x.save(); x.globalCompositeOperation='screen';
-    // halo: luz espalhada na água — cone largo e tênue
+    // halo: dispersão da água — cone moderado
     x.save();
     x.beginPath(); x.moveTo(cx,cy);
-    x.arc(cx,cy,len,angle-Math.PI/3.8,angle+Math.PI/3.8); x.closePath(); x.clip();
+    x.arc(cx,cy,len,angle-Math.PI/5,angle+Math.PI/5); x.closePath(); x.clip();
     const gh=x.createRadialGradient(cx,cy,0,cx,cy,len);
-    if(isOld_){gh.addColorStop(0,`rgba(210,175,90,${(0.07*beamAl_).toFixed(3)})`);gh.addColorStop(0.55,`rgba(160,130,60,${(0.02*beamAl_).toFixed(3)})`);}
-    else{gh.addColorStop(0,`rgba(100,205,225,${(0.08*beamAl_).toFixed(3)})`);gh.addColorStop(0.55,`rgba(70,165,190,${(0.02*beamAl_).toFixed(3)})`);}
+    if(isOld_){gh.addColorStop(0,`rgba(210,175,90,${(0.06*beamAl_).toFixed(3)})`);gh.addColorStop(0.45,`rgba(155,120,55,${(0.015*beamAl_).toFixed(3)})`);}
+    else{gh.addColorStop(0,`rgba(95,200,220,${(0.07*beamAl_).toFixed(3)})`);gh.addColorStop(0.45,`rgba(60,155,180,${(0.018*beamAl_).toFixed(3)})`);}
     gh.addColorStop(1,'transparent');
     x.fillStyle=gh; x.fillRect(0,0,w,h); x.restore();
-    // núcleo: feixe principal — cone estreito e brilhante
+    // núcleo: feixe principal — estreito e brilhante
     x.save();
     x.beginPath(); x.moveTo(cx,cy);
-    x.arc(cx,cy,len,angle-Math.PI/10,angle+Math.PI/10); x.closePath(); x.clip();
-    const gc=x.createRadialGradient(cx,cy,0,cx,cy,len*0.88);
-    if(isOld_){gc.addColorStop(0,`rgba(235,200,115,${(0.30*beamAl_).toFixed(3)})`);gc.addColorStop(0.3,`rgba(195,160,85,${(0.11*beamAl_).toFixed(3)})`);gc.addColorStop(0.7,`rgba(140,110,60,${(0.03*beamAl_).toFixed(3)})`);}
-    else{gc.addColorStop(0,`rgba(140,225,242,${(0.32*beamAl_).toFixed(3)})`);gc.addColorStop(0.3,`rgba(100,185,210,${(0.12*beamAl_).toFixed(3)})`);gc.addColorStop(0.7,`rgba(65,145,170,${(0.03*beamAl_).toFixed(3)})`);}
+    x.arc(cx,cy,len,angle-Math.PI/14,angle+Math.PI/14); x.closePath(); x.clip();
+    const gc=x.createRadialGradient(cx,cy,0,cx,cy,len*0.85);
+    if(isOld_){gc.addColorStop(0,`rgba(240,205,120,${(0.38*beamAl_).toFixed(3)})`);gc.addColorStop(0.25,`rgba(200,165,88,${(0.14*beamAl_).toFixed(3)})`);gc.addColorStop(0.65,`rgba(145,112,62,${(0.03*beamAl_).toFixed(3)})`);}
+    else{gc.addColorStop(0,`rgba(148,230,248,${(0.40*beamAl_).toFixed(3)})`);gc.addColorStop(0.25,`rgba(105,190,215,${(0.14*beamAl_).toFixed(3)})`);gc.addColorStop(0.65,`rgba(68,148,175,${(0.03*beamAl_).toFixed(3)})`);}
     gc.addColorStop(1,'transparent');
     x.fillStyle=gc; x.fillRect(0,0,w,h); x.restore();
     x.restore();
@@ -806,6 +824,7 @@
     bgGrad.addColorStop(0.55,`rgb(${cr*sc|0},${cg_*sc|0},${cb_*sc|0})`);
     bgGrad.addColorStop(1,`rgb(${cr*sc*0.22|0},${cg_*sc*0.22|0},${cb_*sc*0.22|0})`);
     x.fillStyle=bgGrad; x.fillRect(0,0,w,h);
+    // (floor/ceiling são desenhados abaixo, na seção de raycasting)
 
     // ===== RAYCASTER: corredor coerente (paredes = margens do canyon) =====
     // o sub está em (nav.x, nav.depth) olhando p/ heading. as duas margens do corredor
@@ -832,58 +851,71 @@
       const planeMag=Math.tan(FOV/2);
       const planeX=Math.cos(hdg)*planeMag, planeY=-Math.sin(hdg)*planeMag;  // plano de câmera
       const posX=nav.x, posY=depth;                            // posição no mundo
-      const ROWH=2, GRID=10, SIGHT=70;
-      const COLN=Math.max(80,Math.floor(w/3));
-      const cstep=w/COLN;
+      const SIGHT=82;
+      const pGlowFac=depth<4000?Math.max(0,1-depth/4000)*effectiveAmb:0;
+      const hh=h*0.5;
 
-      // textura de rocha: 3 oitavas de ruído — quebra listras horizontais
-      function rockShade(wx,wy){
-        const n = Math.sin(wx*0.21+wy*0.13)*Math.sin(wy*0.17-wx*0.09)
-                + 0.50*Math.sin(wx*0.41-wy*0.37)
-                + 0.40*Math.sin((wx+wy)*0.29)
-                + 0.22*Math.sin(wx*0.87+wy*0.61)*Math.cos(wy*0.53-wx*0.37)
-                + 0.14*Math.sin(wx*1.73-wy*1.31);
-        return Math.max(0,Math.min(1,(n+2.5)/5.0));
+      // beamX, beamY já disponíveis (0..1); FOV e camAng são usados no spotlight das paredes
+
+      // Hash-based value noise (sem sin, rápido) — 2 oitavas
+      function h2(ix,iy){ let n=(ix*374761393^iy*1120124553)&0x7fffffff; n=((n^(n>>>13))*1540483477)&0x7fffffff; return (n^(n>>>15))/2147483647; }
+      function rockPx(mx,my){
+        const ax=mx*0.55,ay=my*0.55,ix0=Math.floor(ax),iy0=Math.floor(ay);
+        const fx=ax-ix0,fy=ay-iy0,ux=fx*fx*(3-2*fx),uy=fy*fy*(3-2*fy);
+        const n1=(h2(ix0,iy0)+(h2(ix0+1,iy0)-h2(ix0,iy0))*ux)+((h2(ix0,iy0+1)+(h2(ix0+1,iy0+1)-h2(ix0,iy0+1))*ux)-(h2(ix0,iy0)+(h2(ix0+1,iy0)-h2(ix0,iy0))*ux))*uy;
+        const bx=mx*2.3,by=my*2.3,ix2=Math.floor(bx),iy2=Math.floor(by);
+        const fx2=bx-ix2,fy2=by-iy2,ux2=fx2*fx2*(3-2*fx2),uy2=fy2*fy2*(3-2*fy2);
+        const n2=(h2(ix2+7,iy2+3)+(h2(ix2+8,iy2+3)-h2(ix2+7,iy2+3))*ux2)+((h2(ix2+7,iy2+4)+(h2(ix2+8,iy2+4)-h2(ix2+7,iy2+4))*ux2)-(h2(ix2+7,iy2+3)+(h2(ix2+8,iy2+3)-h2(ix2+7,iy2+3))*ux2))*uy2;
+        return Math.max(0,Math.min(1,n1*0.65+n2*0.35));
       }
 
-      // CHÃO + TETO via floor casting (lodev): teto é o espelho do chão na mesma rowDist
-      const pGlowFac=depth<400?Math.max(0,1-depth/400)*effectiveAmb:0; // luz da plataforma vinda de cima
-      for(let y=Math.floor(horizon)+1;y<h;y+=ROWH){
-        const p=y-horizon;
-        const rowDist=(h*0.5)/p;
-        const vis=Math.max(0,Math.min(1,1-rowDist/SIGHT));
-        const vis2=vis*vis;
-        if(vis2<=0.01) continue;
-        const wx0=posX+rowDist*(dirX-planeX), wy0=posY+rowDist*(dirY-planeY);
-        const wx1=posX+rowDist*(dirX+planeX), wy1=posY+rowDist*(dirY+planeY);
-        const cy_=h-1-y; // linha simétrica acima do horizonte (teto)
-        const lightV=0.4+effectiveAmb*0.75;
-        for(let cxi=0;cxi<COLN;cxi++){
-          const t2=cxi/COLN;
-          const wx=wx0+(wx1-wx0)*t2, wy=wy0+(wy1-wy0)*t2;
-          const mx=wx/UNITS_PER_M, my=wy/UNITS_PER_M;
-          const sh=rockShade(mx,my);
-          const gx_=Math.abs(((mx%GRID)+GRID)%GRID-GRID/2);
-          const gy_=Math.abs(((my%GRID)+GRID)%GRID-GRID/2);
-          const onLine=Math.min(gx_,gy_)<0.60;
-          // CHÃO
-          let base=(20+sh*32)*vis2*lightV; if(onLine)base+=9*vis2*lightV;
+      // CHÃO + TETO: ImageData pixel-a-pixel (lodev) com spotlight integrado
+      const floorStart=Math.ceil(hh+hh/SIGHT+1);
+      const ceilEnd=h-1-floorStart;
+      const floorH=h-floorStart, ceilH=ceilEnd;
+      const floorImg=x.createImageData(w,floorH>0?floorH:1);
+      const ceilImg=x.createImageData(w,ceilH>0?ceilH:1);
+      const fBuf=new Uint32Array(floorImg.data.buffer);
+      const cBuf=new Uint32Array(ceilImg.data.buffer);
+
+      for(let y=floorStart;y<h;y++){
+        const p=y-hh;
+        const rowDist=hh/p;
+        const vis=Math.max(0,1-rowDist/SIGHT);
+        if(vis<0.004) continue;
+        const fsx=rowDist*(dirX-planeX)+posX, fsy=rowDist*(dirY-planeY)+posY;
+        const fex=rowDist*(dirX+planeX)+posX, fey=rowDist*(dirY+planeY)+posY;
+        const fstx=(fex-fsx)/w, fsty=(fey-fsy)/w;
+        let flX=fsx, flY=fsy;
+        const fi0=(y-floorStart)*w;
+        const cy_=h-1-y;
+        const inCeil=cy_>=0&&cy_<ceilH;
+        for(let sx=0;sx<w;sx++){
+          const mx=flX/UNITS_PER_M, my=flY/UNITS_PER_M;
+          const sh=rockPx(mx,my);
+          // spotlight: proximidade do cursor (correto para superfícies horizontais)
+          const spotR=Math.min(w,h)*0.52;
+          const spotI=lightOn?Math.max(0,1-Math.hypot(sx-beamX*w,y-beamY*h)/spotR):0;
+          const lv=(0.32+effectiveAmb*0.78)+spotI*0.58;
+          const base=(13+sh*32)*vis*lv;
           let fr,fg,fb;
-          if(isOld){fr=base|0;fg=(base*0.87)|0;fb=(base*0.63)|0;}
-          else{fr=(base*0.84)|0;fg=(base*0.97)|0;fb=(base*1.06)|0;}
-          x.fillStyle=`rgb(${fr},${fg},${fb})`; x.fillRect(cxi*cstep,y,cstep+1,ROWH+1);
-          // TETO — mesmas coords de mundo, textura mais escura (rocha húmida acima)
-          if(cy_>=0&&cy_<horizon){
-            let cbase=(9+sh*18)*vis2*lightV*0.68;
-            if(onLine)cbase+=5*vis2*lightV*0.68;
-            cbase+=pGlowFac*36*vis2; // glow da plataforma clareia o teto quando raso
+          if(isOld){fr=base|0;fg=(base*0.85)|0;fb=(base*0.58)|0;}
+          else{fr=(base*0.75)|0;fg=(base*0.92)|0;fb=(base*1.12)|0;}
+          fBuf[fi0+sx]=(255<<24)|((fb&255)<<16)|((fg&255)<<8)|(fr&255);
+          if(inCeil){
+            const cSpotI=lightOn?Math.max(0,1-Math.hypot(sx-beamX*w,cy_-beamY*h)/(Math.min(w,h)*0.52)):0;
+            const clv=(0.28+effectiveAmb*0.68)+cSpotI*0.48;
+            const cbase=(7+sh*18)*vis*clv*0.65+pGlowFac*26*vis;
             let cr2,cg2,cb2;
-            if(isOld){cr2=(cbase*0.92)|0;cg2=(cbase*0.78)|0;cb2=(cbase*0.58)|0;}
-            else{cr2=(cbase*0.70)|0;cg2=(cbase*0.86)|0;cb2=(cbase*0.97)|0;}
-            x.fillStyle=`rgb(${cr2},${cg2},${cb2})`; x.fillRect(cxi*cstep,cy_,cstep+1,ROWH+1);
+            if(isOld){cr2=cbase|0;cg2=(cbase*0.76)|0;cb2=(cbase*0.54)|0;}
+            else{cr2=(cbase*0.68)|0;cg2=(cbase*0.83)|0;cb2=(cbase*0.96)|0;}
+            cBuf[cy_*w+sx]=(255<<24)|((cb2&255)<<16)|((cg2&255)<<8)|(cr2&255);
           }
+          flX+=fstx; flY+=fsty;
         }
       }
+      if(floorH>0) x.putImageData(floorImg,0,floorStart);
+      if(ceilH>0) x.putImageData(ceilImg,0,0);
 
       // ---- PAREDES (raycasting) ----
       // parede de escuridão: 320wu (32m) no início, encolhe para 180wu (18m) no fundo.
@@ -894,31 +926,24 @@
       const zBuffer = new Float32Array(COLS).fill(MAXD);
       // direção de cada raio: varre de -FOV/2 a +FOV/2 em torno do heading.
       for(let i=0;i<COLS;i++){
-        const a = hdg + (i/(COLS-1) - 0.5)*FOV;   // ângulo absoluto do raio
-        const camAng = (i/(COLS-1)-0.5)*FOV;       // ângulo relativo (p/ corrigir fish-eye)
-        const dx=Math.sin(a), dd=Math.cos(a);      // passo lateral / profundidade
-        // marcha o raio até bater em algo: margem do corredor, parede de fundo, pilar, ou escuridão.
-        let rx=nav.x, rd=nav.depth, dist=0, hitSide=0, hitKind="wall";
+        const a = hdg + (i/(COLS-1) - 0.5)*FOV;
+        const camAng = (i/(COLS-1)-0.5)*FOV;
+        const dx=Math.sin(a), dd=Math.cos(a);
+        let rx=nav.x, rd=nav.depth, dist=0, hitSide=0, hitKind="wall", pillarVis=1;
         for(let s=STEP;s<=MAXD;s+=STEP){
           rx=nav.x+dx*s; rd=nav.depth+dd*s;
-          // parede sólida no FUNDO do canyon
           if(rd>=MAX_DEPTH){ dist=s; hitSide=0; hitKind="floor_end"; break; }
-          // parede de fundo da estrutura da petroleira (atrás dos pilares)
           if(isStationBackWall(rd)){ dist=s; hitSide=0; hitKind="station_wall"; break; }
-          // PILARES grossos da petroleira perto do começo (fonte única: isPillar)
-          if(isPillar(rx,rd)){ dist=s; hitSide=0; hitKind="pillar"; break; }
+          // pilares: checa visual (inclui fade abaixo de HI)
+          const pv=isPillarVisual(rx,rd);
+          if(pv>0.01){ dist=s; hitSide=0; hitKind="pillar"; pillarVis=pv; break; }
           if(isWall(rx,rd)){ dist=s; hitSide=dx<0?-1:1; break; }
-          // nada bateu ainda: ao atingir a distância máxima de visão, vira PAREDE DE ESCURIDÃO
           if(s>=VIS_WALL){ dist=s; hitSide=0; hitKind="dark"; break; }
         }
-        if(!dist) continue;  // (não deve ocorrer — a escuridão sempre fecha)
-        // corrige distorção fish-eye: distância perpendicular
+        if(!dist) continue;
         const perp=Math.max(8, dist*Math.cos(camAng));
         zBuffer[i]=perp;
         const colX=(i+0.5)*colW;
-        // PAREDE DE ESCURIDÃO: parede preta sólida na distância máxima de visão, com a MESMA
-        // altura projetada de uma parede do corredor naquela distância (fecha o corredor ao fundo).
-        // é escuridão ABSOLUTA — a lanterna não a alcança (preto puro), pra não parecer parede.
         if(hitKind==="dark"){
           const shD=Math.min(h*1.4,WALLH/perp);
           const y0d=h/2-shD/2, y1d=h/2+shD/2;
@@ -928,52 +953,75 @@
           x.fillRect(colX-colW/2-0.5,y0d,colW+1,y1d-y0d);
           continue;
         }
-        // altura da tira (perto = alta)
         const sh2=Math.min(h*1.4, WALLH/perp);
         const y0=h/2 - sh2/2, y1=h/2 + sh2/2;
-        // sombreamento por distância: visão limitada, longe some no breu (mesmo princípio do chão)
         const fog=Math.max(0, Math.min(1, 1 - dist/WALL_SIGHT));
-        const fog2=fog*fog;     // queda acentuada
-        // textura: faixa de rocha que rola verticalmente com a profundidade + ruído por coluna
-        const wallU = (hitSide<0 ? rd : rd*1.0);
-        const tex = 0.5 + 0.5*Math.sin(wallU*0.18 + i*0.4) * Math.sin(wallU*0.05+ i*0.13);
-        // luz do facho: clareia a coluna se o facho aponta perto dela (x e y)
-        let lit=0;
-        if(lightOn){
-          const bxw=beamX*w, byh=beamY*h;
-          lit=Math.max(0,1-Math.abs(bxw-colX)/(w*0.42))*Math.max(0,1-Math.abs(byh-h/2)/(h*0.6));
-        }
-        // cor base cinza; margem esquerda levemente mais escura (sombreamento direcional).
-        // a base (luz ambiente) decai com a profundidade; o termo da lanterna (lit) NÃO.
-        const sideShade = hitSide<0 ? 0.82 : 1.0;
-        let base = ((16 + tex*26)*sideShade*fog2*(0.4+ambLight*0.75) + lit*fog*(isOld?70:90));
-        base=Math.min(190,base);
+        const fog2=fog*fog;
+        // Textura com estratificação + canais de água (seepage streaks)
+        const wallU=rd;
+        const strata=0.70+0.30*Math.sin(rd*0.0021)*Math.cos(rd*0.00088);
+        const streak=0.80+0.20*Math.cos(i*0.28+rd*0.00054);
+        const texN=0.5+0.5*Math.sin(wallU*0.18+i*0.43)*Math.sin(wallU*0.055+i*0.13);
+        const tex=texN*strata*streak;
+        // Spotlight paredes: ângulo do raio vs ângulo do cursor (câmera space)
+        // camAng já calculado acima; beamX 0..1 mapeado pra ângulo FOV
+        const beamAngH=(beamX-0.5)*FOV;
+        const angDiffH=Math.abs(camAng-beamAngH);
+        const litH=lightOn?Math.max(0,Math.min(1,(Math.PI/5-angDiffH)/(Math.PI/5-Math.PI/14))):0;
+        // vertical: cursor abaixo do centro = ilumina mais a parte inferior da parede
+        const beamAngV=(beamY-0.5);
+        const litV=lightOn?Math.max(0,1-Math.abs(beamAngV)*2.5):0;
+        const lit=litH*litV;
+        const sideShade=hitSide<0?0.80:1.0;
+        const [wr,wg,wb]=depthRGB(depthN);
+        const dtint=0.18+depthN*0.38;
+        let base=((14+tex*28)*sideShade*fog2*(0.38+ambLight*0.76)+lit*fog*(isOld?82:102));
+        base=Math.min(200,base);
         let r,g,b;
         if(hitKind==="pillar"){
-          // pilares da estação: metálico, mais frio e liso (estrutura, não rocha)
-          const pb=Math.min(200,(30+tex*18)*fog2+lit*fog*95);
-          r=pb*0.82|0; g=pb*0.88|0; b=pb*0.96|0;
-        } else if(hitKind==="floor_end" || hitKind==="station_wall"){
-          // parede de rocha maciça mais escura (fundo do canyon ou fundo da estação)
-          const fb=Math.min(170,(14+tex*20)*fog2+lit*fog*(isOld?60:78));
-          if(isOld){ r=fb*0.95|0; g=fb*0.85|0; b=fb*0.66|0; } else { r=fb*0.88|0; g=fb*0.96|0; b=fb*1.0|0; }
-        } else if(isOld){ r=base*1.0|0; g=base*0.9|0; b=base*0.72|0; }   // luz quente do velho
-        else { r=base*0.92|0; g=base*1.0|0; b=base*1.06|0; }      // luz fria neurostat
+          const pb=Math.min(200,(28+texN*22)*fog2+lit*fog*98)*pillarVis;
+          r=pb*0.82|0; g=pb*0.88|0; b=pb*0.97|0;
+        } else if(hitKind==="floor_end"||hitKind==="station_wall"){
+          const fb=Math.min(160,(12+tex*22)*fog2+lit*fog*(isOld?62:82));
+          if(isOld){r=fb*0.95|0;g=fb*0.84|0;b=fb*0.64|0;}
+          else{r=(fb*0.86+wr*dtint*0.5)|0;g=(fb*0.95+wg*dtint*0.5)|0;b=(fb*1.02+wb*dtint*0.55)|0;}
+        } else {
+          if(isOld){r=Math.min(255,(base+wr*dtint*0.5)|0);g=Math.min(255,(base*0.88+wg*dtint*0.4)|0);b=Math.min(255,(base*0.70+wb*dtint*0.3)|0);}
+          else{r=Math.min(255,(base*0.90+wr*dtint*0.55)|0);g=Math.min(255,(base+wg*dtint*0.75)|0);b=Math.min(255,(base*1.05+wb*dtint)|0);}
+        }
         x.fillStyle=`rgb(${r},${g},${b})`;
         x.fillRect(colX-colW/2-0.5, y0, colW+1, y1-y0);
-        // linha de sombra no topo/base da parede (junção com o breu)
-        x.fillStyle=`rgba(0,0,0,${(0.3*fog+0.2).toFixed(2)})`;
-        x.fillRect(colX-colW/2-0.5, y0, colW+1, Math.max(1,sh2*0.06));
-        x.fillRect(colX-colW/2-0.5, y1-Math.max(1,sh2*0.06), colW+1, Math.max(1,sh2*0.06));
+        x.fillStyle=`rgba(0,0,0,${(0.28*fog+0.18).toFixed(2)})`;
+        x.fillRect(colX-colW/2-0.5, y0, colW+1, Math.max(1,sh2*0.055));
+        x.fillRect(colX-colW/2-0.5, y1-Math.max(1,sh2*0.055), colW+1, Math.max(1,sh2*0.055));
       }
       // sprites billboard no mundo (depth test pelo zbuffer)
       if(mode==="diving"||mode==="reeling"){
         drawFishSprites(w,h,zBuffer,COLS,colW,WALLH,VIS_WALL);
         drawCreatureSprites(w,h,zBuffer,COLS,colW,WALLH,VIS_WALL);
       }
+      // BIOLUMINESCÊNCIA AMBIENTE: pontos de luz vivos abaixo do coral (organismos do canyon)
+      if(beyond){
+        const invDetB=1.0/Math.tan(Math.PI*78/360);
+        for(const bp of BIOLUM_PTS){
+          const {tX,tY}=billboardTransform(bp.wx,bp.wd,hdg,invDetB,dirX,dirY);
+          if(tY<=0.3||tY>VIS_WALL*1.15) continue;
+          const sx=w/2*(1+tX/tY);
+          if(sx<-w*0.15||sx>w*1.15) continue;
+          const pulse=0.4+0.6*Math.abs(Math.sin(t*bp.spd+bp.ph));
+          const fade=Math.max(0,(1-tY/(VIS_WALL*0.80))*pulse);
+          if(fade<0.015) continue;
+          const gr=Math.max(3,18/tY*38);
+          const gc=x.createRadialGradient(sx,hh,0,sx,hh,gr*4.5);
+          gc.addColorStop(0,`rgba(90,255,155,${(fade*0.82).toFixed(3)})`);
+          gc.addColorStop(0.28,`rgba(35,190,90,${(fade*0.28).toFixed(3)})`);
+          gc.addColorStop(1,'transparent');
+          x.save(); x.fillStyle=gc; x.beginPath(); x.arc(sx,hh,gr*4.5,0,6.28); x.fill(); x.restore();
+        }
+      }
       // luz da plataforma vindo de cima: glow vertical quando próximo da superfície
-      if(depth<500){
-        const ga=Math.max(0,1-depth/500)*effectiveAmb;
+      if(depth<5000){
+        const ga=Math.max(0,1-depth/5000)*effectiveAmb;
         const tg=x.createLinearGradient(0,0,0,h*0.38);
         if(isOld){tg.addColorStop(0,`rgba(165,130,55,${(ga*0.14).toFixed(3)})`);}
         else{tg.addColorStop(0,`rgba(65,150,200,${(ga*0.17).toFixed(3)})`);}
