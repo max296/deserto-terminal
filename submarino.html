@@ -2007,28 +2007,22 @@
       grabStartT=performance.now();
     } else if(prev&&!grabbedBy){
       jumpscareT=performance.now(); // cooldown: evita re-agarrar imediato
-      // DESGRUDA: solta a criatura PRA FRENTE do sub, a DIST. PÓS-COLISÃO (wu).
-      // Ela cruza o visor indo embora e volta a caçar — re-agarra quando alcançar.
+      // DESGRUDA: a criatura NADA se afastando na direção que o jogador está
+      // olhando — aparece logo à frente do visor e percorre DIST. PÓS-COLISÃO
+      // (mesma mecânica da carga da colisão: steerMove desvia de paredes).
       const ent=creatureEntities[prev];
       if(ent){
-        const pcd=typeof ent.postCollisionDist==='number'&&ent.postCollisionDist>0?ent.postCollisionDist:300;
         const hdgR=nav.heading*Math.PI/180;
         const fx=Math.sin(hdgR), fd=Math.cos(hdgR);
-        // tenta direto na frente; se cair em parede, encurta e abre o ângulo
-        let safe=null;
-        outer:
-        for(const frac of [1,0.65,0.35]){
-          for(const a of [0,Math.PI/5,-Math.PI/5,Math.PI/2.5,-Math.PI/2.5]){
-            const ca=Math.cos(a),sa=Math.sin(a);
-            const rx=fx*ca-fd*sa, rd2=fx*sa+fd*ca;
-            const px=nav.x+rx*pcd*frac, pd=nav.depth+rd2*pcd*frac;
-            if(!isWall(px,pd)&&!isWall(px-22,pd)&&!isWall(px+22,pd)){ safe={x:px,d:pd}; break outer; }
-          }
-        }
-        if(safe){
-          creatureEntities[prev]={...ent,wx:safe.x,wd:safe.d,_attackPhase:null};
-          ref.child('entities/'+prev).update({wx:safe.x,wd:safe.d});
-        }
+        // ponto de partida: logo à frente do visor (se livre; senão, na posição do sub)
+        const sx0=nav.x+fx*50, sd0=nav.depth+fd*50;
+        const free=!isWall(sx0,sd0);
+        creatureEntities[prev]={...ent,
+          wx:free?sx0:nav.x, wd:free?sd0:nav.depth,
+          _attackPhase:'charging',
+          _chargeDir:{x:fx,d:fd},
+          _chargeTraveled:0};
+        ref.child('entities/'+prev).update({wx:creatureEntities[prev].wx,wd:creatureEntities[prev].wd});
       }
     }
   });
