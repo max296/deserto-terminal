@@ -2005,17 +2005,28 @@
       grabStartT=performance.now();
     } else if(prev&&!grabbedBy){
       jumpscareT=performance.now(); // cooldown: evita re-agarrar imediato
-      // DESGRUDA: empurra a criatura ~260wu pra trás do sub. Ela volta a caçar
-      // e re-agarra quando alcançar de novo (senão ficava colada com dist=0,
-      // sem novo "ataque" legível — parecia que o grab só funcionava uma vez)
+      // DESGRUDA: solta a criatura PRA FRENTE do sub, a DIST. PÓS-COLISÃO (wu).
+      // Ela cruza o visor indo embora e volta a caçar — re-agarra quando alcançar.
       const ent=creatureEntities[prev];
       if(ent){
+        const pcd=typeof ent.postCollisionDist==='number'&&ent.postCollisionDist>0?ent.postCollisionDist:300;
         const hdgR=nav.heading*Math.PI/180;
-        const bx2=nav.x-Math.sin(hdgR)*260, bd2=nav.depth-Math.cos(hdgR)*260;
-        const safe=!isWall(bx2,bd2)?{x:bx2,d:bd2}
-          :steerMove(nav.x,nav.depth,-Math.sin(hdgR)*140,-Math.cos(hdgR)*140);
-        creatureEntities[prev]={...ent,wx:safe.x,wd:safe.d,_attackPhase:null};
-        ref.child('entities/'+prev).update({wx:safe.x,wd:safe.d});
+        const fx=Math.sin(hdgR), fd=Math.cos(hdgR);
+        // tenta direto na frente; se cair em parede, encurta e abre o ângulo
+        let safe=null;
+        outer:
+        for(const frac of [1,0.65,0.35]){
+          for(const a of [0,Math.PI/5,-Math.PI/5,Math.PI/2.5,-Math.PI/2.5]){
+            const ca=Math.cos(a),sa=Math.sin(a);
+            const rx=fx*ca-fd*sa, rd2=fx*sa+fd*ca;
+            const px=nav.x+rx*pcd*frac, pd=nav.depth+rd2*pcd*frac;
+            if(!isWall(px,pd)&&!isWall(px-22,pd)&&!isWall(px+22,pd)){ safe={x:px,d:pd}; break outer; }
+          }
+        }
+        if(safe){
+          creatureEntities[prev]={...ent,wx:safe.x,wd:safe.d,_attackPhase:null};
+          ref.child('entities/'+prev).update({wx:safe.x,wd:safe.d});
+        }
       }
     }
   });
