@@ -877,12 +877,18 @@
       const ceilImg=x.createImageData(w,ceilH>0?ceilH:1);
       const fBuf=new Uint32Array(floorImg.data.buffer);
       const cBuf=new Uint32Array(ceilImg.data.buffer);
+      // pre-fill com cor de fundo opaca: evita buracos transparentes onde vis<threshold
+      {const bsc2=0.14+effectiveAmb*0.86;
+       const bR=(cr*bsc2*1.1|0)&255,bG=(cg_*bsc2*1.1|0)&255,bB=(cb_*bsc2*1.1|0)&255;
+       const bgPk=(255<<24)|(bB<<16)|(bG<<8)|bR;
+       fBuf.fill(bgPk); if(ceilH>0) cBuf.fill(bgPk);}
+      const spotR_=Math.min(w,h)*0.52;
 
       for(let y=floorStart;y<h;y++){
         const p=y-hh;
         const rowDist=hh/p;
         const vis=Math.max(0,1-rowDist/SIGHT);
-        if(vis<0.004) continue;
+        if(vis<0.005) continue;
         const fsx=rowDist*(dirX-planeX)+posX, fsy=rowDist*(dirY-planeY)+posY;
         const fex=rowDist*(dirX+planeX)+posX, fey=rowDist*(dirY+planeY)+posY;
         const fstx=(fex-fsx)/w, fsty=(fey-fsy)/w;
@@ -893,22 +899,20 @@
         for(let sx=0;sx<w;sx++){
           const mx=flX/UNITS_PER_M, my=flY/UNITS_PER_M;
           const sh=rockPx(mx,my);
-          // spotlight: proximidade do cursor (correto para superfícies horizontais)
-          const spotR=Math.min(w,h)*0.52;
-          const spotI=lightOn?Math.max(0,1-Math.hypot(sx-beamX*w,y-beamY*h)/spotR):0;
-          const lv=(0.32+effectiveAmb*0.78)+spotI*0.58;
-          const base=(13+sh*32)*vis*lv;
+          const spotI=lightOn?Math.max(0,1-Math.hypot(sx-beamX*w,y-beamY*h)/spotR_):0;
+          const lv=(0.38+effectiveAmb*0.80)+spotI*0.62;
+          const base=(19+sh*38)*vis*lv;
           let fr,fg,fb;
-          if(isOld){fr=base|0;fg=(base*0.85)|0;fb=(base*0.58)|0;}
-          else{fr=(base*0.75)|0;fg=(base*0.92)|0;fb=(base*1.12)|0;}
+          if(isOld){fr=base|0;fg=(base*0.85)|0;fb=(base*0.60)|0;}
+          else{fr=(base*0.76)|0;fg=(base*0.93)|0;fb=(base*1.10)|0;}
           fBuf[fi0+sx]=(255<<24)|((fb&255)<<16)|((fg&255)<<8)|(fr&255);
           if(inCeil){
-            const cSpotI=lightOn?Math.max(0,1-Math.hypot(sx-beamX*w,cy_-beamY*h)/(Math.min(w,h)*0.52)):0;
-            const clv=(0.28+effectiveAmb*0.68)+cSpotI*0.48;
-            const cbase=(7+sh*18)*vis*clv*0.65+pGlowFac*26*vis;
+            const cSpotI=lightOn?Math.max(0,1-Math.hypot(sx-beamX*w,cy_-beamY*h)/spotR_):0;
+            const clv=(0.34+effectiveAmb*0.74)+cSpotI*0.52;
+            const cbase=(11+sh*24)*vis*clv*0.80+pGlowFac*30*vis;
             let cr2,cg2,cb2;
-            if(isOld){cr2=cbase|0;cg2=(cbase*0.76)|0;cb2=(cbase*0.54)|0;}
-            else{cr2=(cbase*0.68)|0;cg2=(cbase*0.83)|0;cb2=(cbase*0.96)|0;}
+            if(isOld){cr2=cbase|0;cg2=(cbase*0.78)|0;cb2=(cbase*0.56)|0;}
+            else{cr2=(cbase*0.70)|0;cg2=(cbase*0.85)|0;cb2=(cbase*0.98)|0;}
             cBuf[cy_*w+sx]=(255<<24)|((cb2&255)<<16)|((cg2&255)<<8)|(cr2&255);
           }
           flX+=fstx; flY+=fsty;
