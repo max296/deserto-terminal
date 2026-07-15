@@ -898,9 +898,10 @@
         <button class="btn sel-rm" style="font-size:9px;color:var(--danger);width:100%">remover</button>`;
     } else if(ent.mode==='creature'){
       const beh=ent.behavior||'wander';
-      const spd=typeof ent.speed==='number'?ent.speed:20;
+      const spd=typeof ent.speed==='number'?ent.speed:50;
       const atk=ent.attackMode||'collision';
       const aggrD=typeof ent.postCollisionDist==='number'?ent.postCollisionDist:300;
+      const stalkD=typeof ent.stalkDist==='number'?ent.stalkDist:380;
       const isGrab=(atk==='grab');
       const isGrabbed=(currentGrabbedBy===id);
       el.innerHTML=`<div style="font-size:9px;color:#ff4400;letter-spacing:.1em;margin-bottom:5px">CRIATURA</div>
@@ -911,7 +912,7 @@
         <div style="font-size:9px;color:var(--ink-dim);letter-spacing:.08em;margin-bottom:3px">VELOCIDADE (wu/s)</div>
         <div style="display:flex;gap:4px;align-items:center;margin-bottom:5px">
           <input type="number" id="sel-spd" min="1" max="300" value="${spd}" style="flex:1;background:var(--bg);border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:12px;padding:4px 6px;border-radius:3px">
-          <button class="btn sel-spd-reset" style="font-size:9px">↺ 20</button>
+          <button class="btn sel-spd-reset" style="font-size:9px">↺ 50</button>
         </div>
         <div style="font-size:9px;color:var(--ink-dim);letter-spacing:.08em;margin-bottom:3px">COMPORTAMENTO</div>
         <div style="display:flex;gap:4px;margin-bottom:5px">
@@ -919,6 +920,11 @@
           <button class="btn sel-beh" data-b="stalk" style="flex:1;font-size:9px${beh==='stalk'?';color:var(--warn);border-color:var(--warn-dim)':''}">STALKAR</button>
           <button class="btn sel-beh" data-b="chase" style="flex:1;font-size:9px${beh==='chase'?';color:var(--danger);border-color:var(--danger)':''}">PERSEGUIR</button>
         </div>
+        ${beh==='stalk'?`<div style="font-size:9px;color:var(--ink-dim);letter-spacing:.08em;margin-bottom:3px">DIST. DE STALKING (wu)</div>
+        <div style="display:flex;gap:4px;align-items:center;margin-bottom:5px">
+          <input type="number" id="sel-stalk" min="150" max="1500" value="${stalkD}" style="flex:1;background:var(--bg);border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:12px;padding:4px 6px;border-radius:3px">
+          <button class="btn sel-stalk-reset" style="font-size:9px">↺ 380</button>
+        </div>`:''}
         <div style="font-size:9px;color:var(--ink-dim);letter-spacing:.08em;margin-bottom:3px;border-top:1px solid var(--line);padding-top:8px">MODO DE ATAQUE</div>
         <div style="display:flex;gap:4px;margin-bottom:5px">
           <button class="btn sel-atk" data-a="collision" style="flex:1;font-size:9px${!isGrab?';color:var(--warn);border-color:var(--warn-dim)':''}">COLISÃO</button>
@@ -953,7 +959,9 @@
       renderSelectedPanel(); renderEntityList(); return;
     }
     const rs=e.target.closest('.sel-spd-reset');
-    if(rs){ const inp=document.getElementById('sel-spd'); if(inp) inp.value=20; entities[id]={...entities[id],speed:20}; subRef.child('entities/'+id+'/speed').set(20); renderSelectedPanel(); return; }
+    if(rs){ const inp=document.getElementById('sel-spd'); if(inp) inp.value=50; entities[id]={...entities[id],speed:50}; subRef.child('entities/'+id+'/speed').set(50); renderSelectedPanel(); return; }
+    const stk=e.target.closest('.sel-stalk-reset');
+    if(stk){ const inp=document.getElementById('sel-stalk'); if(inp) inp.value=380; entities[id]={...entities[id],stalkDist:380}; subRef.child('entities/'+id+'/stalkDist').set(380); renderSelectedPanel(); return; }
     const ab=e.target.closest('.sel-atk');
     if(ab){ const atk=ab.dataset.a; entities[id]={...entities[id],attackMode:atk}; subRef.child('entities/'+id+'/attackMode').set(atk); renderSelectedPanel(); return; }
     const pcd=e.target.closest('.sel-pcd-reset');
@@ -981,6 +989,7 @@
     const id=selectedEntityId; if(!id||!entities[id]) return;
     if(e.target.id==='sel-spd'){ const spd=Math.max(1,Math.min(300,parseInt(e.target.value)||20)); e.target.value=spd; entities[id]={...entities[id],speed:spd}; subRef.child('entities/'+id+'/speed').set(spd); }
     if(e.target.id==='sel-pcd'){ const a=Math.max(50,Math.min(2000,parseInt(e.target.value)||300)); e.target.value=a; entities[id]={...entities[id],postCollisionDist:a}; subRef.child('entities/'+id+'/postCollisionDist').set(a); }
+    if(e.target.id==='sel-stalk'){ const s=Math.max(150,Math.min(1500,parseInt(e.target.value)||380)); e.target.value=s; entities[id]={...entities[id],stalkDist:s}; subRef.child('entities/'+id+'/stalkDist').set(s); }
   });
 
   // ---- Lista compacta de entidades ----
@@ -1015,7 +1024,7 @@
   function addDeadFishEntity(wx,wd){
     if(deadFishId){ subRef.child('entities/'+deadFishId).remove(); delete entities[deadFishId]; }
     const id='df'+Date.now().toString(36);
-    const ent={mode:'creature',wx,wd,visible:true,speed:20,behavior:'wander',chasing:false,color:'#c86030'};
+    const ent={mode:'creature',wx,wd,visible:true,speed:50,behavior:'wander',chasing:false,color:'#c86030'};
     deadFishId=id; entities[id]=ent; subRef.child('entities/'+id).set(ent);
     selectedEntityId=id; renderSelectedPanel(); renderEntityList();
   }
