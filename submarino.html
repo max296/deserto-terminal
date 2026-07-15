@@ -317,9 +317,11 @@
   const UNITS_PER_M=10;
   const MAX_DEPTH=25600, CORAL_DEPTH=6000, START_DEPTH=2000;
   const TILE=40;              // lado de um tile em wu (1 tile = 4 metros)
-  const X_MIN_W=-400;         // X mínimo do mundo (col 0)
-  const GRID_COLS=21;         // 21 cols × 40wu = 840wu de largura total
   const GRID_ROWS=640;        // 640 rows × 40wu = 25600wu = 2560m de profundidade
+  // dimensões HORIZONTAIS dinâmicas: o editor de mapa do guardião pode expandir
+  let X_MIN_W=-400;           // X mínimo do mundo (col 0)
+  let GRID_COLS=21;           // nº de colunas atual
+  let COL_OFFSET=0;           // colunas adicionadas à ESQUERDA do grid original
   // MAP[row][col]: 0=água navegável, 1=rocha/parede
   // MUNDO DEFAULT: retângulos de água. O guardião pode EDITAR o mapa: as edições
   // (ops open/close) chegam via Firebase (worldMap) e são aplicadas POR CIMA.
@@ -346,7 +348,9 @@
       for(let r=Math.max(0,r0);r<=Math.min(GRID_ROWS-1,r1);r++)
         for(let c=Math.max(0,c0);c<=Math.min(GRID_COLS-1,c1);c++) m[r][c]=v;
     };
-    for(const [r0,r1,c0,c1] of DEFAULT_OPEN) paint(r0,r1,c0,c1,0);
+    // o default é definido no grid ORIGINAL: desloca por COL_OFFSET quando o
+    // mapa foi expandido à esquerda. Ops já vêm no sistema de colunas atual.
+    for(const [r0,r1,c0,c1] of DEFAULT_OPEN) paint(r0,r1,c0+COL_OFFSET,c1+COL_OFFSET,0);
     for(const o of (ops||[])) paint(o.r0,o.r1,o.c0,o.c1,o.op==='close'?1:0);
     return m;
   }
@@ -364,7 +368,7 @@
   // Laje/parede de fundo da estação logo acima do limite de subida do sub.
   const STATION_TOP=1550;      // topo da laje (155m)
   const MIN_DIVE_DEPTH=1700;   // limite de subida: o sub não passa dos 170m
-  const SPAWN_DEPTH=2450;      // sub entra na água NA FRENTE dos pilares (não entre eles)
+  let SPAWN={x:0, depth:2450}; // ponto de spawn: definido pelo MAPA (editor do guardião)
   function isStationBackWall(depth){
     return depth>=STATION_TOP && depth<STATION_TOP+100;
   }
@@ -372,10 +376,11 @@
   // precisa empurrar mais entradas aqui — render e colisão leem desta lista.
   // Os dois pilares-perna da plataforma nascem na base da laje (1650) e
   // ancoram na encosta a 235m. Sólidos e texturizados do início ao fim.
-  const PILLARS=[
+  const DEFAULT_PILLARS=[
     {x:-36, top:1650, bot:2350, r:22},
     {x: 36, top:1650, bot:2350, r:22},
   ];
+  let PILLARS=DEFAULT_PILLARS.slice(); // o editor de mapa pode substituir (worldMap.pillars)
   function isPillar(px, depth){
     for(let i=0;i<PILLARS.length;i++){
       const P=PILLARS[i];
@@ -387,7 +392,7 @@
   // ====== navegação compartilhada ======
   // estado autoritativo: submarine/nav = { x, depth, heading, mode }
   // x = posição lateral no corredor; depth = profundidade; heading = pra onde aponta (0=descer)
-  let nav={x:0, depth:SPAWN_DEPTH, heading:0, mode:"moonpool"};
+  let nav={x:SPAWN.x, depth:SPAWN.depth, heading:0, mode:"moonpool"};
   let navReady=false;
   const keys={};
   let lastWallHit=0, wallHitCount=0, lastWallShake=0;
@@ -1267,7 +1272,7 @@
     const bubbles=[]; for(let i=0;i<50;i++)bubbles.push({x:Math.random(),y:Math.random(),r:Math.random()*3+1,v:Math.random()*0.5+0.3});
     let st=0;
     const SPEED=0.0022;   // ~7.5s, transição mais longa e fluida
-    const MOON_DEPTH=1000, DIVE_DEPTH=SPAWN_DEPTH;  // 100m wu=1000, submerso na frente dos pilares
+    const MOON_DEPTH=1000, DIVE_DEPTH=SPAWN.depth;  // 100m wu=1000, spawn definido pelo mapa
     diveAnim=setInterval(()=>{
       p+=SPEED; st++;
       // anima o depth junto: descendo 100->200, subindo 200->100
@@ -1277,6 +1282,7 @@
         p=1; clearInterval(diveAnim); diveAnim=null;
         splashCv.style.display="none"; splashActive=false;
         nav.depth = ascending ? MOON_DEPTH : DIVE_DEPTH;
+        if(!ascending) nav.x=SPAWN.x; // pousa no X do spawn definido pelo mapa
         // moonpool já saiu de vista: descendo mostra o breu; subindo mantém a moonpool
         elMoon.style.display = ascending ? "block" : "none";
         if(ascending) positionMoon();
@@ -1609,10 +1615,10 @@
     else if(nav.mode==="reeling"){
       if(reelingWpIdx<0){
         // todos os pivôs consumidos: centraliza e sobe à profundidade inicial
-        nav.x+=(0-nav.x)*Math.min(1,dt*3);
-        nav.depth=Math.max(SPAWN_DEPTH,nav.depth-reelingSpeed*dt);
+        nav.x+=(SPAWN.x-nav.x)*Math.min(1,dt*3);
+        nav.depth=Math.max(SPAWN.depth,nav.depth-reelingSpeed*dt);
         pushNav();
-        if(nav.depth<=SPAWN_DEPTH){ nav.x=0; nav.mode="moonpool"; pushNav(); }
+        if(nav.depth<=SPAWN.depth){ nav.x=SPAWN.x; nav.mode="moonpool"; pushNav(); }
       } else {
         const target=reelingPath[reelingWpIdx];
         const dx=target.x-nav.x, dd=target.depth-nav.depth;
@@ -1972,10 +1978,17 @@
   ref.child("jumpscareCD").on("value",snap=>{
     const v=snap.val(); if(typeof v==="number"&&v>=0) jumpscareCD=v;
   });
-  // mapa editado pelo guardião: reconstrói o grid (render/colisão/IA leem MAP dinamicamente)
+  // mapa editado pelo guardião: dimensões horizontais, grid, pilares e spawn
+  // (render/colisão/IA leem tudo dinamicamente — vale na hora)
   ref.child("worldMap").on("value",snap=>{
-    const v=snap.val();
-    MAP=buildMap((v&&v.ops)||[]);
+    const v=snap.val()||{};
+    GRID_COLS=(v.cols|0)>0?(v.cols|0):21;
+    X_MIN_W=(typeof v.xMin==='number')?v.xMin:-400;
+    COL_OFFSET=(v.colOffset|0)||0;
+    MAP=buildMap(v.ops||[]);
+    // noPillars distingue "GM removeu todos" de "campo ausente" (RTDB some com [] vazio)
+    PILLARS=v.noPillars?[]:(Array.isArray(v.pillars)?v.pillars:DEFAULT_PILLARS.slice());
+    if(v.spawn&&typeof v.spawn.depth==='number') SPAWN=v.spawn;
   });
   // grab: criatura agarrou o sub (guardião controla)
   ref.child("grabbedBy").on("value",snap=>{
