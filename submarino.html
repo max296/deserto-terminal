@@ -63,6 +63,16 @@
     70%{opacity:.7}71%{opacity:.25}73%{opacity:.7}74%{opacity:.12}76%{opacity:.7}
     100%{opacity:.7}
   }
+  /* tranco de colisão com parede: leve zoom (vista aproxima) + tremor curto —
+     bem mais fraco que o jshake da criatura */
+  @keyframes wallhit{
+    0%{transform:scale(1) translate(0,0)}
+    16%{transform:scale(1.016) translate(-2px,1px)}
+    38%{transform:scale(1.008) translate(2px,-1px)}
+    62%{transform:scale(1.003) translate(-1px,1px)}
+    100%{transform:scale(1) translate(0,0)}
+  }
+  #sub.wallhit{animation:wallhit .38s ease-out}
   @keyframes jshake{
     0%,100%{transform:translate(0,0) rotate(0deg)}
     10%{transform:translate(-5px,-3px) rotate(-.6deg)}
@@ -205,7 +215,7 @@
     old_intact:        { src:"img/old_intact.png",        vis:{cx:0.499, cy:0.488, w:0.197, h:0.363} },
     old_cracked:       { src:"img/old_cracked.png",       vis:{cx:0.499, cy:0.488, w:0.197, h:0.363} },
     neurostat:         { src:"img/neurostat.png",          vis:{cx:0.499, cy:0.456, w:0.246, h:0.338} },
-    neurostat_cracked: { src:"img/neurostat_cracked.png", vis:{cx:0.499, cy:0.456, w:0.246, h:0.338} }
+    neurostat_cracked: { src:"img/neurostat_cracked.png", vis:{cx:0.500, cy:0.457, w:0.245, h:0.335} }
   };
   const MOONPOOL_SRC = "img/moonpool.png";
 
@@ -405,7 +415,7 @@
   let nav={x:0, depth:START_DEPTH, heading:0, mode:"moonpool"};
   let navReady=false;
   const keys={};
-  let lastWallHit=0, wallHitCount=0;
+  let lastWallHit=0, wallHitCount=0, lastWallShake=0;
   let navPath=[], lastPathPoint=null, reelingSpeed=80;
   let reelingPath=[], reelingWpIdx=-1;  // reelingPath = caminho esticado calculado ao iniciar reeling
   let navPathWriteT=0;
@@ -861,9 +871,8 @@
     const br=isOld_?235:132, bgc=isOld_?202:218, bb=isOld_?122:240;
     const near=aimNearSm; // 1 = mirando superfície perto; 0 = mirando o breu
     x.save(); x.globalCompositeOperation='screen';
-    // DOIS faróis, origens mais pra dentro — os cones se sobrepõem cedo,
-    // sem vão escuro entre eles e sem emissor central artificial
-    const orgs=[[w*0.16,h*1.16,1.0],[w*0.84,h*1.16,1.0]];
+    // DOIS faróis bem separados nos cantos do casco
+    const orgs=[[w*0.02,h*1.16,1.0],[w*0.98,h*1.16,1.0]];
     const N=5;
     // perto: feixe GROSSO e definido; longe: fino e difuso
     const baseW=w*(0.10+0.09*near), tipW=w*(0.006+0.095*near);
@@ -986,8 +995,8 @@
         const spotR_=Math.min(wI,hI)*0.55;
         const bxw=beamX*wI, byh=beamY*h;
         const lvBase=0.34+effectiveAmb*0.72;
-        // tint MARROM como as paredes, um tom mais claro (sedimento/rocha do leito)
-        const fTr=isOld?1.05:0.96, fTg=isOld?0.90:0.86, fTb=isOld?0.64:0.68;
+        // tint marrom-ACINZENTADO como as paredes, um tom mais claro
+        const fTr=isOld?1.02:0.92, fTg=isOld?0.95:0.89, fTb=isOld?0.82:0.80;
         for(let y=floorStart;y<hI;y++){
           const p=y-hh;
           const rowDist=posZ/p;
@@ -1477,16 +1486,16 @@
           let nd = nav.depth + stepD;
           nd = Math.max(MIN_DIVE_DEPTH, Math.min(MAX_DEPTH, nd));
 
-          // colisão lateral checada NA profundidade de destino, eixo X separado:
-          // tenta mover X; se sair do corredor, encosta na parede (desliza, não trava tudo).
+          // colisão com hitbox SIMÉTRICA: raio R nos DOIS eixos (antes o eixo de
+          // profundidade só checava o centro — o nariz penetrava paredes norte/sul)
           let nx = nav.x + stepX;
           let hitWall=false;
-          // colisão com o grid: margem lateral da hitbox do sub
           const R=22;
-          if(isWall(nx,nd)||isWall(nx-R,nd)||isWall(nx+R,nd)){
-            if(!isWall(nav.x,nd)&&!isWall(nav.x-R,nd)&&!isWall(nav.x+R,nd)){
+          const blocked=(px,pd)=>isWall(px,pd)||isWall(px-R,pd)||isWall(px+R,pd)||isWall(px,pd-R)||isWall(px,pd+R);
+          if(blocked(nx,nd)){
+            if(!blocked(nav.x,nd)){
               nx=nav.x; hitWall=true;          // desliza em depth
-            } else if(!isWall(nx,nav.depth)&&!isWall(nx-R,nav.depth)&&!isWall(nx+R,nav.depth)){
+            } else if(!blocked(nx,nav.depth)){
               nd=nav.depth; hitWall=true;      // desliza em X
             } else {
               nx=nav.x; nd=nav.depth; hitWall=true;
@@ -1521,6 +1530,12 @@
             lastWallHit=now; elWallHit.classList.remove("hit"); void elWallHit.offsetWidth; elWallHit.classList.add("hit");
             wallHitCount++;
             ref.child("hullDamage").set(wallHitCount);
+          }
+          // tranco físico: o sub INTEIRO treme e a vista dá um leve zoom (qualquer eixo)
+          if(hitWall && now-lastWallShake>520){
+            lastWallShake=now;
+            const subEl=document.getElementById('sub');
+            subEl.classList.remove('wallhit'); void subEl.offsetWidth; subEl.classList.add('wallhit');
           }
         }
       }
@@ -1799,7 +1814,7 @@
     elHull.onload=layoutViewport;
     elHull.src=HULLS[which].src;
     document.getElementById("sub").classList.toggle("old", which.startsWith("old"));
-    document.getElementById("sub").classList.toggle("modern", which==="neurostat");
+    document.getElementById("sub").classList.toggle("modern", which.startsWith("neurostat"));
   }
 
   // ===== presenca =====
