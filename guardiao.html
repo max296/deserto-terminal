@@ -314,65 +314,93 @@
             <button class="btn" id="placeModeBtn" style="font-size:9px;color:#44aacc;min-width:90px;text-align:center">+ PEIXE</button>
             <button class="btn" id="editMapBtn" style="font-size:9px;color:var(--ink-dim)">EDITAR MAPA</button>
           </div>
-          <!-- EDITOR DE MAPA: overlay tela cheia -->
+          <!-- EDITOR DE MAPA: overlay tela cheia (re-parentado pro <body> via JS) -->
           <div id="mapEditorOverlay" style="position:fixed;inset:0;z-index:200;background:#05070b;display:none">
-            <div style="display:flex;height:100%">
-              <canvas id="edCanvas" style="flex:1;height:100%;display:block"></canvas>
-              <canvas id="edMiniCv" style="width:80px;height:100%;border-left:1px solid #14202c;background:#04060a;cursor:pointer"></canvas>
-              <div id="edSidebar" style="width:212px;padding:10px;border-left:1px solid #14202c;overflow-y:auto;display:flex;flex-direction:column;gap:5px;background:#080b10">
-                <div style="font-size:10px;letter-spacing:.15em;color:#ff8800;margin-bottom:2px">EDITOR DE MAPA</div>
-                <div id="edDims" style="font-size:9px;color:var(--ink-dim)"></div>
-                <div style="font-size:8px;color:var(--ink-dim);letter-spacing:.1em;margin-top:4px">MODO</div>
-                <div style="display:flex;gap:4px">
-                  <button class="btn" id="edModeMove" style="flex:1;font-size:9px">✋ MOVER</button>
-                  <button class="btn" id="edModePaint" style="flex:1;font-size:9px">🖌 PINTAR</button>
+            <div style="display:flex;height:100%;width:100%">
+              <canvas id="edCanvas" style="flex:1;height:100%;display:block;min-width:0"></canvas>
+              <canvas id="edMiniCv" style="width:80px;height:100%;flex:0 0 80px;border-left:1px solid #223142;background:#04060a;cursor:pointer"></canvas>
+              <div id="edSidebar" style="width:250px;flex:0 0 250px;padding:12px;border-left:1px solid #223142;overflow-y:auto;display:flex;flex-direction:column;gap:6px;background:#0b0f15;color:#cdd4d8">
+                <div style="font-size:12px;letter-spacing:.15em;color:#ff8800;font-weight:600">EDITOR DE MAPA</div>
+                <div id="edDims" style="font-size:9px;color:#8a97a0"></div>
+
+                <div style="font-size:9px;color:#8a97a0;letter-spacing:.12em;margin-top:6px;border-top:1px solid #223142;padding-top:8px">1 · MODO DO MOUSE</div>
+                <div style="display:flex;gap:5px">
+                  <button class="btn" id="edModeMove" style="flex:1;font-size:10px;padding:7px">✋ MOVER</button>
+                  <button class="btn" id="edModePaint" style="flex:1;font-size:10px;padding:7px">🖌 PINTAR</button>
                 </div>
-                <div style="font-size:8px;color:var(--ink-dim);letter-spacing:.1em;margin-top:4px">PINCEL</div>
-                <div style="display:flex;gap:4px">
-                  <button class="btn" id="edPaintOpen" style="flex:1;font-size:9px">▣ ÁGUA</button>
-                  <button class="btn" id="edPaintClose" style="flex:1;font-size:9px">▩ ROCHA</button>
+                <div style="font-size:9px;color:#8a97a0;line-height:1.5">MOVER: arrastar panea, scroll dá zoom.<br>PINTAR: arrastar aplica a ferramenta.</div>
+
+                <div style="font-size:9px;color:#8a97a0;letter-spacing:.12em;margin-top:6px;border-top:1px solid #223142;padding-top:8px">2 · PINCEL</div>
+                <div style="display:flex;gap:5px">
+                  <button class="btn" id="edPaintOpen" style="flex:1;font-size:10px;padding:7px">▣ ÁGUA</button>
+                  <button class="btn" id="edPaintClose" style="flex:1;font-size:10px;padding:7px">▩ ROCHA</button>
                 </div>
-                <div style="font-size:8px;color:var(--ink-dim);letter-spacing:.1em;margin-top:4px">FERRAMENTA</div>
-                <div style="display:flex;gap:4px">
-                  <button class="btn" id="edToolRect" style="flex:1;font-size:9px">RETÂNG.</button>
-                  <button class="btn" id="edToolBrush" style="flex:1;font-size:9px">PINCEL</button>
-                  <button class="btn" id="edToolCorr" style="flex:1;font-size:9px">CORRED.</button>
+
+                <div style="font-size:9px;color:#8a97a0;letter-spacing:.12em;margin-top:6px;border-top:1px solid #223142;padding-top:8px">3 · FERRAMENTA</div>
+                <div style="display:flex;gap:5px">
+                  <button class="btn" id="edToolRect" style="flex:1;font-size:10px;padding:7px" title="arraste um retângulo">RETÂNG.</button>
+                  <button class="btn" id="edToolBrush" style="flex:1;font-size:10px;padding:7px" title="pinte células arrastando">PINCEL</button>
+                  <button class="btn" id="edToolCorr" style="flex:1;font-size:10px;padding:7px" title="clique A depois B: corredor em L">CORRED.</button>
                 </div>
-                <div style="display:flex;gap:4px;align-items:center;font-size:9px;color:var(--ink-dim)">
+                <div style="display:flex;gap:6px;align-items:center;font-size:10px;color:#8a97a0">
                   <span>pincel</span>
-                  <select id="edBrushSz" style="background:var(--bg);color:var(--ink);border:1px solid var(--line);font-family:inherit;font-size:9px">
+                  <select id="edBrushSz" style="background:#101214;color:#cdd4d8;border:1px solid #2a3035;font-family:inherit;font-size:10px;padding:2px">
                     <option value="1">1×1</option><option value="3" selected>3×3</option><option value="5">5×5</option>
                   </select>
-                  <span>corr.</span>
-                  <select id="edCorrW" style="background:var(--bg);color:var(--ink);border:1px solid var(--line);font-family:inherit;font-size:9px">
+                  <span>corredor</span>
+                  <select id="edCorrW" style="background:#101214;color:#cdd4d8;border:1px solid #2a3035;font-family:inherit;font-size:10px;padding:2px">
                     <option value="2">2t</option><option value="3" selected>3t</option><option value="4">4t</option><option value="5">5t</option>
                   </select>
                 </div>
-                <div style="font-size:8px;color:var(--ink-dim);letter-spacing:.1em;margin-top:4px">OBJETOS</div>
-                <div style="display:flex;gap:4px">
-                  <button class="btn" id="edToolPillar" style="flex:1;font-size:9px">▮ PILAR</button>
-                  <button class="btn" id="edToolSpawn" style="flex:1;font-size:9px">◎ SPAWN</button>
+
+                <div style="font-size:9px;color:#8a97a0;letter-spacing:.12em;margin-top:6px;border-top:1px solid #223142;padding-top:8px">OBJETOS</div>
+                <div style="display:flex;gap:5px">
+                  <button class="btn" id="edToolPillar" style="flex:1;font-size:10px;padding:7px" title="arraste vertical pra criar; clique curto num pilar remove">▮ PILAR</button>
+                  <button class="btn" id="edToolSpawn" style="flex:1;font-size:10px;padding:7px" title="clique num tile de água pra mover o spawn">◎ SPAWN</button>
                 </div>
-                <div style="font-size:8px;color:var(--ink-dim);letter-spacing:.1em;margin-top:4px">EXPANDIR GRID</div>
-                <div style="display:flex;gap:4px">
-                  <button class="btn" id="edExpandL" style="flex:1;font-size:9px">+5 ← ESQ</button>
-                  <button class="btn" id="edExpandR" style="flex:1;font-size:9px">DIR → +5</button>
+                <div style="font-size:9px;color:#8a97a0;line-height:1.5">PILAR: <b>arraste na vertical</b> cria; clique curto sobre um pilar remove.<br>SPAWN: clique posiciona (só em água).</div>
+
+                <div style="font-size:9px;color:#8a97a0;letter-spacing:.12em;margin-top:6px;border-top:1px solid #223142;padding-top:8px">EXPANDIR GRID (largura)</div>
+                <div style="display:flex;gap:5px">
+                  <button class="btn" id="edExpandL" style="flex:1;font-size:10px;padding:7px">+5 ← ESQ</button>
+                  <button class="btn" id="edExpandR" style="flex:1;font-size:10px;padding:7px">DIR → +5</button>
                 </div>
-                <div style="display:flex;gap:4px;margin-top:4px">
-                  <button class="btn" id="edUndoB" style="flex:1;font-size:9px">↶ Ctrl+Z</button>
-                  <button class="btn" id="edRedoB" style="flex:1;font-size:9px">↷ Ctrl+Y</button>
+
+                <div style="display:flex;gap:5px;margin-top:6px">
+                  <button class="btn" id="edUndoB" style="flex:1;font-size:10px;padding:7px">↶ DESFAZER</button>
+                  <button class="btn" id="edRedoB" style="flex:1;font-size:10px;padding:7px">↷ REFAZER</button>
                 </div>
-                <div id="edWarns" style="font-size:9px;color:var(--danger);min-height:12px"></div>
-                <button class="btn" id="edSaveB" style="font-size:10px;padding:6px">SALVO ✓</button>
-                <div style="display:flex;gap:4px">
-                  <button class="btn" id="edExportB" style="flex:1;font-size:9px">EXPORTAR</button>
-                  <button class="btn" id="edImportB" style="flex:1;font-size:9px">IMPORTAR</button>
+
+                <div id="edWarns" style="font-size:10px;color:#d65a5a;min-height:14px;line-height:1.5"></div>
+                <button class="btn" id="edSaveB" style="font-size:12px;padding:9px;font-weight:600">SALVO ✓</button>
+                <div style="font-size:9px;color:#8a97a0;line-height:1.5">SALVAR publica no Firebase — o submarino recebe NA HORA. Sem salvar, só você vê.</div>
+                <div style="display:flex;gap:5px">
+                  <button class="btn" id="edExportB" style="flex:1;font-size:10px;padding:6px" title="copia o JSON do mapa pro clipboard">EXPORTAR</button>
+                  <button class="btn" id="edImportB" style="flex:1;font-size:10px;padding:6px" title="cola um JSON exportado antes">IMPORTAR</button>
                 </div>
-                <button class="btn" id="edResetB" style="font-size:9px;color:var(--danger)">RESTAURAR PADRÃO</button>
-                <button class="btn" id="edExitB" style="font-size:10px;padding:6px;color:#ff8800;margin-top:4px">✕ SAIR DA EDIÇÃO</button>
-                <div style="font-size:8px;color:var(--ink-dim);line-height:1.5;margin-top:4px">
-                  M mover · P pintar · R/B/C ferramenta<br>A água · F rocha · ESC sair<br>
-                  Mover: arraste = pan · scroll = zoom<br>Pilar: arraste vertical; clique remove<br>Spawn: clique posiciona
+                <button class="btn" id="edResetB" style="font-size:10px;padding:6px;color:#d65a5a">RESTAURAR PADRÃO</button>
+                <button class="btn" id="edExitB" style="font-size:12px;padding:9px;color:#ff8800;margin-top:2px">✕ SAIR DA EDIÇÃO</button>
+
+                <div style="font-size:9px;color:#8a97a0;letter-spacing:.12em;margin-top:6px;border-top:1px solid #223142;padding-top:8px">LEGENDA</div>
+                <div style="font-size:10px;line-height:1.9;color:#aeb8bf">
+                  <span style="display:inline-block;width:11px;height:11px;background:#0c2a40;vertical-align:-1px"></span> água (navegável)<br>
+                  <span style="display:inline-block;width:11px;height:11px;background:#0b0e14;border:1px solid #223142;vertical-align:-1px"></span> rocha (parede)<br>
+                  <span style="display:inline-block;width:11px;height:11px;background:rgba(150,170,200,.55);vertical-align:-1px"></span> pilar da petroleira<br>
+                  <span style="color:#33ff88">◎</span> spawn do submarino<br>
+                  <span style="color:#4c8fc8">●</span> submarino (ao vivo)<br>
+                  <span style="color:#ff4400">●</span> criatura · <span style="color:#44aacc">●</span> peixe<br>
+                  <span style="color:#ff5050">╌╌</span> linha do coral (600m)<br>
+                  <span style="color:#50c8ff">▭</span> canal da moonpool (não fechar!)<br>
+                  <span style="color:#ff8800">▭</span> borda do grid
+                </div>
+
+                <div style="font-size:9px;color:#8a97a0;letter-spacing:.12em;margin-top:6px;border-top:1px solid #223142;padding-top:8px">ATALHOS</div>
+                <div style="font-size:10px;color:#aeb8bf;line-height:1.8">
+                  <b>M</b> mover · <b>P</b> pintar<br>
+                  <b>R</b> retângulo · <b>B</b> pincel · <b>C</b> corredor<br>
+                  <b>A</b> água · <b>F</b> rocha<br>
+                  <b>Ctrl+Z</b> desfazer · <b>Ctrl+Y</b> refazer<br>
+                  <b>ESC</b> sair · <b>botão direito</b> panea sempre
                 </div>
               </div>
             </div>
@@ -955,6 +983,7 @@
 
   // ============ EDITOR DE MAPA — TELA CHEIA ============
   const edOverlay=document.getElementById('mapEditorOverlay');
+  document.body.appendChild(edOverlay); // filho direto do body: nenhum layout de card interfere
   const edCv=document.getElementById('edCanvas'), edCtx=edCv.getContext('2d');
   const edMini=document.getElementById('edMiniCv'), edMiniCtx=edMini.getContext('2d');
   const edMiniOff=document.createElement('canvas');
@@ -1134,7 +1163,16 @@
     const sy=(currentSubNav.depth||0)/TILE/GRID_ROWS*mh;
     edMiniCtx.fillStyle='#4c8fc8'; edMiniCtx.fillRect(0,sy,edMini.width,1.5);
   }
-  function edLoop(){ if(!edOpen_) return; edDraw(); edDrawMini(); requestAnimationFrame(edLoop); }
+  // loop blindado: exceção NUNCA mata o render — mostra o erro no canto e continua
+  function edLoop(){
+    if(!edOpen_) return;
+    try{ edDraw(); edDrawMini(); }
+    catch(err){
+      edCtx.fillStyle='#d65a5a'; edCtx.font='11px monospace'; edCtx.textAlign='left';
+      edCtx.fillText('ERRO NO EDITOR: '+err.message, 8, 16);
+    }
+    requestAnimationFrame(edLoop);
+  }
 
   // ---- input do canvas ----
   edCv.addEventListener('contextmenu',e=>e.preventDefault());
