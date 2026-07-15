@@ -376,24 +376,27 @@
     return MAP[row][col]!==0;
   }
 
-  // Estrutura da petroleira acima do START_DEPTH (pilares decorativos + parede de fundo)
-  const STATION_TOP=1200, STATION_PILLARS_HI=1950;
-  const STATION_PILLARS_FADE=2800; // pilares desaparecem gradualmente até aqui
-  function _pillarHit(x,depth){
-    if(depth<STATION_TOP+100) return false; // nascem na BASE da estrutura da estação
-    const halfGap=36, pillarR=22; // hw=80: halfGap=0.45*80=36, pillarR=0.28*80=22
-    return (Math.abs(x-(-halfGap))<pillarR || Math.abs(x-halfGap)<pillarR);
-  }
-  function isPillar(x, depth){ // geometria sólida (colisão): range original
-    return depth<=STATION_PILLARS_HI && _pillarHit(x,depth);
-  }
-  function isPillarVisual(x, depth){ // valor 0..1: visual estendido com fade
-    if(depth>STATION_PILLARS_FADE || !_pillarHit(x,depth)) return 0;
-    if(depth<=STATION_PILLARS_HI) return 1.0;
-    return Math.max(0, 1-(depth-STATION_PILLARS_HI)/(STATION_PILLARS_FADE-STATION_PILLARS_HI));
-  }
+  // ===== ESTRUTURA DA PETROLEIRA (declarativa) =====
+  // Laje/parede de fundo da estação logo acima do limite de subida do sub.
+  const STATION_TOP=1550;      // topo da laje (155m)
+  const MIN_DIVE_DEPTH=1700;   // limite de subida: o sub não passa dos 170m
   function isStationBackWall(depth){
     return depth>=STATION_TOP && depth<STATION_TOP+100;
+  }
+  // PILARES: lista declarativa {x, top, bot, r}. O futuro editor de mapa só
+  // precisa empurrar mais entradas aqui — render e colisão leem desta lista.
+  // Os dois pilares-perna da plataforma nascem na base da laje (1650) e
+  // ancoram na encosta a 235m. Sólidos e texturizados do início ao fim.
+  const PILLARS=[
+    {x:-36, top:1650, bot:2350, r:22},
+    {x: 36, top:1650, bot:2350, r:22},
+  ];
+  function isPillar(px, depth){
+    for(let i=0;i<PILLARS.length;i++){
+      const P=PILLARS[i];
+      if(depth>=P.top && depth<=P.bot && Math.abs(px-P.x)<P.r) return true;
+    }
+    return false;
   }
 
   // ====== navegação compartilhada ======
@@ -858,14 +861,14 @@
     const br=isOld_?235:132, bgc=isOld_?202:218, bb=isOld_?122:240;
     const near=aimNearSm; // 1 = mirando superfície perto; 0 = mirando o breu
     x.save(); x.globalCompositeOperation='screen';
-    // três emissores: dois faróis nos cantos + preenchimento central FRACO
-    // (o central elimina o losango escuro entre os dois feixes convergentes)
-    const orgs=[[w*0.10,h*1.18,1.0],[w*0.90,h*1.18,1.0],[w*0.50,h*1.26,0.45]];
+    // DOIS faróis, origens mais pra dentro — os cones se sobrepõem cedo,
+    // sem vão escuro entre eles e sem emissor central artificial
+    const orgs=[[w*0.16,h*1.16,1.0],[w*0.84,h*1.16,1.0]];
     const N=5;
-    // perto: feixe grosso e definido; longe: fino e difuso
-    const baseW=w*(0.11+0.05*near), tipW=w*(0.008+0.055*near);
-    const alphaK=(0.72+0.55*near)*beamAl_;
-    const fadeEnd=0.30+0.38*near; // perto: o brilho segue firme até quase o alvo
+    // perto: feixe GROSSO e definido; longe: fino e difuso
+    const baseW=w*(0.10+0.09*near), tipW=w*(0.006+0.095*near);
+    const alphaK=(0.60+0.85*near)*beamAl_;
+    const fadeEnd=0.26+0.50*near; // perto: o brilho segue firme até quase o alvo
     for(const [ox,oy,mult] of orgs){
       const dxb=tx-ox, dyb=ty-oy;
       const L=Math.hypot(dxb,dyb)||1;
@@ -888,9 +891,9 @@
       }
     }
     // disco do facho: perto = menor, mais forte e nítido; longe = maior, fraco e difuso
-    const hot=(0.10+0.14*near)*beamAl_;
-    const rx_=w*(0.10+0.15*(1-near));
-    const coreStop=0.25+0.35*near;
+    const hot=(0.08+0.20*near)*beamAl_;
+    const rx_=w*(0.085+0.19*(1-near));
+    const coreStop=0.22+0.42*near;
     const gh=x.createRadialGradient(tx,ty,0,tx,ty,rx_);
     gh.addColorStop(0,`rgba(${br},${bgc},${bb},${hot.toFixed(3)})`);
     gh.addColorStop(coreStop,`rgba(${br},${bgc},${bb},${(hot*0.55).toFixed(3)})`);
@@ -983,7 +986,8 @@
         const spotR_=Math.min(wI,hI)*0.55;
         const bxw=beamX*wI, byh=beamY*h;
         const lvBase=0.34+effectiveAmb*0.72;
-        const fTr=isOld?1.00:0.74, fTg=isOld?0.86:0.92, fTb=isOld?0.60:1.10;
+        // tint MARROM como as paredes, um tom mais claro (sedimento/rocha do leito)
+        const fTr=isOld?1.05:0.96, fTg=isOld?0.90:0.86, fTb=isOld?0.64:0.68;
         for(let y=floorStart;y<hI;y++){
           const p=y-hh;
           const rowDist=posZ/p;
@@ -1020,13 +1024,12 @@
         const a = hdg + (i/(COLS-1) - 0.5)*FOV;
         const camAng = (i/(COLS-1)-0.5)*FOV;
         const dx=Math.sin(a), dd=Math.cos(a);
-        let rx=nav.x, rd=nav.depth, dist=0, hitSide=0, hitKind="wall", pillarVis=1;
+        let rx=nav.x, rd=nav.depth, dist=0, hitSide=0, hitKind="wall";
         for(let s=STEP;s<=MAXD;s+=STEP){
           rx=nav.x+dx*s; rd=nav.depth+dd*s;
           if(rd>=MAX_DEPTH){ dist=s; hitSide=0; hitKind="floor_end"; break; }
           if(isStationBackWall(rd)){ dist=s; hitSide=0; hitKind="station_wall"; break; }
-          const pv=isPillarVisual(rx,rd);
-          if(pv>0.01){ dist=s; hitSide=0; hitKind="pillar"; pillarVis=pv; break; }
+          if(isPillar(rx,rd)){ dist=s; hitSide=0; hitKind="pillar"; break; }
           if(isWall(rx,rd)){ dist=s; hitSide=dx<0?-1:1; break; }
           if(s>=VIS_WALL){ dist=s; hitSide=0; hitKind="dark"; break; }
         }
@@ -1060,8 +1063,8 @@
         // escurecimento ambiente: rocha no breu é escura; o facho recupera a cor
         const ambF=Math.max(0,Math.min(1,(0.24+ambLight*0.60)*sideShade+lit*0.72));
         if(ambF<0.995){ x.fillStyle=`rgba(0,0,0,${(1-ambF).toFixed(3)})`; x.fillRect(xL,y0,wW,hS); }
-        // fog: dissolve na cor da água (pilar em fade dissolve também — nunca em preto)
-        const pres=fogK*(hitKind==="pillar"?pillarVis:1);
+        // fog: dissolve na cor da água pela DISTÂNCIA (única fonte de fade)
+        const pres=fogK;
         if(pres<0.995){ x.fillStyle=`rgba(${waterR|0},${waterG|0},${waterB|0},${(1-pres).toFixed(3)})`; x.fillRect(xL,y0,wW,hS); }
         // brilho do facho por cima (luz espalhada na água em frente à rocha)
         if(lit>0.05){
@@ -1076,13 +1079,14 @@
           x.fillRect(xL, y1-Math.max(1,sh2*0.05), wW, Math.max(1,sh2*0.05));
         }
       }
-      // distância da superfície mirada: o feixe engrossa perto, afina e borra longe
+      // distância da superfície mirada: o feixe engrossa perto, afina e borra longe.
+      // normalização por 55% do alcance + sqrt: range dinâmico visível em uso normal
       {
         const iAim=Math.max(0,Math.min(COLS-1,Math.round(beamX*(COLS-1))));
         let dAim=zBuffer[iAim];
         if(beamY*h>hh+1){ const pAim=beamY*h-hh; dAim=Math.min(dAim,posZ/pAim); }
-        const tgt=Math.max(0,Math.min(1,1-dAim/WALL_SIGHT));
-        aimNearSm+=(tgt-aimNearSm)*0.12;
+        const tgt=Math.sqrt(Math.max(0,Math.min(1,1-dAim/(WALL_SIGHT*0.55))));
+        aimNearSm+=(tgt-aimNearSm)*0.15;
       }
       // sprites billboard no mundo (depth test pelo zbuffer)
       if(mode==="diving"||mode==="reeling"){
@@ -1441,7 +1445,7 @@
           } else {
             const spd=NAV_SPEED*0.55*dt;
             let nx=nav.x+gdx/gdist*spd;
-            let nd=Math.max(STATION_TOP,Math.min(MAX_DEPTH,nav.depth+gdd/gdist*spd));
+            let nd=Math.max(MIN_DIVE_DEPTH,Math.min(MAX_DEPTH,nav.depth+gdd/gdist*spd));
             const R=22;
             if(isWall(nx,nd)||isWall(nx-R,nd)||isWall(nx+R,nd)){
               if(!isWall(nav.x,nd)&&!isWall(nav.x-R,nd)&&!isWall(nav.x+R,nd)) nx=nav.x;
@@ -1468,10 +1472,10 @@
           const stepX = Math.sin(rad)*NAV_SPEED*dt*drive;
           const stepD = Math.cos(rad)*NAV_SPEED*dt*drive;
 
-          // limite de profundidade: pode subir até o topo da estação (lá a parede/pilares barram).
-          // o fundo é MAX_DEPTH. assim a estrutura da petroleira fica visível acima do início.
+          // limite de subida: MIN_DIVE_DEPTH (170m) — dá pra ver a laje e os pilares
+          // da petroleira logo acima, mas não vagar até a superfície. Fundo = MAX_DEPTH.
           let nd = nav.depth + stepD;
-          nd = Math.max(STATION_TOP, Math.min(MAX_DEPTH, nd));
+          nd = Math.max(MIN_DIVE_DEPTH, Math.min(MAX_DEPTH, nd));
 
           // colisão lateral checada NA profundidade de destino, eixo X separado:
           // tenta mover X; se sair do corredor, encosta na parede (desliza, não trava tudo).
