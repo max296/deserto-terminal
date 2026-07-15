@@ -1692,7 +1692,7 @@
       const dx=nav.x-ewx, dd=nav.depth-ewd;
       const dist=Math.hypot(dx,dd);
       const beh=ent.behavior||"wander";
-      const entSpd=typeof ent.speed==="number"&&ent.speed>0?ent.speed:20;
+      const entSpd=typeof ent.speed==="number"&&ent.speed>0?ent.speed:50;
       let vx=0, vd=0;
 
       if(beh==="chase"||ent.chasing){
@@ -1747,7 +1747,9 @@
         // fugindo/aproximando por caminhos NAVEGÁVEIS (BFS com folga).
         // A distância deixa a criatura como um pontinho de bioluminescência
         // na fronteira da visão — só quem anda na direção certa vê.
-        const STALK_MIN=300, STALK_MAX=460, STALK_TGT=380;
+        // distância de stalking configurável pelo guardião (stalkDist, default 380)
+        const STALK_TGT=typeof ent.stalkDist==='number'&&ent.stalkDist>0?ent.stalkDist:380;
+        const STALK_MIN=STALK_TGT*0.79, STALK_MAX=STALK_TGT*1.21;
         let st=creatureStalkState[id];
         const subMoved=st?Math.hypot(nav.x-st.subX,nav.depth-st.subD):1e9;
         const pathDone=!st||!st.path||st.wpIdx>=st.path.length;
