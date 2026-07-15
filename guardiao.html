@@ -312,6 +312,15 @@
             <button class="btn" id="mapZoomIn" style="font-size:13px;padding:3px 10px">+</button>
             <div style="width:1px;height:16px;background:var(--line);margin:0 3px"></div>
             <button class="btn" id="placeModeBtn" style="font-size:9px;color:#44aacc;min-width:90px;text-align:center">+ PEIXE</button>
+            <button class="btn" id="editMapBtn" style="font-size:9px;color:var(--ink-dim)">EDITAR MAPA</button>
+          </div>
+          <div id="editBar" style="display:none;gap:4px;margin-top:4px;align-items:center">
+            <button class="btn" id="edOpen" style="font-size:9px;color:#44ccff">▣ ABRIR ÁGUA</button>
+            <button class="btn" id="edClose" style="font-size:9px;color:var(--ink-dim)">▩ FECHAR ROCHA</button>
+            <div style="width:1px;height:16px;background:var(--line);margin:0 3px"></div>
+            <button class="btn" id="edUndo" style="font-size:9px">↶ DESFAZER</button>
+            <button class="btn" id="edSave" style="font-size:9px;color:var(--ink-dim)">SALVO ✓</button>
+            <button class="btn" id="edReset" style="font-size:9px;color:var(--danger)">RESTAURAR</button>
           </div>
         </div>
 
@@ -638,26 +647,28 @@
   const M_W=380, M_H=380;
   const UNITS_PER_M=10;
   const TILE=40, X_MIN_W=-400, GRID_COLS=21, GRID_ROWS=640;
-  const MAP=(()=>{
+  // MUNDO DEFAULT (mesma lista do submarino.html) + edições do editor por cima.
+  // Fonte da verdade das EDIÇÕES: Firebase submarine/worldMap = {ops:[{op,r0,r1,c0,c1}]}
+  const DEFAULT_OPEN=[
+    [25,29,9,11],[30,49,8,12],[50,74,8,12],[75,124,4,16],
+    [115,130,13,19],[130,160,14,19],[155,200,13,18],[197,207,11,18],
+    [125,239,8,12],[240,280,7,15],[280,459,8,12],[460,472,7,13],
+    [473,508,9,11],[509,589,8,12],[590,632,3,17],
+    [100,130,3,6],[130,180,2,6],[175,192,2,9],[185,225,4,7],
+    [190,210,14,19],[200,265,17,20],[250,285,13,20],[270,300,15,18]
+  ];
+  function buildMap(ops){
     const m=Array.from({length:GRID_ROWS},()=>new Uint8Array(GRID_COLS).fill(1));
-    const open=(r0,r1,c0,c1)=>{
+    const paint=(r0,r1,c0,c1,v)=>{
       for(let r=Math.max(0,r0);r<=Math.min(GRID_ROWS-1,r1);r++)
-        for(let c=Math.max(0,c0);c<=Math.min(GRID_COLS-1,c1);c++) m[r][c]=0;
+        for(let c=Math.max(0,c0);c<=Math.min(GRID_COLS-1,c1);c++) m[r][c]=v;
     };
-    open(25,29,9,11);
-    open(30,49,8,12);
-    open(50,74,8,12);
-    open(75,124,4,16);
-    open(115,130,13,19); open(130,160,14,19); open(155,200,13,18); open(197,207,11,18);
-    open(125,239,8,12);
-    open(240,280,7,15);
-    open(280,459,8,12);
-    open(460,472,7,13); open(473,508,9,11); open(509,589,8,12);
-    open(590,632,3,17);
-    open(100,130,3,6); open(130,180,2,6); open(175,192,2,9); open(185,225,4,7);
-    open(190,210,14,19); open(200,265,17,20); open(250,285,13,20); open(270,300,15,18);
+    for(const [r0,r1,c0,c1] of DEFAULT_OPEN) paint(r0,r1,c0,c1,0);
+    for(const o of (ops||[])) paint(o.r0,o.r1,o.c0,o.c1,o.op==='close'?1:0);
     return m;
-  })();
+  }
+  let mapOps=[], mapDirty=false;
+  let MAP=buildMap(mapOps);
 
   // ---- Coordenadas mapa ----
   let mapZoom=1.0, mapPlaceMode="fish", selectedEntityId=null;
@@ -666,6 +677,30 @@
   let deadFishId=null;
   let mapPanOffsetRows=0, panActive=false, panLastY=0, panJustMoved=false;
   let settingGrabTarget=false, currentGrabbedBy=null, currentGrabTarget=null;
+  // ---- Editor de mapa ----
+  let editMode=false, edPaint='open';       // 'open' = abrir água, 'close' = fechar rocha
+  let edDragging=false, edStart=null, edCur=null; // retângulo em progresso (row/col)
+
+  function mapPxToTile(px,py){
+    const {cellW,cellH,viewStart}=getMapMetrics();
+    return {r:Math.floor(py/cellH+viewStart), c:Math.floor(px/cellW)};
+  }
+  function applyLocalOps(){ MAP=buildMap(mapOps); }
+  function updateEditUI(){
+    const bar=document.getElementById('editBar');
+    if(bar) bar.style.display=editMode?'flex':'none';
+    const eb=document.getElementById('editMapBtn');
+    if(eb){ eb.textContent=editMode?'✕ SAIR DA EDIÇÃO':'EDITAR MAPA';
+            eb.style.color=editMode?'#ff8800':'var(--ink-dim)'; }
+    const ob=document.getElementById('edOpen'), cb=document.getElementById('edClose');
+    if(ob) ob.style.color=edPaint==='open'?'#44ccff':'var(--ink-dim)';
+    if(cb) cb.style.color=edPaint==='close'?'#ff5533':'var(--ink-dim)';
+    const sb=document.getElementById('edSave');
+    if(sb){ sb.style.color=mapDirty?'#ffcc00':'var(--ink-dim)';
+            sb.textContent=mapDirty?'SALVAR ●':'SALVO ✓'; }
+    const ub=document.getElementById('edUndo');
+    if(ub) ub.style.opacity=mapOps.length?1:0.4;
+  }
 
   function getMapMetrics(){
     const visRows=Math.round(120/mapZoom);
@@ -811,6 +846,32 @@
     mctx.fillStyle=mapPlaceMode==='creature'?'#ff4400':'#44aacc'; mctx.textAlign='right';
     mctx.fillText('E: '+(mapPlaceMode==='creature'?'CRIATURA':'PEIXE'),M_W-4,M_H-4);
 
+    // ---- overlay do EDITOR DE MAPA ----
+    if(editMode){
+      const {cellW:eCW,cellH:eCH,viewStart:eVS}=getMapMetrics();
+      // moldura + label do modo
+      mctx.save();
+      mctx.strokeStyle='rgba(255,136,0,.75)'; mctx.lineWidth=2;
+      mctx.strokeRect(1,1,M_W-2,M_H-2);
+      mctx.fillStyle='rgba(255,136,0,.95)'; mctx.font='7px monospace'; mctx.textAlign='center';
+      mctx.fillText('MODO EDIÇÃO — arraste para '+(edPaint==='open'?'ABRIR ÁGUA':'FECHAR ROCHA'),M_W/2,10);
+      // retângulo em progresso
+      if(edDragging&&edStart&&edCur){
+        const r0=Math.min(edStart.r,edCur.r), r1=Math.max(edStart.r,edCur.r);
+        const c0=Math.min(edStart.c,edCur.c), c1=Math.max(edStart.c,edCur.c);
+        const px0=c0*eCW, py0=(r0-eVS)*eCH;
+        const pw=(c1-c0+1)*eCW, ph=(r1-r0+1)*eCH;
+        mctx.fillStyle=edPaint==='open'?'rgba(60,180,255,.25)':'rgba(255,70,40,.25)';
+        mctx.fillRect(px0,py0,pw,ph);
+        mctx.strokeStyle=edPaint==='open'?'#44ccff':'#ff5533'; mctx.lineWidth=1;
+        mctx.strokeRect(px0,py0,pw,ph);
+        // dimensões em tiles + metros
+        mctx.fillStyle='#fff'; mctx.font='7px monospace'; mctx.textAlign='left';
+        mctx.fillText(`${c1-c0+1}×${r1-r0+1}t (${(c1-c0+1)*4}×${(r1-r0+1)*4}m)`,px0+2,py0-3);
+      }
+      mctx.restore();
+    }
+
     const el=document.getElementById('mapStatus');
     if(el) el.textContent=`${fishCount}P · ${crtCount}C`;
   }
@@ -840,6 +901,10 @@
   mapCanvas.addEventListener('mousedown',e=>{
     const r=mapCanvas.getBoundingClientRect();
     const px=e.clientX-r.left, py=e.clientY-r.top;
+    if(editMode){ // editor: começa o retângulo
+      edDragging=true; edStart=mapPxToTile(px,py); edCur=edStart;
+      return;
+    }
     const hit=entityAtMapPx(px,py);
     dragJustMoved=false; panJustMoved=false;
     if(hit){ dragEntityId=hit; selectedEntityId=hit; panActive=false; renderSelectedPanel(); renderEntityList(); }
@@ -848,6 +913,10 @@
   mapCanvas.addEventListener('mousemove',e=>{
     const r=mapCanvas.getBoundingClientRect();
     mouseMapX=e.clientX-r.left; mouseMapY=e.clientY-r.top;
+    if(editMode){
+      if(edDragging) edCur=mapPxToTile(mouseMapX,mouseMapY);
+      return;
+    }
     if(dragEntityId&&entities[dragEntityId]){
       dragJustMoved=true;
       const {wx,wd}=mapPxToWorld(mouseMapX,mouseMapY);
@@ -863,6 +932,18 @@
     }
   });
   mapCanvas.addEventListener('mouseup',e=>{
+    if(editMode){ // editor: fecha o retângulo e aplica a op localmente
+      if(edDragging&&edStart&&edCur){
+        const r0=Math.max(0,Math.min(GRID_ROWS-1,Math.min(edStart.r,edCur.r)));
+        const r1=Math.max(0,Math.min(GRID_ROWS-1,Math.max(edStart.r,edCur.r)));
+        const c0=Math.max(0,Math.min(GRID_COLS-1,Math.min(edStart.c,edCur.c)));
+        const c1=Math.max(0,Math.min(GRID_COLS-1,Math.max(edStart.c,edCur.c)));
+        mapOps.push({op:edPaint,r0,r1,c0,c1});
+        applyLocalOps(); mapDirty=true; updateEditUI();
+      }
+      edDragging=false; edStart=null; edCur=null;
+      return;
+    }
     const wasDragging=dragJustMoved, wasPanning=panJustMoved;
     dragEntityId=null; dragJustMoved=false;
     panActive=false; panJustMoved=false;
@@ -877,6 +958,34 @@
     if(wasDragging||wasPanning) return;
     const hit=entityAtMapPx(px,py);
     if(hit){ selectedEntityId=hit; renderSelectedPanel(); renderEntityList(); }
+  });
+
+  // ---- botões do editor de mapa ----
+  document.getElementById('editMapBtn').addEventListener('click',()=>{
+    editMode=!editMode;
+    edDragging=false; edStart=null; edCur=null;
+    mapCanvas.style.cursor=editMode?'crosshair':'';
+    updateEditUI();
+  });
+  document.getElementById('edOpen').addEventListener('click',()=>{ edPaint='open'; updateEditUI(); });
+  document.getElementById('edClose').addEventListener('click',()=>{ edPaint='close'; updateEditUI(); });
+  document.getElementById('edUndo').addEventListener('click',()=>{
+    if(!mapOps.length) return;
+    mapOps.pop(); applyLocalOps(); mapDirty=true; updateEditUI();
+  });
+  document.getElementById('edSave').addEventListener('click',()=>{
+    subRef.child('worldMap').set({ops:mapOps,savedAt:Date.now()});
+    mapDirty=false; updateEditUI();
+  });
+  document.getElementById('edReset').addEventListener('click',()=>{
+    if(!confirm('Restaurar o mapa PADRÃO? (as edições salvas serão apagadas ao salvar)')) return;
+    mapOps=[]; applyLocalOps(); mapDirty=true; updateEditUI();
+  });
+  // edições vindas do Firebase (só aplica se não há edição local pendente)
+  subRef.child('worldMap').on('value',snap=>{
+    const v=snap.val();
+    const remote=(v&&v.ops)||[];
+    if(!mapDirty){ mapOps=remote; applyLocalOps(); updateEditUI(); }
   });
 
   // ---- Painel SELECIONADO ----
@@ -1050,7 +1159,7 @@
 
   // ---- Tecla E + canvas: spawna peixe ou criatura conforme modo ----
   document.addEventListener('keydown',e=>{
-    if(e.code==='KeyE'&&mouseOverCanvas){
+    if(e.code==='KeyE'&&mouseOverCanvas&&!editMode){
       e.preventDefault();
       const {wx,wd}=mapPxToWorld(mouseMapX,mouseMapY);
       if(mapPlaceMode==='creature') addDeadFishEntity(wx,wd);
