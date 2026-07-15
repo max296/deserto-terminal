@@ -771,31 +771,28 @@
     x.restore();
   }
 
-  // facho como cone físico a partir do ponto de montagem do sub (não do centro da tela)
+  // facho: cone com falloff angular CONTÍNUO — 9 camadas concêntricas que estreitam,
+  // cada uma com alpha baixo. Nenhuma borda de clip fica visível (nada de triângulo).
   function drawFlashlight(w,h,isOld_,beamAl_){
     if(!lightOn) return;
-    const cx=w*0.5, cy=h*0.56; // origem: ponto de montagem — abaixo do centro
+    const cx=w*0.5, cy=h*0.56; // origem: ponto de montagem do farol, abaixo do centro
     const angle=Math.atan2(beamY*h-cy,beamX*w-cx);
     const len=Math.max(w,h)*1.6;
+    const br=isOld_?235:132, bgc=isOld_?202:218, bb=isOld_?122:240;
     x.save(); x.globalCompositeOperation='screen';
-    // halo: dispersão da água — cone moderado
-    x.save();
-    x.beginPath(); x.moveTo(cx,cy);
-    x.arc(cx,cy,len,angle-Math.PI/5,angle+Math.PI/5); x.closePath(); x.clip();
-    const gh=x.createRadialGradient(cx,cy,0,cx,cy,len);
-    if(isOld_){gh.addColorStop(0,`rgba(210,175,90,${(0.06*beamAl_).toFixed(3)})`);gh.addColorStop(0.45,`rgba(155,120,55,${(0.015*beamAl_).toFixed(3)})`);}
-    else{gh.addColorStop(0,`rgba(95,200,220,${(0.07*beamAl_).toFixed(3)})`);gh.addColorStop(0.45,`rgba(60,155,180,${(0.018*beamAl_).toFixed(3)})`);}
-    gh.addColorStop(1,'transparent');
-    x.fillStyle=gh; x.fillRect(0,0,w,h); x.restore();
-    // núcleo: feixe principal — estreito e brilhante
-    x.save();
-    x.beginPath(); x.moveTo(cx,cy);
-    x.arc(cx,cy,len,angle-Math.PI/14,angle+Math.PI/14); x.closePath(); x.clip();
-    const gc=x.createRadialGradient(cx,cy,0,cx,cy,len*0.85);
-    if(isOld_){gc.addColorStop(0,`rgba(240,205,120,${(0.38*beamAl_).toFixed(3)})`);gc.addColorStop(0.25,`rgba(200,165,88,${(0.14*beamAl_).toFixed(3)})`);gc.addColorStop(0.65,`rgba(145,112,62,${(0.03*beamAl_).toFixed(3)})`);}
-    else{gc.addColorStop(0,`rgba(148,230,248,${(0.40*beamAl_).toFixed(3)})`);gc.addColorStop(0.25,`rgba(105,190,215,${(0.14*beamAl_).toFixed(3)})`);gc.addColorStop(0.65,`rgba(68,148,175,${(0.03*beamAl_).toFixed(3)})`);}
-    gc.addColorStop(1,'transparent');
-    x.fillStyle=gc; x.fillRect(0,0,w,h); x.restore();
+    const N=9, aOut=Math.PI/4.4, aIn=Math.PI/15;
+    for(let k=0;k<N;k++){
+      const f=k/(N-1);
+      const half=aOut+(aIn-aOut)*f;          // camada 0 = larga e tênue; última = núcleo
+      const al=(0.016+f*f*0.062)*beamAl_;
+      const g=x.createRadialGradient(cx,cy,0,cx,cy,len*(0.95-0.18*f));
+      g.addColorStop(0,`rgba(${br},${bgc},${bb},${al.toFixed(3)})`);
+      g.addColorStop(0.45,`rgba(${br*0.72|0},${bgc*0.78|0},${bb*0.85|0},${(al*0.38).toFixed(3)})`);
+      g.addColorStop(1,'rgba(0,0,0,0)');
+      x.fillStyle=g;
+      x.beginPath(); x.moveTo(cx,cy);
+      x.arc(cx,cy,len,angle-half,angle+half); x.closePath(); x.fill();
+    }
     x.restore();
   }
 
@@ -816,15 +813,17 @@
     const flickerMod = collisionFlicker * (0.5 + 0.28*Math.sin(t*0.38) + 0.12*Math.sin(t*0.91));
     const effectiveAmb = ambLight * (1 - Math.max(0,flickerMod));
     const beyond = depth>CORAL_DEPTH;
-    // fundo com cor dependente de profundidade (azul-teal → verde-preto abissal)
+    // COR DA ÁGUA nesta profundidade: alvo ÚNICO de fog — fundo, paredes e chão
+    // dissolvem TODOS nesta mesma cor. Nada some em preto na frente de água clara.
     const [cr,cg_,cb_]=depthRGB(depthN);
-    const sc=0.18+effectiveAmb*0.90;
-    const bgGrad=x.createRadialGradient(w/2,h*0.42,10,w/2,h*0.52,Math.max(w,h)*0.85);
-    bgGrad.addColorStop(0,`rgb(${cr*sc*1.28|0},${cg_*sc*1.28|0},${cb_*sc*1.28|0})`);
-    bgGrad.addColorStop(0.55,`rgb(${cr*sc|0},${cg_*sc|0},${cb_*sc|0})`);
-    bgGrad.addColorStop(1,`rgb(${cr*sc*0.22|0},${cg_*sc*0.22|0},${cb_*sc*0.22|0})`);
+    const ambSc=0.16+effectiveAmb*0.84;
+    const waterR=cr*ambSc, waterG=cg_*ambSc, waterB=cb_*ambSc;
+    // fundo = a própria água: levemente mais clara acima (luz desce da superfície/plataforma)
+    const bgGrad=x.createLinearGradient(0,0,0,h);
+    bgGrad.addColorStop(0,`rgb(${waterR*1.30|0},${waterG*1.30|0},${waterB*1.30|0})`);
+    bgGrad.addColorStop(0.45,`rgb(${waterR|0},${waterG|0},${waterB|0})`);
+    bgGrad.addColorStop(1,`rgb(${waterR|0},${waterG|0},${waterB|0})`);
     x.fillStyle=bgGrad; x.fillRect(0,0,w,h);
-    // (floor/ceiling são desenhados abaixo, na seção de raycasting)
 
     // ===== RAYCASTER: corredor coerente (paredes = margens do canyon) =====
     // o sub está em (nav.x, nav.depth) olhando p/ heading. as duas margens do corredor
@@ -851,11 +850,10 @@
       const planeMag=Math.tan(FOV/2);
       const planeX=Math.cos(hdg)*planeMag, planeY=-Math.sin(hdg)*planeMag;  // plano de câmera
       const posX=nav.x, posY=depth;                            // posição no mundo
-      const SIGHT=82;
-      const pGlowFac=depth<4000?Math.max(0,1-depth/4000)*effectiveAmb:0;
       const hh=h*0.5;
-
-      // beamX, beamY já disponíveis (0..1); FOV e camAng são usados no spotlight das paredes
+      // alcance de visão em wu: paredes E chão dissolvem na cor da água nesta distância
+      const VIS_WALL = Math.max(180, 320 - depthN*140);
+      const WALL_SIGHT = VIS_WALL*0.9;
 
       // Hash-based value noise (sem sin, rápido) — 2 oitavas
       function h2(ix,iy){ let n=(ix*374761393^iy*1120124553)&0x7fffffff; n=((n^(n>>>13))*1540483477)&0x7fffffff; return (n^(n>>>15))/2147483647; }
@@ -869,66 +867,52 @@
         return Math.max(0,Math.min(1,n1*0.65+n2*0.35));
       }
 
-      // CHÃO + TETO: ImageData pixel-a-pixel (lodev) com spotlight integrado
-      const floorStart=Math.ceil(hh+hh/SIGHT+1);
-      const ceilEnd=h-1-floorStart;
-      const floorH=h-floorStart, ceilH=ceilEnd;
-      const floorImg=x.createImageData(w,floorH>0?floorH:1);
-      const ceilImg=x.createImageData(w,ceilH>0?ceilH:1);
-      const fBuf=new Uint32Array(floorImg.data.buffer);
-      const cBuf=new Uint32Array(ceilImg.data.buffer);
-      // pre-fill com cor de fundo opaca: evita buracos transparentes onde vis<threshold
-      {const bsc2=0.14+effectiveAmb*0.86;
-       const bR=(cr*bsc2*1.1|0)&255,bG=(cg_*bsc2*1.1|0)&255,bB=(cb_*bsc2*1.1|0)&255;
-       const bgPk=(255<<24)|(bB<<16)|(bG<<8)|bR;
-       fBuf.fill(bgPk); if(ceilH>0) cBuf.fill(bgPk);}
-      const spotR_=Math.min(w,h)*0.52;
-
-      for(let y=floorStart;y<h;y++){
-        const p=y-hh;
-        const rowDist=hh/p;
-        const vis=Math.max(0,1-rowDist/SIGHT);
-        if(vis<0.005) continue;
-        const fsx=rowDist*(dirX-planeX)+posX, fsy=rowDist*(dirY-planeY)+posY;
-        const fex=rowDist*(dirX+planeX)+posX, fey=rowDist*(dirY+planeY)+posY;
-        const fstx=(fex-fsx)/w, fsty=(fey-fsy)/w;
-        let flX=fsx, flY=fsy;
-        const fi0=(y-floorStart)*w;
-        const cy_=h-1-y;
-        const inCeil=cy_>=0&&cy_<ceilH;
-        for(let sx=0;sx<w;sx++){
-          const mx=flX/UNITS_PER_M, my=flY/UNITS_PER_M;
-          const sh=rockPx(mx,my);
-          const spotI=lightOn?Math.max(0,1-Math.hypot(sx-beamX*w,y-beamY*h)/spotR_):0;
-          const lv=(0.38+effectiveAmb*0.80)+spotI*0.62;
-          const base=(19+sh*38)*vis*lv;
-          let fr,fg,fb;
-          if(isOld){fr=base|0;fg=(base*0.85)|0;fb=(base*0.60)|0;}
-          else{fr=(base*0.76)|0;fg=(base*0.93)|0;fb=(base*1.10)|0;}
-          fBuf[fi0+sx]=(255<<24)|((fb&255)<<16)|((fg&255)<<8)|(fr&255);
-          if(inCeil){
-            const cSpotI=lightOn?Math.max(0,1-Math.hypot(sx-beamX*w,cy_-beamY*h)/spotR_):0;
-            const clv=(0.34+effectiveAmb*0.74)+cSpotI*0.52;
-            const cbase=(11+sh*24)*vis*clv*0.80+pGlowFac*30*vis;
-            let cr2,cg2,cb2;
-            if(isOld){cr2=cbase|0;cg2=(cbase*0.78)|0;cb2=(cbase*0.56)|0;}
-            else{cr2=(cbase*0.70)|0;cg2=(cbase*0.85)|0;cb2=(cbase*0.98)|0;}
-            cBuf[cy_*w+sx]=(255<<24)|((cb2&255)<<16)|((cg2&255)<<8)|(cr2&255);
+      // ---- CHÃO via floor casting (lodev), SEM teto (canon: o teto foi descartado) ----
+      // rowDist = posZ/p em WORLD UNITS (posZ = WALLH/2): o chão encontra a base das
+      // paredes exatamente, e dissolve na cor da água na MESMA distância (WALL_SIGHT).
+      const posZ=WALLH*0.5;
+      const floorStart=Math.max(Math.floor(hh)+1, Math.ceil(hh+posZ/WALL_SIGHT));
+      const floorH=h-floorStart;
+      if(floorH>0){
+        const floorImg=x.createImageData(w,floorH);
+        const fBuf=new Uint32Array(floorImg.data.buffer);
+        // pre-fill opaco com a cor da água: linhas distantes = água, sem emenda com o fundo
+        const pkR=waterR|0, pkG=waterG|0, pkB=waterB|0;
+        fBuf.fill((255<<24)|(pkB<<16)|(pkG<<8)|pkR);
+        const spotR_=Math.min(w,h)*0.55;
+        const bxw=beamX*w, byh=beamY*h;
+        for(let y=floorStart;y<h;y++){
+          const p=y-hh;
+          const rowDist=posZ/p;
+          const fogF=Math.max(0,Math.min(1,1-rowDist/WALL_SIGHT));
+          if(fogF<=0.004) continue;
+          const fogFK=fogF*Math.sqrt(fogF), wMixF=1-fogFK;
+          const fsx=rowDist*(dirX-planeX)+posX, fsy=rowDist*(dirY-planeY)+posY;
+          const fex=rowDist*(dirX+planeX)+posX, fey=rowDist*(dirY+planeY)+posY;
+          const fstx=(fex-fsx)/w, fsty=(fey-fsy)/w;
+          let flX=fsx, flY=fsy;
+          const fi0=(y-floorStart)*w;
+          const lvBase=0.30+effectiveAmb*0.70;
+          for(let sx=0;sx<w;sx++){
+            const sh=rockPx(flX/UNITS_PER_M,flY/UNITS_PER_M);
+            const spotI=lightOn?Math.max(0,1-Math.hypot(sx-bxw,y-byh)/spotR_):0;
+            const texL=(26+sh*50)*(lvBase+spotI*0.85*fogF);
+            let tr,tg,tb;
+            if(isOld){tr=texL;tg=texL*0.85;tb=texL*0.62;}
+            else{tr=texL*0.78;tg=texL*0.94;tb=texL*1.08;}
+            const r=Math.min(255,tr*fogFK+waterR*wMixF)|0;
+            const g=Math.min(255,tg*fogFK+waterG*wMixF)|0;
+            const b=Math.min(255,tb*fogFK+waterB*wMixF)|0;
+            fBuf[fi0+sx]=(255<<24)|(b<<16)|(g<<8)|r;
+            flX+=fstx; flY+=fsty;
           }
-          flX+=fstx; flY+=fsty;
         }
+        x.putImageData(floorImg,0,floorStart);
       }
-      if(floorH>0) x.putImageData(floorImg,0,floorStart);
-      if(ceilH>0) x.putImageData(ceilImg,0,0);
 
       // ---- PAREDES (raycasting) ----
-      // parede de escuridão: 320wu (32m) no início, encolhe para 180wu (18m) no fundo.
-      // depthN já calculado acima (0 em START_DEPTH, 1 em MAX_DEPTH).
-      const VIS_WALL = Math.max(180, 320 - depthN*140);
-      const WALL_SIGHT = VIS_WALL*0.9;
       // zbuffer: distância perpendicular de cada coluna (para sprite depth test)
       const zBuffer = new Float32Array(COLS).fill(MAXD);
-      // direção de cada raio: varre de -FOV/2 a +FOV/2 em torno do heading.
       for(let i=0;i<COLS;i++){
         const a = hdg + (i/(COLS-1) - 0.5)*FOV;
         const camAng = (i/(COLS-1)-0.5)*FOV;
@@ -938,7 +922,6 @@
           rx=nav.x+dx*s; rd=nav.depth+dd*s;
           if(rd>=MAX_DEPTH){ dist=s; hitSide=0; hitKind="floor_end"; break; }
           if(isStationBackWall(rd)){ dist=s; hitSide=0; hitKind="station_wall"; break; }
-          // pilares: checa visual (inclui fade abaixo de HI)
           const pv=isPillarVisual(rx,rd);
           if(pv>0.01){ dist=s; hitSide=0; hitKind="pillar"; pillarVis=pv; break; }
           if(isWall(rx,rd)){ dist=s; hitSide=dx<0?-1:1; break; }
@@ -947,57 +930,55 @@
         if(!dist) continue;
         const perp=Math.max(8, dist*Math.cos(camAng));
         zBuffer[i]=perp;
+        // além do alcance: a rocha já dissolveu 100% na água — não desenha NADA
+        // (o fundo é a cor da água; a "escuridão" acontece por igualdade de cor)
+        if(hitKind==="dark") continue;
         const colX=(i+0.5)*colW;
-        if(hitKind==="dark"){
-          const shD=Math.min(h*1.4,WALLH/perp);
-          const y0d=h/2-shD/2, y1d=h/2+shD/2;
-          const [dr,dg,db]=depthRGB(depthN);
-          const dsc=effectiveAmb*0.08;
-          x.fillStyle=`rgb(${dr*dsc|0},${dg*dsc|0},${db*dsc|0})`;
-          x.fillRect(colX-colW/2-0.5,y0d,colW+1,y1d-y0d);
-          continue;
-        }
         const sh2=Math.min(h*1.4, WALLH/perp);
         const y0=h/2 - sh2/2, y1=h/2 + sh2/2;
+        // fog: presença da rocha (fogK) vs presença da água (wMix). NUNCA fade pra preto.
         const fog=Math.max(0, Math.min(1, 1 - dist/WALL_SIGHT));
-        const fog2=fog*fog;
-        // Textura com estratificação + canais de água (seepage streaks)
-        const wallU=rd;
-        const strata=0.70+0.30*Math.sin(rd*0.0021)*Math.cos(rd*0.00088);
-        const streak=0.80+0.20*Math.cos(i*0.28+rd*0.00054);
-        const texN=0.5+0.5*Math.sin(wallU*0.18+i*0.43)*Math.sin(wallU*0.055+i*0.13);
+        const fogK=fog*Math.sqrt(fog);
+        const wMix=1-fogK;
+        // textura: estratos horizontais + escorrimentos verticais + ruído
+        const strata=0.72+0.28*Math.sin(rd*0.0021)*Math.cos(rd*0.00088);
+        const streak=0.82+0.18*Math.cos(i*0.28+rd*0.00054);
+        const texN=0.5+0.5*Math.sin(rd*0.18+i*0.43)*Math.sin(rd*0.055+i*0.13);
         const tex=texN*strata*streak;
-        // Spotlight paredes: ângulo do raio vs ângulo do cursor (câmera space)
-        // camAng já calculado acima; beamX 0..1 mapeado pra ângulo FOV
+        // facho nas paredes: ângulo do raio vs ângulo do cursor (camera space), atenua longe
         const beamAngH=(beamX-0.5)*FOV;
         const angDiffH=Math.abs(camAng-beamAngH);
         const litH=lightOn?Math.max(0,Math.min(1,(Math.PI/5-angDiffH)/(Math.PI/5-Math.PI/14))):0;
-        // vertical: cursor abaixo do centro = ilumina mais a parte inferior da parede
-        const beamAngV=(beamY-0.5);
-        const litV=lightOn?Math.max(0,1-Math.abs(beamAngV)*2.5):0;
-        const lit=litH*litV;
-        const sideShade=hitSide<0?0.80:1.0;
-        const [wr,wg,wb]=depthRGB(depthN);
-        const dtint=0.18+depthN*0.38;
-        let base=((14+tex*28)*sideShade*fog2*(0.38+ambLight*0.76)+lit*fog*(isOld?82:102));
-        base=Math.min(200,base);
-        let r,g,b;
+        const litV=lightOn?Math.max(0,1-Math.abs(beamY-0.5)*2.5):0;
+        const lit=litH*litV*fog;
+        const sideShade=hitSide<0?0.82:1.0;
+        // luminância da superfície (SEM multiplicar fog — o fog entra só na mistura)
+        let rr,rg,rb;
         if(hitKind==="pillar"){
-          const pb=Math.min(200,(28+texN*22)*fog2+lit*fog*98)*pillarVis;
-          r=pb*0.82|0; g=pb*0.88|0; b=pb*0.97|0;
+          const pl=Math.min(215,(38+texN*26)*(0.30+ambLight*0.70)+lit*105);
+          rr=pl*0.84; rg=pl*0.90; rb=pl*1.00;
         } else if(hitKind==="floor_end"||hitKind==="station_wall"){
-          const fb=Math.min(160,(12+tex*22)*fog2+lit*fog*(isOld?62:82));
-          if(isOld){r=fb*0.95|0;g=fb*0.84|0;b=fb*0.64|0;}
-          else{r=(fb*0.86+wr*dtint*0.5)|0;g=(fb*0.95+wg*dtint*0.5)|0;b=(fb*1.02+wb*dtint*0.55)|0;}
+          const fl=Math.min(190,(24+tex*34)*(0.30+ambLight*0.66)+lit*(isOld?70:88));
+          if(isOld){rr=fl;rg=fl*0.84;rb=fl*0.64;}
+          else{rr=fl*0.82;rg=fl*0.94;rb=fl*1.05;}
         } else {
-          if(isOld){r=Math.min(255,(base+wr*dtint*0.5)|0);g=Math.min(255,(base*0.88+wg*dtint*0.4)|0);b=Math.min(255,(base*0.70+wb*dtint*0.3)|0);}
-          else{r=Math.min(255,(base*0.90+wr*dtint*0.55)|0);g=Math.min(255,(base+wg*dtint*0.75)|0);b=Math.min(255,(base*1.05+wb*dtint)|0);}
+          const texL=Math.min(215,(30+tex*58)*sideShade*(0.34+ambLight*0.72)+lit*(isOld?95:112));
+          if(isOld){rr=texL;rg=texL*0.87;rb=texL*0.68;}
+          else{rr=texL*0.80;rg=texL*0.95;rb=texL*1.08;}
         }
+        // presença: pilar em fade também dissolve na água (não escurece pra preto)
+        const pres=fogK*(hitKind==="pillar"?pillarVis:1);
+        const r=Math.min(255,rr*pres+waterR*(1-pres))|0;
+        const g=Math.min(255,rg*pres+waterG*(1-pres))|0;
+        const b=Math.min(255,rb*pres+waterB*(1-pres))|0;
         x.fillStyle=`rgb(${r},${g},${b})`;
         x.fillRect(colX-colW/2-0.5, y0, colW+1, y1-y0);
-        x.fillStyle=`rgba(0,0,0,${(0.28*fog+0.18).toFixed(2)})`;
-        x.fillRect(colX-colW/2-0.5, y0, colW+1, Math.max(1,sh2*0.055));
-        x.fillRect(colX-colW/2-0.5, y1-Math.max(1,sh2*0.055), colW+1, Math.max(1,sh2*0.055));
+        // sombra sutil nas arestas topo/base — some junto com a rocha
+        if(pres>0.12){
+          x.fillStyle=`rgba(0,0,0,${(0.22*pres).toFixed(2)})`;
+          x.fillRect(colX-colW/2-0.5, y0, colW+1, Math.max(1,sh2*0.05));
+          x.fillRect(colX-colW/2-0.5, y1-Math.max(1,sh2*0.05), colW+1, Math.max(1,sh2*0.05));
+        }
       }
       // sprites billboard no mundo (depth test pelo zbuffer)
       if(mode==="diving"||mode==="reeling"){
