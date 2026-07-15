@@ -321,62 +321,36 @@
   const GRID_COLS=21;         // 21 cols × 40wu = 840wu de largura total
   const GRID_ROWS=640;        // 640 rows × 40wu = 25600wu = 2560m de profundidade
   // MAP[row][col]: 0=água navegável, 1=rocha/parede
-  const MAP=(()=>{
+  // MUNDO DEFAULT: retângulos de água. O guardião pode EDITAR o mapa: as edições
+  // (ops open/close) chegam via Firebase (worldMap) e são aplicadas POR CIMA.
+  // col(X=0) = floor((0-(-400))/40) = 10. Corredor central = cols 9-11.
+  const DEFAULT_OPEN=[
+    [25,29,9,11],     // canal da moonpool (100-116m)
+    [30,49,8,12],     // estrutura da estação (120-196m)
+    [50,74,8,12],     // canyon de entrada (200-296m)
+    [75,124,4,16],    // grande área de bifurcação (300-496m)
+    // saída 1: brocas (direita, ~800m)
+    [115,130,13,19],[130,160,14,19],[155,200,13,18],[197,207,11,18],
+    // saída 2: fenda/caverna (centro-esquerda, ~2364m)
+    [125,239,8,12],[240,280,7,15],[280,459,8,12],[460,472,7,13],
+    [473,508,9,11],   // a queda (1892-2032m, sentido único)
+    [509,589,8,12],[590,632,3,17], // descida pós-queda + caverna do hive-mind
+    // saída 3: placeholder esquerda
+    [100,130,3,6],[130,180,2,6],[175,192,2,9],[185,225,4,7],
+    // saída 4: placeholder direita profunda
+    [190,210,14,19],[200,265,17,20],[250,285,13,20],[270,300,15,18]
+  ];
+  function buildMap(ops){
     const m=Array.from({length:GRID_ROWS},()=>new Uint8Array(GRID_COLS).fill(1));
-    const open=(r0,r1,c0,c1)=>{
+    const paint=(r0,r1,c0,c1,v)=>{
       for(let r=Math.max(0,r0);r<=Math.min(GRID_ROWS-1,r1);r++)
-        for(let c=Math.max(0,c0);c<=Math.min(GRID_COLS-1,c1);c++) m[r][c]=0;
+        for(let c=Math.max(0,c0);c<=Math.min(GRID_COLS-1,c1);c++) m[r][c]=v;
     };
-    // col(X=0) = floor((0-(-400))/40) = 10. Corredor central = cols 9-11.
-
-    // CANAL DA MOONPOOL (rows 25-29, 100-116m): estreito, transição
-    open(25,29,9,11);
-    // ESTRUTURA DA ESTAÇÃO (rows 30-49, 120-196m): pilares por isPillar()
-    open(30,49,8,12);
-    // CANYON DE ENTRADA (rows 50-74, 200-296m)
-    open(50,74,8,12);
-
-    // GRANDE ÁREA DE BIFURCAÇÃO (rows 75-124, 300-496m): caverna aberta c/ 4 saídas
-    open(75,124,4,16);
-
-    // ===== SAÍDA 1: BROCAS (direita, ~800m) =====
-    // Caminho médio; descida lenta; brocas enormes no fim
-    open(115,130,13,19);  // junção com grande área
-    open(130,160,14,19);  // descida inicial direita (520-640m)
-    open(155,200,13,18);  // volta levemente pro centro, continua (620-800m)
-    open(197,207,11,18);  // câmara das brocas (788-828m, 8 cols = 32m)
-
-    // ===== SAÍDA 2: FENDA / CAVERNA (centro-esquerda, ~2364m) =====
-    // Percurso longo; partes planas; queda irreversível a 1892m
-    open(125,239,8,12);   // descida regular (500-956m)
-    // Primeira zona plana (rows 240-280, 960-1120m): espaço amplo pra RP
-    open(240,280,7,15);
-    // Segunda descida (rows 280-459, 1120-1836m)
-    open(280,459,8,12);
-    // Plataforma pré-queda (rows 460-472, 1840-1888m)
-    open(460,472,7,13);
-    // A QUEDA (rows 473-508, 1892-2032m — 143m, sentido único para baixo):
-    // o "puxar de volta" percorre esses rows subindo sem restrição
-    open(473,508,9,11);
-    // Descida pós-queda até caverna (rows 509-589, 2036-2356m)
-    open(509,589,8,12);
-    // CAVERNA do hive-mind (rows 590-632, 2360-2528m): espaço enorme
-    open(590,632,3,17);
-
-    // ===== SAÍDA 3: PLACEHOLDER — esquerda, experimental =====
-    open(100,130,3,6);    // junção da grande área
-    open(130,180,2,6);    // corredor esquerdo
-    open(175,192,2,9);    // câmara estranha de chegada
-    open(185,225,4,7);    // poço experimental
-
-    // ===== SAÍDA 4: PLACEHOLDER — direita profunda, experimental =====
-    open(190,210,14,19);  // junção com saída 1
-    open(200,265,17,20);  // corredor lateral direito
-    open(250,285,13,20);  // câmara grande (geometria experimental)
-    open(270,300,15,18);  // saída da câmara
-
+    for(const [r0,r1,c0,c1] of DEFAULT_OPEN) paint(r0,r1,c0,c1,0);
+    for(const o of (ops||[])) paint(o.r0,o.r1,o.c0,o.c1,o.op==='close'?1:0);
     return m;
-  })();
+  }
+  let MAP=buildMap([]);
 
   // Lookup de parede no grid (ponto do mundo → tile)
   function isWall(wx,depth){
@@ -706,12 +680,11 @@
       const biolumPulse=0.35+0.65*Math.abs(Math.sin(t*0.038+biolumPhase));
       const glowAlpha=Math.max(0,(1-tY/500)*biolumPulse*0.82);
       if(glowAlpha>0.01){
-        const cBeyond=nav.depth>CORAL_DEPTH;
+        // verde IGUAL à bioluminescência ambiente — a criatura se disfarça entre elas
         const glowR=Math.min(h*0.20,110/Math.max(1,tY*0.08));
-        const gCol=cBeyond?'255,95,30':'255,55,8';
         const gr2=x.createRadialGradient(screenX,h/2,0,screenX,h/2,glowR*3.8);
-        gr2.addColorStop(0,`rgba(${gCol},${(glowAlpha*0.65).toFixed(3)})`);
-        gr2.addColorStop(0.35,`rgba(${gCol},${(glowAlpha*0.18).toFixed(3)})`);
+        gr2.addColorStop(0,`rgba(90,255,155,${(glowAlpha*0.65).toFixed(3)})`);
+        gr2.addColorStop(0.35,`rgba(35,190,90,${(glowAlpha*0.18).toFixed(3)})`);
         gr2.addColorStop(1,'transparent');
         x.save(); x.fillStyle=gr2; x.beginPath(); x.arc(screenX,h/2,glowR*3.8,0,6.28); x.fill(); x.restore();
       }
@@ -1998,6 +1971,11 @@
   // cooldown do jumpscare (configurado pelo guardião)
   ref.child("jumpscareCD").on("value",snap=>{
     const v=snap.val(); if(typeof v==="number"&&v>=0) jumpscareCD=v;
+  });
+  // mapa editado pelo guardião: reconstrói o grid (render/colisão/IA leem MAP dinamicamente)
+  ref.child("worldMap").on("value",snap=>{
+    const v=snap.val();
+    MAP=buildMap((v&&v.ops)||[]);
   });
   // grab: criatura agarrou o sub (guardião controla)
   ref.child("grabbedBy").on("value",snap=>{
