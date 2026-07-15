@@ -501,8 +501,21 @@
   // particulas
   // partículas suspensas "na cena": sx,sy = posição base na tela (0..1); pz = profundidade
   // na cena (0 longe .. 1 perto). o movimento do sub as translada (ver drawParticles).
+  // neve marinha: distribuição uniforme na tela, camadas de parallax, deriva própria
   const motes=[];
-  for(let i=0;i<110;i++)motes.push({sx:Math.random(),sy:Math.random(),pz:Math.random(),r:Math.random()*1.6+.4,ph:Math.random()*6.28});
+  for(let i=0;i<90;i++){
+    const big=Math.random()<0.25;
+    motes.push({
+      px:Math.random()*4000, py:Math.random()*4000,
+      z:0.35+Math.random()*0.65,
+      r:big?(1.4+Math.random()*1.2):(0.5+Math.random()*0.7),
+      soft:big,
+      a:big?(0.05+Math.random()*0.07):(0.08+Math.random()*0.16),
+      ph:Math.random()*6.28,
+      sink:0.05+Math.random()*0.12,
+      scrollX:0, scrollY:0
+    });
+  }
   // PLÂNCTON: partículas suspensas FIXAS no espaço do mundo (x lateral, profundidade, altura).
   // só ficam visíveis onde a lanterna ilumina — como sujeira/plâncton brilhando no facho.
   // distribuídas num volume ao redor do submarino; recicladas quando ficam pra trás.
@@ -533,28 +546,30 @@
     // rightMove = componente lateral da câmera (deslizamento horizontal na tela)
     const fwdMove  =  dX*Math.sin(hdg) + dDepth*Math.cos(hdg);
     const rightMove=  dX*Math.cos(hdg) - dDepth*Math.sin(hdg);
+    // luz ambiente encolhe alpha no fundo (neve marinha some no breu)
+    const dn_=Math.max(0,Math.min(1,(depth-START_DEPTH)/(MAX_DEPTH-START_DEPTH)));
+    const pAmb=0.45+(1-dn_*0.8)*0.55;
     for(const m of motes){
-      // escoamento radial ao avançar
-      m.pz += Math.abs(fwdMove)*0.010;
-      if(m.pz>1) m.pz-=1;
-      const spread=0.4+m.pz*0.7;
-      let px=(m.sx-0.5)*w*spread + w/2;
-      let py=(m.sy-0.5)*h*spread + h/2;
-      // corrente ambiente: turbulência suave mesmo com o sub parado
-      const ambX=Math.sin(t*0.018+m.ph*2.1)*0.28+Math.cos(t*0.011+m.ph*1.3)*0.13;
-      const ambY=Math.cos(t*0.014+m.ph*1.7)*0.22+Math.sin(t*0.009+m.ph*0.9)*0.10;
-      // acumuladores com leve atrito (evita deriva infinita)
-      m.scrollX=(m.scrollX||0)*0.97 - rightMove*2.8*moveMult - dHead*3.5*moveMult + ambX;
-      m.scrollY=(m.scrollY||0)*0.97 - dDepth*3.0*moveMult + ambY;
-      px += m.scrollX;
-      py += m.scrollY;
-      px=((px%w)+w)%w;
-      py=((py%h)+h)%h;
-      const sz=m.r*(0.7+m.pz*0.5);
-      const tw=0.5+0.5*Math.sin(t*0.05+m.ph);
-      x.globalAlpha=(0.06+m.pz*0.24)*(0.5+tw*0.5);
-      x.fillStyle="rgba(180,210,215,.7)";
-      x.beginPath();x.arc(px,py,sz,0,6.28);x.fill();
+      // deriva própria: afunda devagar + vagueia — viva mesmo com o sub parado
+      m.py+=m.sink*m.z;
+      m.px+=Math.sin(t*0.013+m.ph)*0.16*m.z;
+      // reação ao movimento do sub, com parallax pela camada z
+      m.scrollX=m.scrollX*0.94-(rightMove*2.2+dHead*3.0)*moveMult*m.z;
+      m.scrollY=m.scrollY*0.94-dDepth*2.6*moveMult*m.z;
+      const px=(((m.px+m.scrollX)%w)+w)%w;
+      const py=(((m.py+m.scrollY)%h)+h)%h;
+      const twk=0.55+0.45*Math.sin(t*0.03+m.ph*3);
+      x.globalAlpha=m.a*twk*(0.5+m.z*0.5)*pAmb;
+      if(m.soft){
+        // flocos maiores: núcleo + halo suave
+        x.fillStyle="rgba(170,200,210,.5)";
+        x.beginPath();x.arc(px,py,m.r*2.2,0,6.28);x.fill();
+        x.fillStyle="rgba(200,225,230,.9)";
+        x.beginPath();x.arc(px,py,m.r*0.8,0,6.28);x.fill();
+      } else {
+        x.fillStyle="rgba(190,215,220,.85)";
+        x.fillRect(px,py,m.r+0.4,m.r+0.4);
+      }
     }
     x.globalAlpha=1;
   }
@@ -740,11 +755,65 @@
     return pts;
   })();
 
+  // ===== TEXTURAS TILEÁVEIS (canvas + ImageData) =====
+  // Arquitetura pronta pra spritesheet: pra usar arte real no futuro, basta desenhar
+  // o PNG num canvas 256×256 e substituir {cnv, px} — o pipeline de render é idêntico.
+  const TEX_SIZE=256, TEX_MASK=255, TEX_SHIFT=8;
+  function makeTexture(kind){
+    const cnv=document.createElement('canvas'); cnv.width=cnv.height=TEX_SIZE;
+    const c2=cnv.getContext('2d');
+    const img=c2.createImageData(TEX_SIZE,TEX_SIZE);
+    const px=new Uint32Array(img.data.buffer);
+    // value noise tileável: lattice com índices modulares
+    const L=32, lat=new Float32Array(L*L);
+    let seed=kind==='wall'?7:kind==='floor'?13:29;
+    const rng=()=>{ seed=(seed*1664525+1013904223)>>>0; return seed/4294967296; };
+    for(let i=0;i<L*L;i++) lat[i]=rng();
+    function vnoise(u,v,cells){
+      const gu=u*cells, gv=v*cells;
+      const iu=Math.floor(gu), iv=Math.floor(gv);
+      const fu=gu-iu, fv=gv-iv;
+      const su=fu*fu*(3-2*fu), sv=fv*fv*(3-2*fv);
+      const i0=iu%cells, i1=(iu+1)%cells, j0=iv%cells, j1=(iv+1)%cells;
+      const a=lat[j0*L+i0], b=lat[j0*L+i1], c=lat[j1*L+i0], d=lat[j1*L+i1];
+      const top=a+(b-a)*su;
+      return top+((c+(d-c)*su)-top)*sv;
+    }
+    for(let y=0;y<TEX_SIZE;y++){
+      const v=y/TEX_SIZE;
+      for(let xx=0;xx<TEX_SIZE;xx++){
+        const u=xx/TEX_SIZE;
+        const n=vnoise(u,v,8)*0.55+vnoise(u,v,16)*0.28+vnoise(u,v,32)*0.17;
+        let lum;
+        if(kind==='wall'){
+          // estratos horizontais + fraturas escuras
+          const strata=0.78+0.22*Math.sin(v*6.28*3.0+n*4.0);
+          const crack=vnoise((u*4)%1,v,16)>0.82?0.55:1.0;
+          lum=(52+n*150)*strata*crack;
+        } else if(kind==='floor'){
+          // leito quebrado: manchas claras (pedras) sobre sedimento
+          const rock=vnoise(u,v,16)>0.72?1.25:1.0;
+          lum=(46+n*140)*rock;
+        } else {
+          // pilar: concreto/metal com nervuras verticais
+          const rib=0.82+0.18*Math.sin(u*6.28*10);
+          lum=(70+n*90)*rib;
+        }
+        lum=Math.max(14,Math.min(235,lum));
+        const r=lum|0, g=(lum*0.96)|0, b=(lum*0.90)|0; // quase neutra: o tint vem da água/luz
+        px[y*TEX_SIZE+xx]=(255<<24)|(b<<16)|(g<<8)|r;
+      }
+    }
+    c2.putImageData(img,0,0);
+    return {cnv, px, w:TEX_SIZE, h:TEX_SIZE};
+  }
+  const TEX_WALL=makeTexture('wall'), TEX_FLOOR=makeTexture('floor'), TEX_PILLAR=makeTexture('pillar');
+
   let grabStartT=0;
 
   // paleta de cor por profundidade: azul-teal raso → azul oceânico → verde-preto abissal (Subnautica)
   function depthRGB(dn){
-    const s=[[0.00,22,58,74],[0.10,14,42,62],[0.28,8,25,42],[0.55,4,15,26],[0.80,3,10,16],[1.00,2,9,7]];
+    const s=[[0.00,13,35,45],[0.10,8,25,37],[0.28,5,15,25],[0.55,2,9,15],[0.80,2,6,9],[1.00,1,5,4]];
     let i=0; while(i<s.length-1&&s[i+1][0]<=dn)i++;
     if(i>=s.length-1)return[s[i][1],s[i][2],s[i][3]];
     const f=(dn-s[i][0])/(s[i+1][0]-s[i][0]);
@@ -771,27 +840,31 @@
     x.restore();
   }
 
-  // facho: cone com falloff angular CONTÍNUO — 9 camadas concêntricas que estreitam,
-  // cada uma com alpha baixo. Nenhuma borda de clip fica visível (nada de triângulo).
+  // faróis DUPLOS montados no casco: origens FORA da tela (abaixo dos cantos
+  // inferiores do visor), convergindo no ponto de mira. Falloff angular contínuo
+  // em camadas — nenhuma borda de clip visível.
   function drawFlashlight(w,h,isOld_,beamAl_){
     if(!lightOn) return;
-    const cx=w*0.5, cy=h*0.56; // origem: ponto de montagem do farol, abaixo do centro
-    const angle=Math.atan2(beamY*h-cy,beamX*w-cx);
-    const len=Math.max(w,h)*1.6;
+    const tx=beamX*w, ty=beamY*h;
+    const len=Math.max(w,h)*1.8;
     const br=isOld_?235:132, bgc=isOld_?202:218, bb=isOld_?122:240;
     x.save(); x.globalCompositeOperation='screen';
-    const N=9, aOut=Math.PI/4.4, aIn=Math.PI/15;
-    for(let k=0;k<N;k++){
-      const f=k/(N-1);
-      const half=aOut+(aIn-aOut)*f;          // camada 0 = larga e tênue; última = núcleo
-      const al=(0.016+f*f*0.062)*beamAl_;
-      const g=x.createRadialGradient(cx,cy,0,cx,cy,len*(0.95-0.18*f));
-      g.addColorStop(0,`rgba(${br},${bgc},${bb},${al.toFixed(3)})`);
-      g.addColorStop(0.45,`rgba(${br*0.72|0},${bgc*0.78|0},${bb*0.85|0},${(al*0.38).toFixed(3)})`);
-      g.addColorStop(1,'rgba(0,0,0,0)');
-      x.fillStyle=g;
-      x.beginPath(); x.moveTo(cx,cy);
-      x.arc(cx,cy,len,angle-half,angle+half); x.closePath(); x.fill();
+    const orgs=[[-w*0.10,h*1.14],[w*1.10,h*1.14]];
+    const N=7, aOut=Math.PI/6.0, aIn=Math.PI/20;
+    for(const [ox,oy] of orgs){
+      const angle=Math.atan2(ty-oy,tx-ox);
+      for(let k=0;k<N;k++){
+        const f=k/(N-1);
+        const half=aOut+(aIn-aOut)*f;
+        const al=(0.011+f*f*0.043)*beamAl_;
+        const g=x.createRadialGradient(ox,oy,0,ox,oy,len*(1.0-0.15*f));
+        g.addColorStop(0,`rgba(${br},${bgc},${bb},${al.toFixed(3)})`);
+        g.addColorStop(0.5,`rgba(${br*0.72|0},${bgc*0.78|0},${bb*0.85|0},${(al*0.40).toFixed(3)})`);
+        g.addColorStop(1,'rgba(0,0,0,0)');
+        x.fillStyle=g;
+        x.beginPath(); x.moveTo(ox,oy);
+        x.arc(ox,oy,len,angle-half,angle+half); x.closePath(); x.fill();
+      }
     }
     x.restore();
   }
@@ -855,18 +928,6 @@
       const VIS_WALL = Math.max(180, 320 - depthN*140);
       const WALL_SIGHT = VIS_WALL*0.9;
 
-      // Hash-based value noise (sem sin, rápido) — 2 oitavas
-      function h2(ix,iy){ let n=(ix*374761393^iy*1120124553)&0x7fffffff; n=((n^(n>>>13))*1540483477)&0x7fffffff; return (n^(n>>>15))/2147483647; }
-      function rockPx(mx,my){
-        const ax=mx*0.55,ay=my*0.55,ix0=Math.floor(ax),iy0=Math.floor(ay);
-        const fx=ax-ix0,fy=ay-iy0,ux=fx*fx*(3-2*fx),uy=fy*fy*(3-2*fy);
-        const n1=(h2(ix0,iy0)+(h2(ix0+1,iy0)-h2(ix0,iy0))*ux)+((h2(ix0,iy0+1)+(h2(ix0+1,iy0+1)-h2(ix0,iy0+1))*ux)-(h2(ix0,iy0)+(h2(ix0+1,iy0)-h2(ix0,iy0))*ux))*uy;
-        const bx=mx*2.3,by=my*2.3,ix2=Math.floor(bx),iy2=Math.floor(by);
-        const fx2=bx-ix2,fy2=by-iy2,ux2=fx2*fx2*(3-2*fx2),uy2=fy2*fy2*(3-2*fy2);
-        const n2=(h2(ix2+7,iy2+3)+(h2(ix2+8,iy2+3)-h2(ix2+7,iy2+3))*ux2)+((h2(ix2+7,iy2+4)+(h2(ix2+8,iy2+4)-h2(ix2+7,iy2+4))*ux2)-(h2(ix2+7,iy2+3)+(h2(ix2+8,iy2+3)-h2(ix2+7,iy2+3))*ux2))*uy2;
-        return Math.max(0,Math.min(1,n1*0.65+n2*0.35));
-      }
-
       // ---- CHÃO via floor casting (lodev), SEM teto (canon: o teto foi descartado) ----
       // rowDist = posZ/p em WORLD UNITS (posZ = WALLH/2): o chão encontra a base das
       // paredes exatamente, e dissolve na cor da água na MESMA distância (WALL_SIGHT).
@@ -892,17 +953,17 @@
           const fstx=(fex-fsx)/w, fsty=(fey-fsy)/w;
           let flX=fsx, flY=fsy;
           const fi0=(y-floorStart)*w;
-          const lvBase=0.30+effectiveAmb*0.70;
+          const lvBase=0.34+effectiveAmb*0.72;
+          const fTr=isOld?1.00:0.74, fTg=isOld?0.86:0.92, fTb=isOld?0.60:1.10;
           for(let sx=0;sx<w;sx++){
-            const sh=rockPx(flX/UNITS_PER_M,flY/UNITS_PER_M);
+            // amostra da TEXTURA do chão por coords de mundo (1.6 texel/wu → tile=16m)
+            const ti=((((flY*1.6)|0)&TEX_MASK)<<TEX_SHIFT)|(((flX*1.6)|0)&TEX_MASK);
+            const tc=TEX_FLOOR.px[ti];
             const spotI=lightOn?Math.max(0,1-Math.hypot(sx-bxw,y-byh)/spotR_):0;
-            const texL=(26+sh*50)*(lvBase+spotI*0.85*fogF);
-            let tr,tg,tb;
-            if(isOld){tr=texL;tg=texL*0.85;tb=texL*0.62;}
-            else{tr=texL*0.78;tg=texL*0.94;tb=texL*1.08;}
-            const r=Math.min(255,tr*fogFK+waterR*wMixF)|0;
-            const g=Math.min(255,tg*fogFK+waterG*wMixF)|0;
-            const b=Math.min(255,tb*fogFK+waterB*wMixF)|0;
+            const kt=(lvBase+spotI*0.95*fogF)*fogFK;
+            const r=Math.min(255,(tc&255)*kt*fTr+waterR*wMixF)|0;
+            const g=Math.min(255,((tc>>>8)&255)*kt*fTg+waterG*wMixF)|0;
+            const b=Math.min(255,((tc>>>16)&255)*kt*fTb+waterB*wMixF)|0;
             fBuf[fi0+sx]=(255<<24)|(b<<16)|(g<<8)|r;
             flX+=fstx; flY+=fsty;
           }
@@ -936,48 +997,40 @@
         const colX=(i+0.5)*colW;
         const sh2=Math.min(h*1.4, WALLH/perp);
         const y0=h/2 - sh2/2, y1=h/2 + sh2/2;
-        // fog: presença da rocha (fogK) vs presença da água (wMix). NUNCA fade pra preto.
         const fog=Math.max(0, Math.min(1, 1 - dist/WALL_SIGHT));
         const fogK=fog*Math.sqrt(fog);
-        const wMix=1-fogK;
-        // textura: estratos horizontais + escorrimentos verticais + ruído
-        const strata=0.72+0.28*Math.sin(rd*0.0021)*Math.cos(rd*0.00088);
-        const streak=0.82+0.18*Math.cos(i*0.28+rd*0.00054);
-        const texN=0.5+0.5*Math.sin(rd*0.18+i*0.43)*Math.sin(rd*0.055+i*0.13);
-        const tex=texN*strata*streak;
         // facho nas paredes: ângulo do raio vs ângulo do cursor (camera space), atenua longe
         const beamAngH=(beamX-0.5)*FOV;
         const angDiffH=Math.abs(camAng-beamAngH);
         const litH=lightOn?Math.max(0,Math.min(1,(Math.PI/5-angDiffH)/(Math.PI/5-Math.PI/14))):0;
         const litV=lightOn?Math.max(0,1-Math.abs(beamY-0.5)*2.5):0;
         const lit=litH*litV*fog;
-        const sideShade=hitSide<0?0.82:1.0;
-        // luminância da superfície (SEM multiplicar fog — o fog entra só na mistura)
-        let rr,rg,rb;
-        if(hitKind==="pillar"){
-          const pl=Math.min(215,(38+texN*26)*(0.30+ambLight*0.70)+lit*105);
-          rr=pl*0.84; rg=pl*0.90; rb=pl*1.00;
-        } else if(hitKind==="floor_end"||hitKind==="station_wall"){
-          const fl=Math.min(190,(24+tex*34)*(0.30+ambLight*0.66)+lit*(isOld?70:88));
-          if(isOld){rr=fl;rg=fl*0.84;rb=fl*0.64;}
-          else{rr=fl*0.82;rg=fl*0.94;rb=fl*1.05;}
-        } else {
-          const texL=Math.min(215,(30+tex*58)*sideShade*(0.34+ambLight*0.72)+lit*(isOld?95:112));
-          if(isOld){rr=texL;rg=texL*0.87;rb=texL*0.68;}
-          else{rr=texL*0.80;rg=texL*0.95;rb=texL*1.08;}
-        }
-        // presença: pilar em fade também dissolve na água (não escurece pra preto)
+        const sideShade=hitSide<0?0.84:1.0;
+        // ---- TIRA DE TEXTURA (pipeline pronto pra spritesheet real) ----
+        // U = posição no mundo ao longo da superfície → coluna do tile
+        const texObj=hitKind==="pillar"?TEX_PILLAR:TEX_WALL;
+        const texU=hitKind==="pillar"
+          ? ((((rx*2.6)|0)%TEX_SIZE)+TEX_SIZE)%TEX_SIZE
+          : ((((rd*1.7)|0)%TEX_SIZE)+TEX_SIZE)%TEX_SIZE;
+        const xL=colX-colW/2-0.5, wW=colW+1, hS=y1-y0;
+        x.drawImage(texObj.cnv, texU, 0, 1, TEX_SIZE, xL, y0, wW, hS);
+        // escurecimento ambiente: rocha no breu é escura; o facho recupera a cor
+        const ambF=Math.max(0,Math.min(1,(0.24+ambLight*0.60)*sideShade+lit*0.72));
+        if(ambF<0.995){ x.fillStyle=`rgba(0,0,0,${(1-ambF).toFixed(3)})`; x.fillRect(xL,y0,wW,hS); }
+        // fog: dissolve na cor da água (pilar em fade dissolve também — nunca em preto)
         const pres=fogK*(hitKind==="pillar"?pillarVis:1);
-        const r=Math.min(255,rr*pres+waterR*(1-pres))|0;
-        const g=Math.min(255,rg*pres+waterG*(1-pres))|0;
-        const b=Math.min(255,rb*pres+waterB*(1-pres))|0;
-        x.fillStyle=`rgb(${r},${g},${b})`;
-        x.fillRect(colX-colW/2-0.5, y0, colW+1, y1-y0);
+        if(pres<0.995){ x.fillStyle=`rgba(${waterR|0},${waterG|0},${waterB|0},${(1-pres).toFixed(3)})`; x.fillRect(xL,y0,wW,hS); }
+        // brilho do facho por cima (luz espalhada na água em frente à rocha)
+        if(lit>0.05){
+          x.save(); x.globalCompositeOperation='screen';
+          x.fillStyle=isOld?`rgba(185,148,82,${(lit*0.28).toFixed(3)})`:`rgba(105,175,200,${(lit*0.30).toFixed(3)})`;
+          x.fillRect(xL,y0,wW,hS); x.restore();
+        }
         // sombra sutil nas arestas topo/base — some junto com a rocha
         if(pres>0.12){
           x.fillStyle=`rgba(0,0,0,${(0.22*pres).toFixed(2)})`;
-          x.fillRect(colX-colW/2-0.5, y0, colW+1, Math.max(1,sh2*0.05));
-          x.fillRect(colX-colW/2-0.5, y1-Math.max(1,sh2*0.05), colW+1, Math.max(1,sh2*0.05));
+          x.fillRect(xL, y0, wW, Math.max(1,sh2*0.05));
+          x.fillRect(xL, y1-Math.max(1,sh2*0.05), wW, Math.max(1,sh2*0.05));
         }
       }
       // sprites billboard no mundo (depth test pelo zbuffer)
