@@ -810,6 +810,9 @@
   const TEX_WALL=makeTexture('wall'), TEX_FLOOR=makeTexture('floor'), TEX_PILLAR=makeTexture('pillar');
 
   let grabStartT=0;
+  // canvas offscreen do chão: putImageData ignora o transform de DPR do contexto
+  // principal — renderiza aqui e blita com drawImage (que respeita o transform)
+  let floorCnv=null, floorCtx=null, floorImgC=null;
 
   // paleta de cor por profundidade: azul-teal raso → azul oceânico → verde-preto abissal (Subnautica)
   function depthRGB(dn){
@@ -840,32 +843,48 @@
     x.restore();
   }
 
-  // faróis DUPLOS montados no casco: origens FORA da tela (abaixo dos cantos
-  // inferiores do visor), convergindo no ponto de mira. Falloff angular contínuo
-  // em camadas — nenhuma borda de clip visível.
+  // faróis DUPLOS indo PRA FRENTE: cada feixe é um cone que CONVERGE no ponto de
+  // mira (perspectiva — afunila e morre na distância, não abre na tela), com
+  // gradiente ao longo do eixo e um DISCO elíptico onde a luz atinge a superfície.
   function drawFlashlight(w,h,isOld_,beamAl_){
     if(!lightOn) return;
     const tx=beamX*w, ty=beamY*h;
-    const len=Math.max(w,h)*1.8;
     const br=isOld_?235:132, bgc=isOld_?202:218, bb=isOld_?122:240;
     x.save(); x.globalCompositeOperation='screen';
-    const orgs=[[-w*0.10,h*1.14],[w*1.10,h*1.14]];
-    const N=7, aOut=Math.PI/6.0, aIn=Math.PI/20;
+    // origens sob os cantos inferiores do visor (fora da vista)
+    const orgs=[[w*0.10,h*1.18],[w*0.90,h*1.18]];
+    const N=5;
     for(const [ox,oy] of orgs){
-      const angle=Math.atan2(ty-oy,tx-ox);
+      const dxb=tx-ox, dyb=ty-oy;
+      const L=Math.hypot(dxb,dyb)||1;
+      const nx=-dyb/L, ny=dxb/L; // perpendicular ao eixo do feixe
+      const baseW=w*0.135, tipW=w*0.012;
       for(let k=0;k<N;k++){
         const f=k/(N-1);
-        const half=aOut+(aIn-aOut)*f;
-        const al=(0.011+f*f*0.043)*beamAl_;
-        const g=x.createRadialGradient(ox,oy,0,ox,oy,len*(1.0-0.15*f));
-        g.addColorStop(0,`rgba(${br},${bgc},${bb},${al.toFixed(3)})`);
-        g.addColorStop(0.5,`rgba(${br*0.72|0},${bgc*0.78|0},${bb*0.85|0},${(al*0.40).toFixed(3)})`);
+        const bwid=baseW*(1-f*0.72), twid=tipW*(1-f*0.5);
+        const al=(0.020+f*f*0.055)*beamAl_;
+        const g=x.createLinearGradient(ox,oy,tx,ty);
+        g.addColorStop(0,`rgba(${br},${bgc},${bb},${(al*0.55).toFixed(3)})`);
+        g.addColorStop(0.30,`rgba(${br},${bgc},${bb},${al.toFixed(3)})`);
         g.addColorStop(1,'rgba(0,0,0,0)');
         x.fillStyle=g;
-        x.beginPath(); x.moveTo(ox,oy);
-        x.arc(ox,oy,len,angle-half,angle+half); x.closePath(); x.fill();
+        x.beginPath();
+        x.moveTo(ox+nx*bwid, oy+ny*bwid);
+        x.lineTo(tx+nx*twid, ty+ny*twid);
+        x.lineTo(tx-nx*twid, ty-ny*twid);
+        x.lineTo(ox-nx*bwid, oy-ny*bwid);
+        x.closePath(); x.fill();
       }
     }
+    // disco do facho: mancha elíptica achatada onde os feixes atingem
+    const hot=0.16*beamAl_;
+    const rx_=w*0.15;
+    const gh=x.createRadialGradient(tx,ty,0,tx,ty,rx_);
+    gh.addColorStop(0,`rgba(${br},${bgc},${bb},${hot.toFixed(3)})`);
+    gh.addColorStop(0.5,`rgba(${br},${bgc},${bb},${(hot*0.35).toFixed(3)})`);
+    gh.addColorStop(1,'rgba(0,0,0,0)');
+    x.save(); x.translate(tx,ty); x.scale(1,0.62); x.translate(-tx,-ty);
+    x.fillStyle=gh; x.beginPath(); x.arc(tx,ty,rx_,0,6.28); x.fill(); x.restore();
     x.restore();
   }
 
@@ -932,17 +951,28 @@
       // rowDist = posZ/p em WORLD UNITS (posZ = WALLH/2): o chão encontra a base das
       // paredes exatamente, e dissolve na cor da água na MESMA distância (WALL_SIGHT).
       const posZ=WALLH*0.5;
+      const hI=Math.floor(h), wI=Math.max(2,Math.floor(w));
       const floorStart=Math.max(Math.floor(hh)+1, Math.ceil(hh+posZ/WALL_SIGHT));
-      const floorH=h-floorStart;
+      const floorH=hI-floorStart;
       if(floorH>0){
-        const floorImg=x.createImageData(w,floorH);
-        const fBuf=new Uint32Array(floorImg.data.buffer);
+        // offscreen SEM transform: putImageData ignora o DPR do contexto principal.
+        // buffer alocado no tamanho máximo (h/2) — sem realloc quando floorH varia.
+        const maxFH=Math.ceil(hI*0.5)+2;
+        if(!floorCnv||floorCnv.width!==wI||floorCnv.height<maxFH){
+          floorCnv=document.createElement('canvas');
+          floorCnv.width=wI; floorCnv.height=maxFH;
+          floorCtx=floorCnv.getContext('2d');
+          floorImgC=floorCtx.createImageData(wI,maxFH);
+        }
+        const fBuf=new Uint32Array(floorImgC.data.buffer);
         // pre-fill opaco com a cor da água: linhas distantes = água, sem emenda com o fundo
         const pkR=waterR|0, pkG=waterG|0, pkB=waterB|0;
-        fBuf.fill((255<<24)|(pkB<<16)|(pkG<<8)|pkR);
-        const spotR_=Math.min(w,h)*0.55;
-        const bxw=beamX*w, byh=beamY*h;
-        for(let y=floorStart;y<h;y++){
+        fBuf.fill((255<<24)|(pkB<<16)|(pkG<<8)|pkR,0,floorH*wI);
+        const spotR_=Math.min(wI,hI)*0.55;
+        const bxw=beamX*wI, byh=beamY*h;
+        const lvBase=0.34+effectiveAmb*0.72;
+        const fTr=isOld?1.00:0.74, fTg=isOld?0.86:0.92, fTb=isOld?0.60:1.10;
+        for(let y=floorStart;y<hI;y++){
           const p=y-hh;
           const rowDist=posZ/p;
           const fogF=Math.max(0,Math.min(1,1-rowDist/WALL_SIGHT));
@@ -950,12 +980,10 @@
           const fogFK=fogF*Math.sqrt(fogF), wMixF=1-fogFK;
           const fsx=rowDist*(dirX-planeX)+posX, fsy=rowDist*(dirY-planeY)+posY;
           const fex=rowDist*(dirX+planeX)+posX, fey=rowDist*(dirY+planeY)+posY;
-          const fstx=(fex-fsx)/w, fsty=(fey-fsy)/w;
+          const fstx=(fex-fsx)/wI, fsty=(fey-fsy)/wI;
           let flX=fsx, flY=fsy;
-          const fi0=(y-floorStart)*w;
-          const lvBase=0.34+effectiveAmb*0.72;
-          const fTr=isOld?1.00:0.74, fTg=isOld?0.86:0.92, fTb=isOld?0.60:1.10;
-          for(let sx=0;sx<w;sx++){
+          const fi0=(y-floorStart)*wI;
+          for(let sx=0;sx<wI;sx++){
             // amostra da TEXTURA do chão por coords de mundo (1.6 texel/wu → tile=16m)
             const ti=((((flY*1.6)|0)&TEX_MASK)<<TEX_SHIFT)|(((flX*1.6)|0)&TEX_MASK);
             const tc=TEX_FLOOR.px[ti];
@@ -968,7 +996,9 @@
             flX+=fstx; flY+=fsty;
           }
         }
-        x.putImageData(floorImg,0,floorStart);
+        floorCtx.putImageData(floorImgC,0,0,0,0,wI,floorH);
+        // drawImage respeita o transform de DPR — o chão cai exatamente onde deve
+        x.drawImage(floorCnv,0,0,wI,floorH,0,floorStart,wI,floorH);
       }
 
       // ---- PAREDES (raycasting) ----
@@ -1007,11 +1037,12 @@
         const lit=litH*litV*fog;
         const sideShade=hitSide<0?0.84:1.0;
         // ---- TIRA DE TEXTURA (pipeline pronto pra spritesheet real) ----
-        // U = posição no mundo ao longo da superfície → coluna do tile
+        // U = (rx+rd): coordenada DIAGONAL do mundo. Numa parede norte-sul o rd varia;
+        // numa face leste-oeste o rx varia — nunca fica constante (sem coluna esticada).
         const texObj=hitKind==="pillar"?TEX_PILLAR:TEX_WALL;
         const texU=hitKind==="pillar"
-          ? ((((rx*2.6)|0)%TEX_SIZE)+TEX_SIZE)%TEX_SIZE
-          : ((((rd*1.7)|0)%TEX_SIZE)+TEX_SIZE)%TEX_SIZE;
+          ? (((((rx+rd)*2.6)|0)%TEX_SIZE)+TEX_SIZE)%TEX_SIZE
+          : (((((rx+rd)*1.7)|0)%TEX_SIZE)+TEX_SIZE)%TEX_SIZE;
         const xL=colX-colW/2-0.5, wW=colW+1, hS=y1-y0;
         x.drawImage(texObj.cnv, texU, 0, 1, TEX_SIZE, xL, y0, wW, hS);
         // escurecimento ambiente: rocha no breu é escura; o facho recupera a cor
