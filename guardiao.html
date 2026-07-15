@@ -900,7 +900,7 @@
       const beh=ent.behavior||'wander';
       const spd=typeof ent.speed==='number'?ent.speed:20;
       const atk=ent.attackMode||'collision';
-      const aggrD=typeof ent.aggressionDist==='number'?ent.aggressionDist:300;
+      const aggrD=typeof ent.postCollisionDist==='number'?ent.postCollisionDist:300;
       const isGrab=(atk==='grab');
       const isGrabbed=(currentGrabbedBy===id);
       el.innerHTML=`<div style="font-size:9px;color:#ff4400;letter-spacing:.1em;margin-bottom:5px">CRIATURA</div>
@@ -924,17 +924,20 @@
           <button class="btn sel-atk" data-a="collision" style="flex:1;font-size:9px${!isGrab?';color:var(--warn);border-color:var(--warn-dim)':''}">COLISÃO</button>
           <button class="btn sel-atk" data-a="grab" style="flex:1;font-size:9px${isGrab?';color:var(--danger);border-color:var(--danger)':''}">AGARRAR</button>
         </div>
-        ${!isGrab?`<div style="font-size:9px;color:var(--ink-dim);letter-spacing:.08em;margin-bottom:3px">AGRESSIVIDADE (wu)</div>
+        ${!isGrab?`<div style="font-size:9px;color:var(--ink-dim);letter-spacing:.08em;margin-bottom:3px">DIST. PÓS-COLISÃO (wu)</div>
         <div style="display:flex;gap:4px;align-items:center;margin-bottom:5px">
-          <input type="number" id="sel-aggr" min="50" max="2000" value="${aggrD}" style="flex:1;background:var(--bg);border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:12px;padding:4px 6px;border-radius:3px">
-          <button class="btn sel-aggr-reset" style="font-size:9px">↺ 300</button>
+          <input type="number" id="sel-pcd" min="50" max="2000" value="${aggrD}" style="flex:1;background:var(--bg);border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:12px;padding:4px 6px;border-radius:3px">
+          <button class="btn sel-pcd-reset" style="font-size:9px">↺ 300</button>
         </div>`:`<div style="display:flex;gap:4px;margin-bottom:5px">
           <button class="btn sel-grab-target" style="flex:1;font-size:9px;color:${settingGrabTarget?'#ff8800':'var(--ink-dim)'}">
             ${settingGrabTarget?'↙ CLIQUE NO MAPA':'DEFINIR ALVO'}
           </button>
           ${isGrabbed?`<button class="btn sel-grab-release" style="flex:1;font-size:9px;color:var(--danger)">SOLTAR</button>`:''}
         </div>`}
-        <button class="btn sel-rm" style="font-size:9px;color:var(--danger);width:100%">remover</button>`;
+        <div style="display:flex;gap:4px;margin-bottom:5px">
+          <button class="btn sel-dismiss" style="flex:1;font-size:9px;color:var(--warn-dim)">DISPENSAR</button>
+          <button class="btn sel-rm" style="flex:1;font-size:9px;color:var(--danger)">REMOVER</button>
+        </div>`;
     }
   }
   document.getElementById('selectedControls').addEventListener('click',e=>{
@@ -942,24 +945,42 @@
     const vb=e.target.closest('.sel-vis');
     if(vb){ const vis=vb.dataset.v==='true'; entities[id]={...entities[id],visible:vis}; subRef.child('entities/'+id+'/visible').set(vis); renderSelectedPanel(); return; }
     const bh=e.target.closest('.sel-beh');
-    if(bh){ const beh=bh.dataset.b,chasing=(beh==='chase'); entities[id]={...entities[id],behavior:beh,chasing}; subRef.child('entities/'+id).update({behavior:beh,chasing}); renderSelectedPanel(); renderEntityList(); return; }
+    if(bh){
+      const beh=bh.dataset.b, chasing=(beh==='chase');
+      entities[id]={...entities[id],behavior:beh,chasing};
+      subRef.child('entities/'+id).update({behavior:beh,chasing});
+      if(!chasing&&currentGrabbedBy===id){ currentGrabbedBy=null; subRef.child('grabbedBy').set(null); subRef.child('grabTarget').set(null); }
+      renderSelectedPanel(); renderEntityList(); return;
+    }
     const rs=e.target.closest('.sel-spd-reset');
     if(rs){ const inp=document.getElementById('sel-spd'); if(inp) inp.value=20; entities[id]={...entities[id],speed:20}; subRef.child('entities/'+id+'/speed').set(20); renderSelectedPanel(); return; }
     const ab=e.target.closest('.sel-atk');
     if(ab){ const atk=ab.dataset.a; entities[id]={...entities[id],attackMode:atk}; subRef.child('entities/'+id+'/attackMode').set(atk); renderSelectedPanel(); return; }
-    const agr=e.target.closest('.sel-aggr-reset');
-    if(agr){ const inp=document.getElementById('sel-aggr'); if(inp) inp.value=300; entities[id]={...entities[id],aggressionDist:300}; subRef.child('entities/'+id+'/aggressionDist').set(300); renderSelectedPanel(); return; }
+    const pcd=e.target.closest('.sel-pcd-reset');
+    if(pcd){ const inp=document.getElementById('sel-pcd'); if(inp) inp.value=300; entities[id]={...entities[id],postCollisionDist:300}; subRef.child('entities/'+id+'/postCollisionDist').set(300); renderSelectedPanel(); return; }
     const gt=e.target.closest('.sel-grab-target');
     if(gt){ settingGrabTarget=!settingGrabTarget; mapCanvas.style.cursor=settingGrabTarget?'crosshair':''; renderSelectedPanel(); return; }
     const gr=e.target.closest('.sel-grab-release');
     if(gr){ currentGrabbedBy=null; subRef.child('grabbedBy').set(null); subRef.child('grabTarget').set(null); renderSelectedPanel(); return; }
+    const dm=e.target.closest('.sel-dismiss');
+    if(dm){
+      const ent_=entities[id];
+      const dismissTarget={x:(ent_.wx||0)+(Math.random()-0.5)*200, depth:Math.min(GRID_ROWS*TILE-TILE,(ent_.wd||1000)+5000)};
+      if(currentGrabbedBy===id){ currentGrabbedBy=null; subRef.child('grabbedBy').set(null); subRef.child('grabTarget').set(null); }
+      entities[id]={...entities[id],behavior:'dismiss',chasing:false,dismissTarget};
+      subRef.child('entities/'+id).update({behavior:'dismiss',chasing:false,dismissTarget});
+      renderSelectedPanel(); renderEntityList(); return;
+    }
     const rm=e.target.closest('.sel-rm');
-    if(rm){ subRef.child('entities/'+id).set(null); delete entities[id]; if(deadFishId===id) deadFishId=null; selectedEntityId=null; renderSelectedPanel(); renderEntityList(); return; }
+    if(rm){
+      if(currentGrabbedBy===id){ currentGrabbedBy=null; subRef.child('grabbedBy').set(null); subRef.child('grabTarget').set(null); }
+      subRef.child('entities/'+id).set(null); delete entities[id]; if(deadFishId===id) deadFishId=null; selectedEntityId=null; renderSelectedPanel(); renderEntityList(); return;
+    }
   });
   document.getElementById('selectedControls').addEventListener('change',e=>{
     const id=selectedEntityId; if(!id||!entities[id]) return;
     if(e.target.id==='sel-spd'){ const spd=Math.max(1,Math.min(300,parseInt(e.target.value)||20)); e.target.value=spd; entities[id]={...entities[id],speed:spd}; subRef.child('entities/'+id+'/speed').set(spd); }
-    if(e.target.id==='sel-aggr'){ const a=Math.max(50,Math.min(2000,parseInt(e.target.value)||300)); e.target.value=a; entities[id]={...entities[id],aggressionDist:a}; subRef.child('entities/'+id+'/aggressionDist').set(a); }
+    if(e.target.id==='sel-pcd'){ const a=Math.max(50,Math.min(2000,parseInt(e.target.value)||300)); e.target.value=a; entities[id]={...entities[id],postCollisionDist:a}; subRef.child('entities/'+id+'/postCollisionDist').set(a); }
   });
 
   // ---- Lista compacta de entidades ----
