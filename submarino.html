@@ -377,10 +377,10 @@
   }
 
   // Estrutura da petroleira acima do START_DEPTH (pilares decorativos + parede de fundo)
-  const STATION_TOP=1200, STATION_PILLARS_LO=1500, STATION_PILLARS_HI=1950;
+  const STATION_TOP=1200, STATION_PILLARS_HI=1950;
   const STATION_PILLARS_FADE=2800; // pilares desaparecem gradualmente até aqui
   function _pillarHit(x,depth){
-    if(depth<STATION_PILLARS_LO) return false;
+    if(depth<STATION_TOP+100) return false; // nascem na BASE da estrutura da estação
     const halfGap=36, pillarR=22; // hw=80: halfGap=0.45*80=36, pillarR=0.28*80=22
     return (Math.abs(x-(-halfGap))<pillarR || Math.abs(x-halfGap)<pillarR);
   }
@@ -791,17 +791,21 @@
           const crack=vnoise((u*4)%1,v,16)>0.82?0.55:1.0;
           lum=(52+n*150)*strata*crack;
         } else if(kind==='floor'){
-          // leito quebrado: manchas claras (pedras) sobre sedimento
-          const rock=vnoise(u,v,16)>0.72?1.25:1.0;
-          lum=(46+n*140)*rock;
+          // leito ROCHOSO: fraturas escuras + manchas — mesmo caráter das paredes
+          const crackF=vnoise((u*3)%1,(v*3)%1,16)>0.78?0.52:1.0;
+          const patch=0.70+0.30*vnoise(u,v,8);
+          lum=(34+n*118)*crackF*patch;
         } else {
-          // pilar: concreto/metal com nervuras verticais
-          const rib=0.82+0.18*Math.sin(u*6.28*10);
-          lum=(70+n*90)*rib;
+          // pilar: AÇO — painéis verticais, linhas de solda horizontais, riscos claros
+          const rib=0.80+0.20*Math.abs(Math.sin(u*6.28*6));
+          const seam=(y&63)<3?0.55:1.0;
+          const scratch=vnoise((u*8)%1,v,32)>0.86?1.30:1.0;
+          lum=(88+n*52)*rib*seam*scratch;
         }
         lum=Math.max(14,Math.min(235,lum));
-        const r=lum|0, g=(lum*0.96)|0, b=(lum*0.90)|0; // quase neutra: o tint vem da água/luz
-        px[y*TEX_SIZE+xx]=(255<<24)|(b<<16)|(g<<8)|r;
+        // pilar recebe tint frio de metal; rocha fica quase neutra (tint vem da água/luz)
+        const cRk=kind==='pillar'?0.90:1.00, cGk=kind==='pillar'?0.97:0.96, cBk=kind==='pillar'?1.06:0.90;
+        px[y*TEX_SIZE+xx]=(255<<24)|(((lum*cBk)|0)<<16)|(((lum*cGk)|0)<<8)|((lum*cRk)|0);
       }
     }
     c2.putImageData(img,0,0);
@@ -813,6 +817,8 @@
   // canvas offscreen do chão: putImageData ignora o transform de DPR do contexto
   // principal — renderiza aqui e blita com drawImage (que respeita o transform)
   let floorCnv=null, floorCtx=null, floorImgC=null;
+  // proximidade da superfície mirada (0=longe, 1=perto), suavizada — controla o feixe
+  let aimNearSm=0;
 
   // paleta de cor por profundidade: azul-teal raso → azul oceânico → verde-preto abissal (Subnautica)
   function depthRGB(dn){
@@ -850,22 +856,27 @@
     if(!lightOn) return;
     const tx=beamX*w, ty=beamY*h;
     const br=isOld_?235:132, bgc=isOld_?202:218, bb=isOld_?122:240;
+    const near=aimNearSm; // 1 = mirando superfície perto; 0 = mirando o breu
     x.save(); x.globalCompositeOperation='screen';
-    // origens sob os cantos inferiores do visor (fora da vista)
-    const orgs=[[w*0.10,h*1.18],[w*0.90,h*1.18]];
+    // três emissores: dois faróis nos cantos + preenchimento central FRACO
+    // (o central elimina o losango escuro entre os dois feixes convergentes)
+    const orgs=[[w*0.10,h*1.18,1.0],[w*0.90,h*1.18,1.0],[w*0.50,h*1.26,0.45]];
     const N=5;
-    for(const [ox,oy] of orgs){
+    // perto: feixe grosso e definido; longe: fino e difuso
+    const baseW=w*(0.11+0.05*near), tipW=w*(0.008+0.055*near);
+    const alphaK=(0.72+0.55*near)*beamAl_;
+    const fadeEnd=0.30+0.38*near; // perto: o brilho segue firme até quase o alvo
+    for(const [ox,oy,mult] of orgs){
       const dxb=tx-ox, dyb=ty-oy;
       const L=Math.hypot(dxb,dyb)||1;
       const nx=-dyb/L, ny=dxb/L; // perpendicular ao eixo do feixe
-      const baseW=w*0.135, tipW=w*0.012;
       for(let k=0;k<N;k++){
         const f=k/(N-1);
         const bwid=baseW*(1-f*0.72), twid=tipW*(1-f*0.5);
-        const al=(0.020+f*f*0.055)*beamAl_;
+        const al=(0.020+f*f*0.055)*alphaK*mult;
         const g=x.createLinearGradient(ox,oy,tx,ty);
         g.addColorStop(0,`rgba(${br},${bgc},${bb},${(al*0.55).toFixed(3)})`);
-        g.addColorStop(0.30,`rgba(${br},${bgc},${bb},${al.toFixed(3)})`);
+        g.addColorStop(fadeEnd,`rgba(${br},${bgc},${bb},${al.toFixed(3)})`);
         g.addColorStop(1,'rgba(0,0,0,0)');
         x.fillStyle=g;
         x.beginPath();
@@ -876,12 +887,13 @@
         x.closePath(); x.fill();
       }
     }
-    // disco do facho: mancha elíptica achatada onde os feixes atingem
-    const hot=0.16*beamAl_;
-    const rx_=w*0.15;
+    // disco do facho: perto = menor, mais forte e nítido; longe = maior, fraco e difuso
+    const hot=(0.10+0.14*near)*beamAl_;
+    const rx_=w*(0.10+0.15*(1-near));
+    const coreStop=0.25+0.35*near;
     const gh=x.createRadialGradient(tx,ty,0,tx,ty,rx_);
     gh.addColorStop(0,`rgba(${br},${bgc},${bb},${hot.toFixed(3)})`);
-    gh.addColorStop(0.5,`rgba(${br},${bgc},${bb},${(hot*0.35).toFixed(3)})`);
+    gh.addColorStop(coreStop,`rgba(${br},${bgc},${bb},${(hot*0.55).toFixed(3)})`);
     gh.addColorStop(1,'rgba(0,0,0,0)');
     x.save(); x.translate(tx,ty); x.scale(1,0.62); x.translate(-tx,-ty);
     x.fillStyle=gh; x.beginPath(); x.arc(tx,ty,rx_,0,6.28); x.fill(); x.restore();
@@ -1063,6 +1075,14 @@
           x.fillRect(xL, y0, wW, Math.max(1,sh2*0.05));
           x.fillRect(xL, y1-Math.max(1,sh2*0.05), wW, Math.max(1,sh2*0.05));
         }
+      }
+      // distância da superfície mirada: o feixe engrossa perto, afina e borra longe
+      {
+        const iAim=Math.max(0,Math.min(COLS-1,Math.round(beamX*(COLS-1))));
+        let dAim=zBuffer[iAim];
+        if(beamY*h>hh+1){ const pAim=beamY*h-hh; dAim=Math.min(dAim,posZ/pAim); }
+        const tgt=Math.max(0,Math.min(1,1-dAim/WALL_SIGHT));
+        aimNearSm+=(tgt-aimNearSm)*0.12;
       }
       // sprites billboard no mundo (depth test pelo zbuffer)
       if(mode==="diving"||mode==="reeling"){
