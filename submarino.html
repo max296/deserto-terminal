@@ -577,24 +577,6 @@
     }
     flush(sx1+1); x.restore();
   }
-  // overlay preto clipeado ao z-buffer: dissolve a criatura no breu em vez de fade transparente
-  function billboardDarken(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_,screenX,tY,projH,projW){
-    const fog=Math.max(0,Math.min(1,1-tY/(VIS_WALL_*0.9)));
-    const dark=1-fog; if(dark<0.02) return;
-    const y0=h/2-projH/2;
-    const x0=screenX-projW/2, x1=screenX+projW/2;
-    if(x1<0||x0>w) return;
-    const sx0=Math.max(0,Math.floor(x0)), sx1=Math.min(w-1,Math.ceil(x1));
-    x.save(); x.globalAlpha=dark; x.fillStyle='#000';
-    let seg=-1;
-    const flush=(end)=>{if(seg<0)return; x.fillRect(seg,y0,end-seg,projH); seg=-1;};
-    for(let sx=sx0;sx<=sx1;sx++){
-      const col=Math.min(COLS_-1,Math.floor(sx/colW_));
-      if(tY<zBuf[col]){if(seg<0)seg=sx;} else flush(sx);
-    }
-    flush(sx1+1); x.restore();
-  }
-
   function drawFishSprites(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_){
     if(!fishFrames.length) return;
     const ents=Object.values(fishEntities).filter(e=>e&&e.visible!==false);
@@ -636,7 +618,11 @@
       const relAngle=((viewAngle-fishHdgRad)*(180/Math.PI)+720)%360;
       const fIdx=Math.round(relAngle/45)%8;
 
-      billboardDraw(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_,screenX,tY,projH,projW,fishFrames[fIdx]);
+      const fishBR=Math.min(w,h)*0.62;
+      const fishLit=lightOn?Math.max(0,1-Math.hypot(screenX-beamX*w,h*0.5-beamY*h)/fishBR):0;
+      const fishAmb=Math.max(0.05,1-Math.max(0,Math.min(1,(nav.depth-START_DEPTH)/(MAX_DEPTH-START_DEPTH)))*0.8);
+      const fishAlpha=Math.min(1,fishAmb*0.65+fishLit*0.4);
+      billboardDraw(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_,screenX,tY,projH,projW,fishFrames[fIdx],fishAlpha);
     }
   }
 
@@ -656,26 +642,39 @@
     ents.sort(([,a],[,b])=>Math.hypot((b.wx||0)-nav.x,(b.wd||0)-nav.depth)-Math.hypot((a.wx||0)-nav.x,(a.wd||0)-nav.depth));
 
     for(const [id,ent] of ents){
-      const {tX,tY}=billboardTransform(ent.wx||0,ent.wd||nav.depth,hdg,invDet,dirX,dirY);
+      // quando agarrado: projeta a criatura 200wu à frente do sub para o billboard
+      const chasing=ent.behavior==='chase'||ent.chasing;
+      let billWx=ent.wx||0, billWd=ent.wd||nav.depth;
+      if(grabbedBy===id){
+        const hdgRad=nav.heading*Math.PI/180;
+        billWx=nav.x+Math.sin(hdgRad)*200;
+        billWd=nav.depth+Math.cos(hdgRad)*200;
+      }
+      const {tX,tY}=billboardTransform(billWx,billWd,hdg,invDet,dirX,dirY);
       if(tY<=0.5) continue;
       const screenX=w/2*(1+tX/tY);
       const fog=Math.max(0,Math.min(1,1-tY/(VIS_WALL_*0.9)));
       if(fog<0.05) continue;
 
+      // iluminação: quase invisível no breu, revelada pelo facho da lanterna
+      const cAmb=Math.max(0.05,1-Math.max(0,Math.min(1,(nav.depth-START_DEPTH)/(MAX_DEPTH-START_DEPTH)))*0.8);
+      const cBR=Math.min(w,h)*0.62;
+      const cLit=lightOn?Math.max(0,1-Math.hypot(screenX-beamX*w,h*0.5-beamY*h)/cBR):0;
+      const lightFactor=Math.min(1, cAmb*0.15 + cLit*cLit*0.95);
+
       if(dfFrames.length){
         // ---- Rotação estilo Doom ----
-        const viewAngle=Math.atan2(nav.x-(ent.wx||0), nav.depth-(ent.wd||nav.depth));
-        // chase: criatura sempre vira para o sub → facing = viewAngle → relDeg = 0 (de frente)
-        const chasing=ent.behavior==='chase'||ent.chasing;
+        const viewAngle=Math.atan2(nav.x-billWx, nav.depth-billWd);
+        // chase: facing = viewAngle → relDeg = 0 → row 4 = de frente para o sub
         const facing=chasing?viewAngle:(ent._facing||0);
         let relDeg=((viewAngle-facing)*180/Math.PI+360)%360;
         const flipX=relDeg>180;
         if(flipX) relDeg=360-relDeg;
         // spritesheet: row 0 = lado, row 4 = de frente (invertido do padrão Doom)
         const rotRow=4-Math.min(4, Math.round(relDeg/45));
-        // boomerang: ping-pong 0→1→2→3→4→3→2→1→0→... com cross-fade entre frames
+        // boomerang ping-pong lento com cross-fade entre frames
         const PING=(DF_COLS-1)*2;
-        const fi=(t*0.12)%PING;
+        const fi=(t*0.055)%PING;
         const fi0=Math.floor(fi), fi1=(fi0+1)%PING;
         const blend=fi-fi0;
         const frames=flipX?dfFramesFlip:dfFrames;
@@ -686,9 +685,8 @@
 
         const projH=Math.min(h*3.5, WALLH_*3.2/tY);
         const projW=projH*(frame0.width/frame0.height);
-        billboardDraw(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_,screenX,tY,projH,projW,frame0,1-blend);
-        if(blend>0.02) billboardDraw(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_,screenX,tY,projH,projW,frame1,blend);
-        billboardDarken(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_,screenX,tY,projH,projW);
+        billboardDraw(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_,screenX,tY,projH,projW,frame0,lightFactor*(1-blend));
+        if(blend>0.02) billboardDraw(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_,screenX,tY,projH,projW,frame1,lightFactor*blend);
       } else {
         // fallback procedural
         const projH=Math.min(h*1.2, WALLH_*0.7/tY);
@@ -1131,6 +1129,55 @@
     return true;
   }
 
+  // BFS no grid: encontra caminho livre de (startX,startD) a (endX,endD)
+  function bfsPath(startX,startD,endX,endD){
+    const clampR=r=>Math.max(0,Math.min(GRID_ROWS-1,r));
+    const clampC=c=>Math.max(0,Math.min(GRID_COLS-1,c));
+    const r0=clampR(Math.floor(startD/TILE)), c0=clampC(Math.floor((startX-X_MIN_W)/TILE));
+    const r1=clampR(Math.floor(endD/TILE)),   c1=clampC(Math.floor((endX-X_MIN_W)/TILE));
+    if(r0===r1&&c0===c1) return [{x:X_MIN_W+c1*TILE+TILE/2,depth:r1*TILE+TILE/2}];
+    const key=(r,c)=>r*GRID_COLS+c;
+    const parent=new Map([[key(r0,c0),null]]);
+    const queue=[[r0,c0]];
+    const DIRS=[[0,1],[0,-1],[1,0],[-1,0]];
+    let found=false;
+    outer: while(queue.length>0){
+      const [r,c]=queue.shift();
+      for(const [dr,dc] of DIRS){
+        const nr=clampR(r+dr), nc=clampC(c+dc);
+        if(!MAP[nr]||MAP[nr][nc]!==0) continue;
+        const k=key(nr,nc);
+        if(parent.has(k)) continue;
+        parent.set(k,key(r,c));
+        if(nr===r1&&nc===c1){found=true;break outer;}
+        queue.push([nr,nc]);
+      }
+    }
+    if(!found) return null;
+    const path=[];
+    let k=key(r1,c1);
+    while(k!==null){
+      const r=Math.floor(k/GRID_COLS), c=k%GRID_COLS;
+      path.unshift({x:X_MIN_W+c*TILE+TILE/2,depth:r*TILE+TILE/2});
+      k=parent.get(k)??null;
+    }
+    return path;
+  }
+
+  // string-pulling: elimina waypoints onde há linha de visão direta ao próximo
+  function smoothBfsPath(path){
+    if(!path||path.length<=2) return path;
+    const out=[path[0]];
+    let i=0;
+    while(i<path.length-1){
+      let j=path.length-1;
+      while(j>i+1&&!lineOfSight(path[i].x,path[i].depth,path[j].x,path[j].depth)) j--;
+      out.push(path[j]);
+      i=j;
+    }
+    return out;
+  }
+
   // Calcula o caminho esticado (taut) do sub até o início do navPath.
   // String pulling: começa do sub, pula para o waypoint mais longe com LOS,
   // repete até chegar em navPath[0]. Resultado = array shallow→deep (ordem Firebase).
@@ -1163,13 +1210,30 @@
 
     if(nav.mode==="diving"){
       if(isGrabbed){
-        // criatura agarrou o sub: controle bloqueado, arrastado pelo guardião
-        const gdx=grabTarget.x-nav.x, gdd=grabTarget.depth-nav.depth;
-        const gdist=Math.hypot(gdx,gdd);
-        if(gdist>20){
-          nav.x+=gdx/gdist*NAV_SPEED*0.55*dt;
-          nav.depth=Math.max(STATION_TOP,Math.min(MAX_DEPTH,nav.depth+gdd/gdist*NAV_SPEED*0.55*dt));
-          pushNav();
+        // sub agarrado: navega por BFS até o alvo definido pelo guardião
+        if(!grabPath){
+          const raw=bfsPath(nav.x,nav.depth,grabTarget.x,grabTarget.depth);
+          grabPath=raw?smoothBfsPath(raw):null;
+          grabWpIdx=0;
+        }
+        if(grabPath&&grabWpIdx<grabPath.length){
+          const wp=grabPath[grabWpIdx];
+          const gdx=wp.x-nav.x, gdd=wp.depth-nav.depth;
+          const gdist=Math.hypot(gdx,gdd);
+          if(gdist<TILE*0.65){
+            grabWpIdx++;
+          } else {
+            const spd=NAV_SPEED*0.55*dt;
+            let nx=nav.x+gdx/gdist*spd;
+            let nd=Math.max(STATION_TOP,Math.min(MAX_DEPTH,nav.depth+gdd/gdist*spd));
+            const R=22;
+            if(isWall(nx,nd)||isWall(nx-R,nd)||isWall(nx+R,nd)){
+              if(!isWall(nav.x,nd)&&!isWall(nav.x-R,nd)&&!isWall(nav.x+R,nd)) nx=nav.x;
+              else if(!isWall(nx,nav.depth)&&!isWall(nx-R,nav.depth)&&!isWall(nx+R,nav.depth)) nd=nav.depth;
+              else {nx=nav.x;nd=nav.depth;}
+            }
+            nav.x=nx; nav.depth=nd; pushNav();
+          }
         }
       } else {
         // virar com A/D (gira o submarino)
@@ -1305,7 +1369,7 @@
 
       if(beh==="chase"||ent.chasing){
         const attackMode=ent.attackMode||'collision';
-        const aggrDist=typeof ent.aggressionDist==='number'&&ent.aggressionDist>0?ent.aggressionDist:300;
+        const postCollisionDist=typeof ent.postCollisionDist==='number'&&ent.postCollisionDist>0?ent.postCollisionDist:300;
         const phase=ent._attackPhase||null;
 
         // grab ativo: criatura está fixada no sub, segue sua posição
@@ -1331,18 +1395,18 @@
             if(attackMode==='grab'){
               ref.child('grabbedBy').set(id);
             } else {
-              // colisão: lança a criatura em frente (passa pelo sub, continua por aggrDist)
+              // colisão: lança a criatura em frente (continua por postCollisionDist)
               creatureEntities[id]={...ent,_attackPhase:'charging',
                 _chargeDir:{x:dx/dist,d:dd/dist},_chargeTraveled:0};
             }
           }
         } else if(phase==='charging'){
-          // carga: ignora perseguição, avança na direção do impacto a alta velocidade
-          const chSpd=entSpd*2.5*dt;
+          // carga: velocidade fixa na direção do impacto (distância = postCollisionDist)
+          const chSpd=entSpd*dt;
           vx=(ent._chargeDir?.x||0)*chSpd; vd=(ent._chargeDir?.d||0)*chSpd;
           const traveled=(ent._chargeTraveled||0)+Math.hypot(vx,vd);
           creatureEntities[id]={...creatureEntities[id],_chargeTraveled:traveled};
-          if(traveled>=aggrDist)
+          if(traveled>=postCollisionDist)
             creatureEntities[id]={...creatureEntities[id],_attackPhase:'recovering',_recoverT:now};
         } else if(phase==='recovering'){
           // pausa antes de retomar perseguição
@@ -1372,6 +1436,19 @@
             vd=perpD*perp*0.45*entSpd*dt;
           }
         }
+      } else if(beh==='dismiss'){
+        // afasta criatura e remove quando saiu do alcance visual do sub
+        const tgt=ent.dismissTarget||{x:ewx,depth:Math.min(GRID_ROWS*TILE-TILE,ewd+8000)};
+        const dtx=tgt.x-ewx, dtd=tgt.depth-ewd;
+        const ddist=Math.hypot(dtx,dtd);
+        const subDist_=Math.hypot(nav.x-ewx,nav.depth-ewd);
+        if(ddist<80||subDist_>520){
+          if(grabbedBy===id){ ref.child('grabbedBy').set(null); ref.child('grabTarget').set(null); }
+          ref.child('entities/'+id).remove();
+          delete creatureEntities[id];
+          return;
+        }
+        const spd=entSpd*3*dt; vx=dtx/ddist*spd; vd=dtd/ddist*spd;
       } else { // wander — alvo em tile válido do grid
         const wt=creatureWanderTargets[id];
         const distToTarget=wt?Math.hypot(ewx-wt.x,ewd-wt.d):999;
@@ -1577,8 +1654,13 @@
     const v=snap.val(); if(typeof v==="number"&&v>=0) jumpscareCD=v;
   });
   // grab: criatura agarrou o sub (guardião controla)
-  ref.child("grabbedBy").on("value",snap=>{ grabbedBy=snap.val()||null; });
-  ref.child("grabTarget").on("value",snap=>{ grabTarget=snap.val()||null; });
+  ref.child("grabbedBy").on("value",snap=>{
+    const prev=grabbedBy; grabbedBy=snap.val()||null;
+    if(!prev&&grabbedBy){ grabPath=null; grabWpIdx=0; } // grab iniciou: recomputa caminho
+  });
+  ref.child("grabTarget").on("value",snap=>{
+    grabTarget=snap.val()||null; grabPath=null; grabWpIdx=0; // target mudou: recomputa
+  });
 
   // blackout: GM apaga a tela para reposicionar visuais
   ref.child("blackout").on("value",snap=>{
@@ -1594,7 +1676,7 @@
   // entidades do mundo: peixes e criaturas renderizados como sprites 3D
   let creatureWriteT=0, jumpscareT=0, jumpscareCD=10000;
   let collisionFlicker=0;
-  let grabbedBy=null, grabTarget=null;
+  let grabbedBy=null, grabTarget=null, grabPath=null, grabWpIdx=0;
   let creatureWanderTargets={}, creatureWanderPhase={};
   let dfFramesFlip=[];  // frames espelhados horizontalmente para rotação Doom
   ref.child("entities").on("value",snap=>{
