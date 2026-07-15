@@ -314,13 +314,68 @@
             <button class="btn" id="placeModeBtn" style="font-size:9px;color:#44aacc;min-width:90px;text-align:center">+ PEIXE</button>
             <button class="btn" id="editMapBtn" style="font-size:9px;color:var(--ink-dim)">EDITAR MAPA</button>
           </div>
-          <div id="editBar" style="display:none;gap:4px;margin-top:4px;align-items:center">
-            <button class="btn" id="edOpen" style="font-size:9px;color:#44ccff">▣ ABRIR ÁGUA</button>
-            <button class="btn" id="edClose" style="font-size:9px;color:var(--ink-dim)">▩ FECHAR ROCHA</button>
-            <div style="width:1px;height:16px;background:var(--line);margin:0 3px"></div>
-            <button class="btn" id="edUndo" style="font-size:9px">↶ DESFAZER</button>
-            <button class="btn" id="edSave" style="font-size:9px;color:var(--ink-dim)">SALVO ✓</button>
-            <button class="btn" id="edReset" style="font-size:9px;color:var(--danger)">RESTAURAR</button>
+          <!-- EDITOR DE MAPA: overlay tela cheia -->
+          <div id="mapEditorOverlay" style="position:fixed;inset:0;z-index:200;background:#05070b;display:none">
+            <div style="display:flex;height:100%">
+              <canvas id="edCanvas" style="flex:1;height:100%;display:block"></canvas>
+              <canvas id="edMiniCv" style="width:80px;height:100%;border-left:1px solid #14202c;background:#04060a;cursor:pointer"></canvas>
+              <div id="edSidebar" style="width:212px;padding:10px;border-left:1px solid #14202c;overflow-y:auto;display:flex;flex-direction:column;gap:5px;background:#080b10">
+                <div style="font-size:10px;letter-spacing:.15em;color:#ff8800;margin-bottom:2px">EDITOR DE MAPA</div>
+                <div id="edDims" style="font-size:9px;color:var(--ink-dim)"></div>
+                <div style="font-size:8px;color:var(--ink-dim);letter-spacing:.1em;margin-top:4px">MODO</div>
+                <div style="display:flex;gap:4px">
+                  <button class="btn" id="edModeMove" style="flex:1;font-size:9px">✋ MOVER</button>
+                  <button class="btn" id="edModePaint" style="flex:1;font-size:9px">🖌 PINTAR</button>
+                </div>
+                <div style="font-size:8px;color:var(--ink-dim);letter-spacing:.1em;margin-top:4px">PINCEL</div>
+                <div style="display:flex;gap:4px">
+                  <button class="btn" id="edPaintOpen" style="flex:1;font-size:9px">▣ ÁGUA</button>
+                  <button class="btn" id="edPaintClose" style="flex:1;font-size:9px">▩ ROCHA</button>
+                </div>
+                <div style="font-size:8px;color:var(--ink-dim);letter-spacing:.1em;margin-top:4px">FERRAMENTA</div>
+                <div style="display:flex;gap:4px">
+                  <button class="btn" id="edToolRect" style="flex:1;font-size:9px">RETÂNG.</button>
+                  <button class="btn" id="edToolBrush" style="flex:1;font-size:9px">PINCEL</button>
+                  <button class="btn" id="edToolCorr" style="flex:1;font-size:9px">CORRED.</button>
+                </div>
+                <div style="display:flex;gap:4px;align-items:center;font-size:9px;color:var(--ink-dim)">
+                  <span>pincel</span>
+                  <select id="edBrushSz" style="background:var(--bg);color:var(--ink);border:1px solid var(--line);font-family:inherit;font-size:9px">
+                    <option value="1">1×1</option><option value="3" selected>3×3</option><option value="5">5×5</option>
+                  </select>
+                  <span>corr.</span>
+                  <select id="edCorrW" style="background:var(--bg);color:var(--ink);border:1px solid var(--line);font-family:inherit;font-size:9px">
+                    <option value="2">2t</option><option value="3" selected>3t</option><option value="4">4t</option><option value="5">5t</option>
+                  </select>
+                </div>
+                <div style="font-size:8px;color:var(--ink-dim);letter-spacing:.1em;margin-top:4px">OBJETOS</div>
+                <div style="display:flex;gap:4px">
+                  <button class="btn" id="edToolPillar" style="flex:1;font-size:9px">▮ PILAR</button>
+                  <button class="btn" id="edToolSpawn" style="flex:1;font-size:9px">◎ SPAWN</button>
+                </div>
+                <div style="font-size:8px;color:var(--ink-dim);letter-spacing:.1em;margin-top:4px">EXPANDIR GRID</div>
+                <div style="display:flex;gap:4px">
+                  <button class="btn" id="edExpandL" style="flex:1;font-size:9px">+5 ← ESQ</button>
+                  <button class="btn" id="edExpandR" style="flex:1;font-size:9px">DIR → +5</button>
+                </div>
+                <div style="display:flex;gap:4px;margin-top:4px">
+                  <button class="btn" id="edUndoB" style="flex:1;font-size:9px">↶ Ctrl+Z</button>
+                  <button class="btn" id="edRedoB" style="flex:1;font-size:9px">↷ Ctrl+Y</button>
+                </div>
+                <div id="edWarns" style="font-size:9px;color:var(--danger);min-height:12px"></div>
+                <button class="btn" id="edSaveB" style="font-size:10px;padding:6px">SALVO ✓</button>
+                <div style="display:flex;gap:4px">
+                  <button class="btn" id="edExportB" style="flex:1;font-size:9px">EXPORTAR</button>
+                  <button class="btn" id="edImportB" style="flex:1;font-size:9px">IMPORTAR</button>
+                </div>
+                <button class="btn" id="edResetB" style="font-size:9px;color:var(--danger)">RESTAURAR PADRÃO</button>
+                <button class="btn" id="edExitB" style="font-size:10px;padding:6px;color:#ff8800;margin-top:4px">✕ SAIR DA EDIÇÃO</button>
+                <div style="font-size:8px;color:var(--ink-dim);line-height:1.5;margin-top:4px">
+                  M mover · P pintar · R/B/C ferramenta<br>A água · F rocha · ESC sair<br>
+                  Mover: arraste = pan · scroll = zoom<br>Pilar: arraste vertical; clique remove<br>Spawn: clique posiciona
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -646,7 +701,13 @@
   const mctx=mapCanvas.getContext("2d");
   const M_W=380, M_H=380;
   const UNITS_PER_M=10;
-  const TILE=40, X_MIN_W=-400, GRID_COLS=21, GRID_ROWS=640;
+  const TILE=40, GRID_ROWS=640;
+  // dimensões horizontais dinâmicas (o editor pode expandir o grid)
+  let X_MIN_W=-400, GRID_COLS=21, COL_OFFSET=0;
+  const CORAL_ROW=150; // 600m
+  const DEFAULT_PILLARS=[{x:-36,top:1650,bot:2350,r:22},{x:36,top:1650,bot:2350,r:22}];
+  let mapPillars=DEFAULT_PILLARS.slice();
+  let mapSpawn={x:0,depth:2450};
   // MUNDO DEFAULT (mesma lista do submarino.html) + edições do editor por cima.
   // Fonte da verdade das EDIÇÕES: Firebase submarine/worldMap = {ops:[{op,r0,r1,c0,c1}]}
   const DEFAULT_OPEN=[
@@ -663,7 +724,8 @@
       for(let r=Math.max(0,r0);r<=Math.min(GRID_ROWS-1,r1);r++)
         for(let c=Math.max(0,c0);c<=Math.min(GRID_COLS-1,c1);c++) m[r][c]=v;
     };
-    for(const [r0,r1,c0,c1] of DEFAULT_OPEN) paint(r0,r1,c0,c1,0);
+    // default no grid ORIGINAL: desloca por COL_OFFSET quando expandido à esquerda
+    for(const [r0,r1,c0,c1] of DEFAULT_OPEN) paint(r0,r1,c0+COL_OFFSET,c1+COL_OFFSET,0);
     for(const o of (ops||[])) paint(o.r0,o.r1,o.c0,o.c1,o.op==='close'?1:0);
     return m;
   }
@@ -677,30 +739,7 @@
   let deadFishId=null;
   let mapPanOffsetRows=0, panActive=false, panLastY=0, panJustMoved=false;
   let settingGrabTarget=false, currentGrabbedBy=null, currentGrabTarget=null;
-  // ---- Editor de mapa ----
-  let editMode=false, edPaint='open';       // 'open' = abrir água, 'close' = fechar rocha
-  let edDragging=false, edStart=null, edCur=null; // retângulo em progresso (row/col)
-
-  function mapPxToTile(px,py){
-    const {cellW,cellH,viewStart}=getMapMetrics();
-    return {r:Math.floor(py/cellH+viewStart), c:Math.floor(px/cellW)};
-  }
   function applyLocalOps(){ MAP=buildMap(mapOps); }
-  function updateEditUI(){
-    const bar=document.getElementById('editBar');
-    if(bar) bar.style.display=editMode?'flex':'none';
-    const eb=document.getElementById('editMapBtn');
-    if(eb){ eb.textContent=editMode?'✕ SAIR DA EDIÇÃO':'EDITAR MAPA';
-            eb.style.color=editMode?'#ff8800':'var(--ink-dim)'; }
-    const ob=document.getElementById('edOpen'), cb=document.getElementById('edClose');
-    if(ob) ob.style.color=edPaint==='open'?'#44ccff':'var(--ink-dim)';
-    if(cb) cb.style.color=edPaint==='close'?'#ff5533':'var(--ink-dim)';
-    const sb=document.getElementById('edSave');
-    if(sb){ sb.style.color=mapDirty?'#ffcc00':'var(--ink-dim)';
-            sb.textContent=mapDirty?'SALVAR ●':'SALVO ✓'; }
-    const ub=document.getElementById('edUndo');
-    if(ub) ub.style.opacity=mapOps.length?1:0.4;
-  }
 
   function getMapMetrics(){
     const visRows=Math.round(120/mapZoom);
@@ -846,32 +885,6 @@
     mctx.fillStyle=mapPlaceMode==='creature'?'#ff4400':'#44aacc'; mctx.textAlign='right';
     mctx.fillText('E: '+(mapPlaceMode==='creature'?'CRIATURA':'PEIXE'),M_W-4,M_H-4);
 
-    // ---- overlay do EDITOR DE MAPA ----
-    if(editMode){
-      const {cellW:eCW,cellH:eCH,viewStart:eVS}=getMapMetrics();
-      // moldura + label do modo
-      mctx.save();
-      mctx.strokeStyle='rgba(255,136,0,.75)'; mctx.lineWidth=2;
-      mctx.strokeRect(1,1,M_W-2,M_H-2);
-      mctx.fillStyle='rgba(255,136,0,.95)'; mctx.font='7px monospace'; mctx.textAlign='center';
-      mctx.fillText('MODO EDIÇÃO — arraste para '+(edPaint==='open'?'ABRIR ÁGUA':'FECHAR ROCHA'),M_W/2,10);
-      // retângulo em progresso
-      if(edDragging&&edStart&&edCur){
-        const r0=Math.min(edStart.r,edCur.r), r1=Math.max(edStart.r,edCur.r);
-        const c0=Math.min(edStart.c,edCur.c), c1=Math.max(edStart.c,edCur.c);
-        const px0=c0*eCW, py0=(r0-eVS)*eCH;
-        const pw=(c1-c0+1)*eCW, ph=(r1-r0+1)*eCH;
-        mctx.fillStyle=edPaint==='open'?'rgba(60,180,255,.25)':'rgba(255,70,40,.25)';
-        mctx.fillRect(px0,py0,pw,ph);
-        mctx.strokeStyle=edPaint==='open'?'#44ccff':'#ff5533'; mctx.lineWidth=1;
-        mctx.strokeRect(px0,py0,pw,ph);
-        // dimensões em tiles + metros
-        mctx.fillStyle='#fff'; mctx.font='7px monospace'; mctx.textAlign='left';
-        mctx.fillText(`${c1-c0+1}×${r1-r0+1}t (${(c1-c0+1)*4}×${(r1-r0+1)*4}m)`,px0+2,py0-3);
-      }
-      mctx.restore();
-    }
-
     const el=document.getElementById('mapStatus');
     if(el) el.textContent=`${fishCount}P · ${crtCount}C`;
   }
@@ -901,10 +914,6 @@
   mapCanvas.addEventListener('mousedown',e=>{
     const r=mapCanvas.getBoundingClientRect();
     const px=e.clientX-r.left, py=e.clientY-r.top;
-    if(editMode){ // editor: começa o retângulo
-      edDragging=true; edStart=mapPxToTile(px,py); edCur=edStart;
-      return;
-    }
     const hit=entityAtMapPx(px,py);
     dragJustMoved=false; panJustMoved=false;
     if(hit){ dragEntityId=hit; selectedEntityId=hit; panActive=false; renderSelectedPanel(); renderEntityList(); }
@@ -913,10 +922,6 @@
   mapCanvas.addEventListener('mousemove',e=>{
     const r=mapCanvas.getBoundingClientRect();
     mouseMapX=e.clientX-r.left; mouseMapY=e.clientY-r.top;
-    if(editMode){
-      if(edDragging) edCur=mapPxToTile(mouseMapX,mouseMapY);
-      return;
-    }
     if(dragEntityId&&entities[dragEntityId]){
       dragJustMoved=true;
       const {wx,wd}=mapPxToWorld(mouseMapX,mouseMapY);
@@ -932,18 +937,6 @@
     }
   });
   mapCanvas.addEventListener('mouseup',e=>{
-    if(editMode){ // editor: fecha o retângulo e aplica a op localmente
-      if(edDragging&&edStart&&edCur){
-        const r0=Math.max(0,Math.min(GRID_ROWS-1,Math.min(edStart.r,edCur.r)));
-        const r1=Math.max(0,Math.min(GRID_ROWS-1,Math.max(edStart.r,edCur.r)));
-        const c0=Math.max(0,Math.min(GRID_COLS-1,Math.min(edStart.c,edCur.c)));
-        const c1=Math.max(0,Math.min(GRID_COLS-1,Math.max(edStart.c,edCur.c)));
-        mapOps.push({op:edPaint,r0,r1,c0,c1});
-        applyLocalOps(); mapDirty=true; updateEditUI();
-      }
-      edDragging=false; edStart=null; edCur=null;
-      return;
-    }
     const wasDragging=dragJustMoved, wasPanning=panJustMoved;
     dragEntityId=null; dragJustMoved=false;
     panActive=false; panJustMoved=false;
@@ -960,32 +953,415 @@
     if(hit){ selectedEntityId=hit; renderSelectedPanel(); renderEntityList(); }
   });
 
-  // ---- botões do editor de mapa ----
-  document.getElementById('editMapBtn').addEventListener('click',()=>{
-    editMode=!editMode;
-    edDragging=false; edStart=null; edCur=null;
-    mapCanvas.style.cursor=editMode?'crosshair':'';
-    updateEditUI();
+  // ============ EDITOR DE MAPA — TELA CHEIA ============
+  const edOverlay=document.getElementById('mapEditorOverlay');
+  const edCv=document.getElementById('edCanvas'), edCtx=edCv.getContext('2d');
+  const edMini=document.getElementById('edMiniCv'), edMiniCtx=edMini.getContext('2d');
+  const edMiniOff=document.createElement('canvas');
+  let edOpen_=false, edMode2='paint', edPaint='open', edTool='rect';
+  let edBrushSz=3, edCorrW=3;
+  let edZoom=9, edScrollR=0, edScrollC=0;
+  let edDrag=null, edCorrA=null, edMouse={x:0,y:0};
+  let edHist=[], edHistIdx=-1, edWarns=[];
+  let edMiniDirty=true;
+  const edClampR=r=>Math.max(0,Math.min(GRID_ROWS-1,r));
+  const edClampC=c=>Math.max(0,Math.min(GRID_COLS-1,c));
+  const edCellR=py=>py/edZoom+edScrollR, edCellC=px=>px/edZoom+edScrollC;
+  const edPxY=r=>(r-edScrollR)*edZoom, edPxX=c=>(c-edScrollC)*edZoom;
+  const edWorldX=px=>X_MIN_W+edCellC(px)*TILE, edWorldD=py=>edCellR(py)*TILE;
+
+  // ---- histórico (undo/redo por snapshot do estado editável inteiro) ----
+  function edSnapshot(){ return JSON.stringify({ops:mapOps,pillars:mapPillars,spawn:mapSpawn,cols:GRID_COLS,xMin:X_MIN_W,off:COL_OFFSET}); }
+  function edRestore(s){
+    const v=JSON.parse(s);
+    mapOps=v.ops; mapPillars=v.pillars; mapSpawn=v.spawn;
+    GRID_COLS=v.cols; X_MIN_W=v.xMin; COL_OFFSET=v.off;
+    MAP=buildMap(mapOps); edMiniDirty=true;
+  }
+  function edPushHist(){
+    edHist=edHist.slice(0,edHistIdx+1); edHist.push(edSnapshot());
+    if(edHist.length>100) edHist.shift();
+    edHistIdx=edHist.length-1; mapDirty=true; edMiniDirty=true; edUpdateUI();
+  }
+  function edUndo(){ if(edHistIdx>0){ edHistIdx--; edRestore(edHist[edHistIdx]); mapDirty=true; edUpdateUI(); } }
+  function edRedo(){ if(edHistIdx<edHist.length-1){ edHistIdx++; edRestore(edHist[edHistIdx]); mapDirty=true; edUpdateUI(); } }
+
+  // ---- abrir/fechar ----
+  function edOpenEditor(){
+    edOpen_=true; edOverlay.style.display='block';
+    edResize();
+    const subR=(currentSubNav.depth||2450)/TILE;
+    edScrollR=Math.max(-4,subR-(edCv.height/edZoom)/2);
+    edScrollC=-(edCv.width/edZoom-GRID_COLS)/2;
+    edHist=[edSnapshot()]; edHistIdx=0; edWarns=[];
+    edMiniDirty=true;
+    edUpdateUI(); edLoop();
+  }
+  function edCloseEditor(){ edOpen_=false; edOverlay.style.display='none'; edDrag=null; edCorrA=null; edUpdateUI(); }
+  function edResize(){
+    const r=edCv.getBoundingClientRect(); edCv.width=r.width; edCv.height=r.height;
+    const mr=edMini.getBoundingClientRect(); edMini.width=mr.width; edMini.height=mr.height;
+    edMiniOff.width=edMini.width; edMiniOff.height=edMini.height; edMiniDirty=true;
+  }
+  window.addEventListener('resize',()=>{ if(edOpen_) edResize(); });
+
+  // ---- render ----
+  function edDraw(){
+    const W=edCv.width,H=edCv.height;
+    edCtx.fillStyle='#030407'; edCtx.fillRect(0,0,W,H);
+    const r0=Math.max(0,Math.floor(edScrollR)), r1=Math.min(GRID_ROWS-1,Math.ceil(edScrollR+H/edZoom));
+    const c0=Math.max(0,Math.floor(edScrollC)), c1=Math.min(GRID_COLS-1,Math.ceil(edScrollC+W/edZoom));
+    const gap=edZoom>6?0.5:0;
+    for(let r=r0;r<=r1;r++){
+      const py=edPxY(r), row=MAP[r];
+      for(let c=c0;c<=c1;c++){
+        edCtx.fillStyle=row[c]===0?'#0c2a40':'#0b0e14';
+        edCtx.fillRect(edPxX(c),py,edZoom-gap,edZoom-gap);
+      }
+    }
+    edCtx.strokeStyle='rgba(255,136,0,.35)'; edCtx.lineWidth=1;
+    edCtx.strokeRect(edPxX(0),edPxY(0),GRID_COLS*edZoom,GRID_ROWS*edZoom);
+    // réguas de profundidade
+    edCtx.font='9px monospace'; edCtx.textAlign='left';
+    for(let md=0;md<=2560;md+=100){
+      const py=edPxY(md*10/TILE);
+      if(py<-8||py>H+8) continue;
+      edCtx.strokeStyle=md%500===0?'rgba(0,110,170,.5)':'rgba(0,70,110,.25)';
+      edCtx.beginPath(); edCtx.moveTo(0,py); edCtx.lineTo(W,py); edCtx.stroke();
+      edCtx.fillStyle='rgba(0,150,210,.8)'; edCtx.fillText(md+'m',3,py-2);
+    }
+    // linha do coral
+    {const py=edPxY(CORAL_ROW);
+     if(py>-8&&py<H+8){ edCtx.save(); edCtx.setLineDash([5,4]); edCtx.strokeStyle='rgba(255,60,60,.6)';
+       edCtx.beginPath(); edCtx.moveTo(0,py); edCtx.lineTo(W,py); edCtx.stroke(); edCtx.setLineDash([]);
+       edCtx.fillStyle='rgba(255,80,80,.8)'; edCtx.fillText('CORAL 600m',3,py+10); edCtx.restore(); }}
+    // canal da moonpool (região protegida)
+    {const mx0=edPxX(9+COL_OFFSET), my0=edPxY(25);
+     edCtx.strokeStyle='rgba(80,200,255,.6)';
+     edCtx.strokeRect(mx0,my0,3*edZoom,5*edZoom);
+     if(edZoom>5){edCtx.fillStyle='rgba(80,200,255,.7)';edCtx.fillText('MOONPOOL',mx0+2,my0-4);}}
+    // pilares
+    for(const P of mapPillars){
+      const px0=edPxX((P.x-P.r-X_MIN_W)/TILE), px1=edPxX((P.x+P.r-X_MIN_W)/TILE);
+      const py0=edPxY(P.top/TILE), py1=edPxY(P.bot/TILE);
+      edCtx.fillStyle='rgba(150,170,200,.45)'; edCtx.fillRect(px0,py0,Math.max(2,px1-px0),py1-py0);
+      edCtx.strokeStyle='rgba(180,200,230,.7)'; edCtx.strokeRect(px0,py0,Math.max(2,px1-px0),py1-py0);
+    }
+    // spawn
+    {const sx=edPxX((mapSpawn.x-X_MIN_W)/TILE), sy=edPxY(mapSpawn.depth/TILE);
+     edCtx.strokeStyle='#33ff88'; edCtx.lineWidth=1.5;
+     edCtx.beginPath(); edCtx.arc(sx,sy,7,0,6.28); edCtx.stroke();
+     edCtx.fillStyle='#33ff88';
+     edCtx.beginPath(); edCtx.arc(sx,sy,2,0,6.28); edCtx.fill();
+     edCtx.fillText('SPAWN',sx+10,sy+3);}
+    // sub + entidades (ao vivo)
+    {const bx=edPxX(((currentSubNav.x||0)-X_MIN_W)/TILE), by=edPxY((currentSubNav.depth||0)/TILE);
+     edCtx.fillStyle='#4c8fc8'; edCtx.beginPath(); edCtx.arc(bx,by,5,0,6.28); edCtx.fill();
+     edCtx.fillText('SUB',bx+8,by+3);}
+    Object.values(entities||{}).forEach(ent=>{
+      if(!ent) return;
+      const px=edPxX(((ent.wx||0)-X_MIN_W)/TILE), py=edPxY((ent.wd||0)/TILE);
+      edCtx.fillStyle=ent.mode==='creature'?'#ff4400':'#44aacc';
+      edCtx.beginPath(); edCtx.arc(px,py,3,0,6.28); edCtx.fill();
+    });
+    edDrawPreview();
+    // leitura do cursor
+    {const r=Math.floor(edCellR(edMouse.y)), c=Math.floor(edCellC(edMouse.x));
+     edCtx.fillStyle='rgba(255,255,255,.75)'; edCtx.textAlign='right';
+     edCtx.fillText(`col ${c} · row ${r} · X ${Math.round(X_MIN_W+c*TILE+TILE/2)}wu · ${Math.round(r*TILE/10)}m`,W-6,H-6);
+     edCtx.textAlign='left';}
+  }
+  function edDrawPreview(){
+    const openCol='rgba(60,180,255,.30)', closeCol='rgba(255,70,40,.30)';
+    const strokeCol=edPaint==='open'?'#44ccff':'#ff5533';
+    if(edDrag&&edDrag.type==='rect'){
+      const a=edDrag.a,b=edDrag.b;
+      const r0=Math.min(a.r,b.r),r1=Math.max(a.r,b.r),c0=Math.min(a.c,b.c),c1=Math.max(a.c,b.c);
+      edCtx.fillStyle=edPaint==='open'?openCol:closeCol;
+      edCtx.fillRect(edPxX(c0),edPxY(r0),(c1-c0+1)*edZoom,(r1-r0+1)*edZoom);
+      edCtx.strokeStyle=strokeCol;
+      edCtx.strokeRect(edPxX(c0),edPxY(r0),(c1-c0+1)*edZoom,(r1-r0+1)*edZoom);
+      edCtx.fillStyle='#fff';
+      edCtx.fillText(`${c1-c0+1}×${r1-r0+1}t (${(c1-c0+1)*4}×${(r1-r0+1)*4}m)`,edPxX(c0)+2,edPxY(r0)-4);
+    }
+    if(edTool==='brush'&&edMode2==='paint'&&!edDrag){
+      const half=Math.floor(edBrushSz/2);
+      const r=Math.floor(edCellR(edMouse.y))-half, c=Math.floor(edCellC(edMouse.x))-half;
+      edCtx.strokeStyle=strokeCol;
+      edCtx.strokeRect(edPxX(c),edPxY(r),edBrushSz*edZoom,edBrushSz*edZoom);
+    }
+    if(edTool==='corridor'&&edCorrA){
+      const bR=Math.floor(edCellR(edMouse.y)), bC=Math.floor(edCellC(edMouse.x));
+      const half=Math.floor(edCorrW/2);
+      const vC0=edCorrA.c-half, vR0=Math.min(edCorrA.r,bR), vR1=Math.max(edCorrA.r,bR);
+      const hR0=bR-half, hC0=Math.min(edCorrA.c,bC), hC1=Math.max(edCorrA.c,bC);
+      edCtx.fillStyle=edPaint==='open'?openCol:closeCol;
+      edCtx.fillRect(edPxX(vC0),edPxY(vR0),edCorrW*edZoom,(vR1-vR0+1)*edZoom);
+      edCtx.fillRect(edPxX(hC0),edPxY(hR0),(hC1-hC0+1)*edZoom,edCorrW*edZoom);
+      edCtx.strokeStyle=strokeCol;
+      edCtx.strokeRect(edPxX(edCorrA.c)+edZoom/2-2,edPxY(edCorrA.r)+edZoom/2-2,4,4);
+    }
+    if(edDrag&&edDrag.type==='pillar'&&edDrag.moved){
+      const d0=Math.min(edDrag.d0,edDrag.d1), d1=Math.max(edDrag.d0,edDrag.d1);
+      const px0=edPxX((edDrag.wx-22-X_MIN_W)/TILE), px1=edPxX((edDrag.wx+22-X_MIN_W)/TILE);
+      edCtx.fillStyle='rgba(180,200,230,.4)';
+      edCtx.fillRect(px0,edPxY(d0/TILE),Math.max(2,px1-px0),edPxY(d1/TILE)-edPxY(d0/TILE));
+    }
+  }
+  // minimapa (pré-renderizado; refeito quando o grid muda)
+  function edRenderMini(){
+    const mw=edMiniOff.width,mh=edMiniOff.height;
+    const g=edMiniOff.getContext('2d');
+    g.fillStyle='#04060a'; g.fillRect(0,0,mw,mh);
+    const cw=mw/GRID_COLS, rh=Math.max(1,mh/GRID_ROWS);
+    for(let r=0;r<GRID_ROWS;r++){
+      const py=r/GRID_ROWS*mh, row=MAP[r];
+      for(let c=0;c<GRID_COLS;c++)
+        if(row[c]===0){ g.fillStyle='#0e3a58'; g.fillRect(c*cw,py,Math.max(1,cw-0.3),rh); }
+    }
+    g.fillStyle='rgba(255,60,60,.7)'; g.fillRect(0,CORAL_ROW/GRID_ROWS*mh,mw,1);
+    edMiniDirty=false;
+  }
+  function edDrawMini(){
+    if(edMiniDirty) edRenderMini();
+    edMiniCtx.clearRect(0,0,edMini.width,edMini.height);
+    edMiniCtx.drawImage(edMiniOff,0,0);
+    const mh=edMini.height;
+    const y0=Math.max(0,edScrollR)/GRID_ROWS*mh;
+    const y1=Math.min(GRID_ROWS,edScrollR+edCv.height/edZoom)/GRID_ROWS*mh;
+    edMiniCtx.strokeStyle='#ff8800'; edMiniCtx.lineWidth=1;
+    edMiniCtx.strokeRect(0.5,y0,edMini.width-1,Math.max(3,y1-y0));
+    const sy=(currentSubNav.depth||0)/TILE/GRID_ROWS*mh;
+    edMiniCtx.fillStyle='#4c8fc8'; edMiniCtx.fillRect(0,sy,edMini.width,1.5);
+  }
+  function edLoop(){ if(!edOpen_) return; edDraw(); edDrawMini(); requestAnimationFrame(edLoop); }
+
+  // ---- input do canvas ----
+  edCv.addEventListener('contextmenu',e=>e.preventDefault());
+  edCv.addEventListener('wheel',e=>{
+    e.preventDefault();
+    const f=e.deltaY<0?1.15:1/1.15;
+    const cr=edCellR(e.offsetY), cc=edCellC(e.offsetX);
+    edZoom=Math.max(3,Math.min(26,edZoom*f));
+    edScrollR=cr-e.offsetY/edZoom; edScrollC=cc-e.offsetX/edZoom;
+  },{passive:false});
+  function edBrushApply(px,py,drag){
+    const half=Math.floor(edBrushSz/2);
+    const cr=Math.floor(edCellR(py)), cc=Math.floor(edCellC(px));
+    const v=edPaint==='close'?1:0;
+    for(let r=cr-half;r<=cr+half;r++)for(let c=cc-half;c<=cc+half;c++){
+      if(r<0||r>=GRID_ROWS||c<0||c>=GRID_COLS) continue;
+      const k=r+','+c;
+      if(drag.cells.has(k)) continue;
+      drag.cells.add(k); MAP[r][c]=v;
+    }
+    edMiniDirty=true;
+  }
+  function edApplyCorridor(a,b){
+    const half=Math.floor(edCorrW/2);
+    mapOps.push({op:edPaint,r0:edClampR(Math.min(a.r,b.r)),r1:edClampR(Math.max(a.r,b.r)),
+                 c0:edClampC(a.c-half),c1:edClampC(a.c-half+edCorrW-1)});
+    mapOps.push({op:edPaint,r0:edClampR(b.r-half),r1:edClampR(b.r-half+edCorrW-1),
+                 c0:edClampC(Math.min(a.c,b.c)),c1:edClampC(Math.max(a.c,b.c))});
+    applyLocalOps(); edPushHist();
+  }
+  edCv.addEventListener('mousedown',e=>{
+    const px=e.offsetX,py=e.offsetY;
+    if(edMode2==='move'||e.button===1||e.button===2){ edDrag={type:'pan',x:px,y:py}; edCv.style.cursor='grabbing'; return; }
+    if(e.button!==0) return;
+    const cell={r:Math.floor(edCellR(py)),c:Math.floor(edCellC(px))};
+    if(edTool==='rect'){ edDrag={type:'rect',a:cell,b:cell}; }
+    else if(edTool==='brush'){ edDrag={type:'brush',cells:new Set()}; edBrushApply(px,py,edDrag); }
+    else if(edTool==='corridor'){
+      if(!edCorrA){ edCorrA=cell; }
+      else{ edApplyCorridor(edCorrA,cell); edCorrA=null; }
+    }
+    else if(edTool==='pillar'){
+      edDrag={type:'pillar',wx:edWorldX(px),d0:edWorldD(py),d1:edWorldD(py),moved:false};
+    }
+    else if(edTool==='spawn'){
+      const wx=edWorldX(px), wd=edWorldD(py);
+      const r=Math.floor(wd/TILE), c=Math.floor((wx-X_MIN_W)/TILE);
+      if(MAP[r]&&MAP[r][c]===0){ mapSpawn={x:Math.round(wx),depth:Math.round(wd)}; edPushHist(); }
+      else { edWarns=['⚠ SPAWN precisa estar na ÁGUA']; edUpdateUI(); }
+    }
   });
-  document.getElementById('edOpen').addEventListener('click',()=>{ edPaint='open'; updateEditUI(); });
-  document.getElementById('edClose').addEventListener('click',()=>{ edPaint='close'; updateEditUI(); });
-  document.getElementById('edUndo').addEventListener('click',()=>{
-    if(!mapOps.length) return;
-    mapOps.pop(); applyLocalOps(); mapDirty=true; updateEditUI();
+  edCv.addEventListener('mousemove',e=>{
+    edMouse.x=e.offsetX; edMouse.y=e.offsetY;
+    if(!edDrag) return;
+    if(edDrag.type==='pan'){
+      edScrollC-=(e.offsetX-edDrag.x)/edZoom; edScrollR-=(e.offsetY-edDrag.y)/edZoom;
+      edDrag.x=e.offsetX; edDrag.y=e.offsetY;
+    } else if(edDrag.type==='rect'){
+      edDrag.b={r:Math.floor(edCellR(e.offsetY)),c:Math.floor(edCellC(e.offsetX))};
+    } else if(edDrag.type==='brush'){
+      edBrushApply(e.offsetX,e.offsetY,edDrag);
+    } else if(edDrag.type==='pillar'){
+      edDrag.d1=edWorldD(e.offsetY);
+      if(Math.abs(edDrag.d1-edDrag.d0)>TILE) edDrag.moved=true;
+    }
   });
-  document.getElementById('edSave').addEventListener('click',()=>{
-    subRef.child('worldMap').set({ops:mapOps,savedAt:Date.now()});
-    mapDirty=false; updateEditUI();
+  edCv.addEventListener('mouseup',()=>{
+    if(!edDrag) return;
+    const d=edDrag; edDrag=null;
+    edCv.style.cursor=edMode2==='move'?'grab':'crosshair';
+    if(d.type==='rect'){
+      mapOps.push({op:edPaint,
+        r0:edClampR(Math.min(d.a.r,d.b.r)),r1:edClampR(Math.max(d.a.r,d.b.r)),
+        c0:edClampC(Math.min(d.a.c,d.b.c)),c1:edClampC(Math.max(d.a.c,d.b.c))});
+      applyLocalOps(); edPushHist();
+    } else if(d.type==='brush'){
+      const byRow={};
+      d.cells.forEach(k=>{ const [r,c]=k.split(',').map(Number); (byRow[r]=byRow[r]||[]).push(c); });
+      Object.entries(byRow).forEach(([r,cs])=>{
+        cs.sort((a,b)=>a-b);
+        let s=cs[0],p=cs[0];
+        for(let i=1;i<=cs.length;i++){
+          if(i<cs.length&&cs[i]===p+1){p=cs[i];continue;}
+          mapOps.push({op:edPaint,r0:+r,r1:+r,c0:s,c1:p});
+          if(i<cs.length){s=cs[i];p=cs[i];}
+        }
+      });
+      applyLocalOps(); edPushHist();
+    } else if(d.type==='pillar'){
+      if(d.moved){
+        mapPillars=[...mapPillars,{x:Math.round(d.wx),top:Math.round(Math.min(d.d0,d.d1)),bot:Math.round(Math.max(d.d0,d.d1)),r:22}];
+        edPushHist();
+      } else {
+        const idx=mapPillars.findIndex(P=>Math.abs(d.wx-P.x)<P.r+12&&d.d0>P.top-60&&d.d0<P.bot+60);
+        if(idx>=0){ mapPillars=mapPillars.filter((_,i)=>i!==idx); edPushHist(); }
+      }
+    }
   });
-  document.getElementById('edReset').addEventListener('click',()=>{
-    if(!confirm('Restaurar o mapa PADRÃO? (as edições salvas serão apagadas ao salvar)')) return;
-    mapOps=[]; applyLocalOps(); mapDirty=true; updateEditUI();
+  edMini.addEventListener('mousedown',e=>{
+    const r=edMini.getBoundingClientRect();
+    edScrollR=(e.clientY-r.top)/r.height*GRID_ROWS-(edCv.height/edZoom)/2;
+  });
+
+  // ---- expandir grid (esquerda re-baseia as colunas das ops; mundo-coords não mudam) ----
+  function edExpand(side){
+    const n=5;
+    if(side==='right'){ GRID_COLS+=n; }
+    else{
+      GRID_COLS+=n; X_MIN_W-=n*TILE; COL_OFFSET+=n;
+      for(const o of mapOps){ o.c0+=n; o.c1+=n; }
+      edScrollC+=n; // mantém a vista no mesmo lugar do mundo
+    }
+    applyLocalOps(); edPushHist();
+  }
+
+  // ---- validação / salvar / exportar ----
+  function edValidate(){
+    edWarns=[];
+    const water=(x,d)=>{ const r=Math.floor(d/TILE), c=Math.floor((x-X_MIN_W)/TILE); return MAP[r]&&MAP[r][c]===0; };
+    if(!water(mapSpawn.x,mapSpawn.depth)) edWarns.push('⚠ SPAWN em rocha');
+    let moon=true;
+    for(let r=25;r<=29;r++)for(let c=9+COL_OFFSET;c<=11+COL_OFFSET;c++) if(!MAP[r]||MAP[r][c]!==0) moon=false;
+    if(!moon) edWarns.push('⚠ canal da MOONPOOL obstruído');
+    if(currentSubNav&&currentSubNav.depth&&!water(currentSubNav.x||0,currentSubNav.depth)) edWarns.push('⚠ SUB dentro de rocha');
+    return edWarns;
+  }
+  function edPayload(){
+    return {cols:GRID_COLS,xMin:X_MIN_W,colOffset:COL_OFFSET,ops:mapOps,
+            pillars:mapPillars,noPillars:mapPillars.length===0,spawn:mapSpawn,savedAt:Date.now()};
+  }
+  function edSave(){
+    edValidate();
+    subRef.child('worldMap').set(edPayload());
+    mapDirty=false; edUpdateUI();
+  }
+
+  // ---- UI ----
+  function edUpdateUI(){
+    const on=(id,cond,col)=>{ const b=document.getElementById(id); if(b){ b.style.color=cond?col:'var(--ink-dim)'; b.style.borderColor=cond?col:''; } };
+    on('edModeMove',edMode2==='move','#ffcc44');
+    on('edModePaint',edMode2==='paint','#44ccff');
+    on('edPaintOpen',edPaint==='open','#44ccff');
+    on('edPaintClose',edPaint==='close','#ff5533');
+    on('edToolRect',edTool==='rect','#88ffdd');
+    on('edToolBrush',edTool==='brush','#88ffdd');
+    on('edToolCorr',edTool==='corridor','#88ffdd');
+    on('edToolPillar',edTool==='pillar','#aabbcc');
+    on('edToolSpawn',edTool==='spawn','#33ff88');
+    const dims=document.getElementById('edDims');
+    if(dims) dims.textContent=`${GRID_COLS}×${GRID_ROWS} tiles · ${GRID_COLS*4}×${GRID_ROWS*4}m · X ${X_MIN_W}..${X_MIN_W+GRID_COLS*TILE}wu`;
+    const sb=document.getElementById('edSaveB');
+    if(sb){ sb.textContent=mapDirty?'SALVAR ●':'SALVO ✓'; sb.style.color=mapDirty?'#ffcc00':'var(--ink-dim)'; }
+    const w=document.getElementById('edWarns');
+    if(w) w.innerHTML=edWarns.join('<br>');
+    const eb=document.getElementById('editMapBtn');
+    if(eb){ eb.textContent=mapDirty?'EDITAR MAPA ●':'EDITAR MAPA'; eb.style.color=mapDirty?'#ffcc00':'var(--ink-dim)'; }
+    if(edCv) edCv.style.cursor=edMode2==='move'?'grab':'crosshair';
+  }
+  document.getElementById('editMapBtn').addEventListener('click',edOpenEditor);
+  document.getElementById('edExitB').addEventListener('click',edCloseEditor);
+  document.getElementById('edModeMove').addEventListener('click',()=>{edMode2='move';edUpdateUI();});
+  document.getElementById('edModePaint').addEventListener('click',()=>{edMode2='paint';edUpdateUI();});
+  document.getElementById('edPaintOpen').addEventListener('click',()=>{edPaint='open';edUpdateUI();});
+  document.getElementById('edPaintClose').addEventListener('click',()=>{edPaint='close';edUpdateUI();});
+  document.getElementById('edToolRect').addEventListener('click',()=>{edTool='rect';edMode2='paint';edUpdateUI();});
+  document.getElementById('edToolBrush').addEventListener('click',()=>{edTool='brush';edMode2='paint';edUpdateUI();});
+  document.getElementById('edToolCorr').addEventListener('click',()=>{edTool='corridor';edMode2='paint';edUpdateUI();});
+  document.getElementById('edToolPillar').addEventListener('click',()=>{edTool='pillar';edMode2='paint';edUpdateUI();});
+  document.getElementById('edToolSpawn').addEventListener('click',()=>{edTool='spawn';edMode2='paint';edUpdateUI();});
+  document.getElementById('edBrushSz').addEventListener('change',e=>{edBrushSz=+e.target.value;});
+  document.getElementById('edCorrW').addEventListener('change',e=>{edCorrW=+e.target.value;});
+  document.getElementById('edExpandL').addEventListener('click',()=>edExpand('left'));
+  document.getElementById('edExpandR').addEventListener('click',()=>edExpand('right'));
+  document.getElementById('edUndoB').addEventListener('click',edUndo);
+  document.getElementById('edRedoB').addEventListener('click',edRedo);
+  document.getElementById('edSaveB').addEventListener('click',edSave);
+  document.getElementById('edExportB').addEventListener('click',()=>{
+    navigator.clipboard.writeText(JSON.stringify(edPayload()))
+      .then(()=>{ edWarns=['✓ mapa copiado pro clipboard']; edUpdateUI(); })
+      .catch(()=>{ edWarns=['falha ao copiar']; edUpdateUI(); });
+  });
+  document.getElementById('edImportB').addEventListener('click',()=>{
+    const s=prompt('Cole o JSON do mapa:'); if(!s) return;
+    try{
+      const v=JSON.parse(s);
+      GRID_COLS=(v.cols|0)>0?(v.cols|0):21;
+      X_MIN_W=(typeof v.xMin==='number')?v.xMin:-400;
+      COL_OFFSET=(v.colOffset|0)||0;
+      mapOps=v.ops||[];
+      mapPillars=v.noPillars?[]:(Array.isArray(v.pillars)?v.pillars:DEFAULT_PILLARS.slice());
+      if(v.spawn&&typeof v.spawn.depth==='number') mapSpawn=v.spawn;
+      applyLocalOps(); edPushHist();
+    }catch(err){ edWarns=['JSON inválido']; edUpdateUI(); }
+  });
+  document.getElementById('edResetB').addEventListener('click',()=>{
+    if(!confirm('Restaurar o mapa PADRÃO? (salve depois pra aplicar aos terminais)')) return;
+    GRID_COLS=21; X_MIN_W=-400; COL_OFFSET=0;
+    mapOps=[]; mapPillars=DEFAULT_PILLARS.slice(); mapSpawn={x:0,depth:2450};
+    applyLocalOps(); edPushHist();
+  });
+  // atalhos (só com o editor aberto, fora de inputs)
+  document.addEventListener('keydown',e=>{
+    if(!edOpen_) return;
+    const tag=(e.target.tagName||'').toLowerCase();
+    if(tag==='input'||tag==='select'||tag==='textarea') return;
+    if(e.ctrlKey&&e.code==='KeyZ'){ e.preventDefault(); edUndo(); return; }
+    if(e.ctrlKey&&e.code==='KeyY'){ e.preventDefault(); edRedo(); return; }
+    if(e.code==='Escape'){ edCloseEditor(); return; }
+    if(e.code==='KeyM'){ edMode2='move'; edUpdateUI(); }
+    if(e.code==='KeyP'){ edMode2='paint'; edUpdateUI(); }
+    if(e.code==='KeyR'){ edTool='rect'; edMode2='paint'; edUpdateUI(); }
+    if(e.code==='KeyB'){ edTool='brush'; edMode2='paint'; edUpdateUI(); }
+    if(e.code==='KeyC'){ edTool='corridor'; edMode2='paint'; edUpdateUI(); }
+    if(e.code==='KeyA'){ edPaint='open'; edUpdateUI(); }
+    if(e.code==='KeyF'){ edPaint='close'; edUpdateUI(); }
   });
   // edições vindas do Firebase (só aplica se não há edição local pendente)
   subRef.child('worldMap').on('value',snap=>{
-    const v=snap.val();
-    const remote=(v&&v.ops)||[];
-    if(!mapDirty){ mapOps=remote; applyLocalOps(); updateEditUI(); }
+    const v=snap.val()||{};
+    if(mapDirty) return;
+    GRID_COLS=(v.cols|0)>0?(v.cols|0):21;
+    X_MIN_W=(typeof v.xMin==='number')?v.xMin:-400;
+    COL_OFFSET=(v.colOffset|0)||0;
+    mapOps=v.ops||[];
+    mapPillars=v.noPillars?[]:(Array.isArray(v.pillars)?v.pillars:DEFAULT_PILLARS.slice());
+    if(v.spawn&&typeof v.spawn.depth==='number') mapSpawn=v.spawn;
+    applyLocalOps(); edMiniDirty=true; edUpdateUI();
   });
 
   // ---- Painel SELECIONADO ----
@@ -1159,7 +1535,7 @@
 
   // ---- Tecla E + canvas: spawna peixe ou criatura conforme modo ----
   document.addEventListener('keydown',e=>{
-    if(e.code==='KeyE'&&mouseOverCanvas&&!editMode){
+    if(e.code==='KeyE'&&mouseOverCanvas&&!edOpen_){
       e.preventDefault();
       const {wx,wd}=mapPxToWorld(mouseMapX,mouseMapY);
       if(mapPlaceMode==='creature') addDeadFishEntity(wx,wd);
