@@ -683,6 +683,13 @@
     });
   });
 
+  // barra de LUTA do grab: atualiza direto no elemento (sem re-render do painel)
+  subRef.child('struggle').on('value',snap=>{
+    currentStruggle=Math.max(0,Math.min(100,snap.val()||0));
+    const el=document.getElementById('struggleBar');
+    if(el) el.style.width=currentStruggle+'%';
+  });
+
   // ---- texturas do visor: IMAGENS (PNGs reais) vs PROCEDURAIS ----
   document.getElementById("texImgBtn").addEventListener("click",()=>subRef.child("texMode").set("img"));
   document.getElementById("texProcBtn").addEventListener("click",()=>subRef.child("texMode").set("proc"));
@@ -793,6 +800,7 @@
   let deadFishId=null;
   let mapPanOffsetRows=0, panActive=false, panLastY=0, panJustMoved=false;
   let settingGrabTarget=false, currentGrabbedBy=null, currentGrabTarget=null;
+  let currentStruggle=0;
   function applyLocalOps(){ MAP=buildMap(mapOps); }
 
   function getMapMetrics(){
@@ -1484,44 +1492,52 @@
       const atk=ent.attackMode||'collision';
       const aggrD=typeof ent.postCollisionDist==='number'?ent.postCollisionDist:300;
       const stalkD=typeof ent.stalkDist==='number'?ent.stalkDist:380;
-      const isGrab=(atk==='grab');
+      const sightR=typeof ent.sightRange==='number'?ent.sightRange:550;
+      const swipeD=typeof ent.swipeDist==='number'?ent.swipeDist:250;
+      const isGrab=(atk==='grab'), isSwipe=(atk==='swipe');
       const isGrabbed=(currentGrabbedBy===id);
+      const secHd=t=>`<div style="font-size:9px;color:var(--ink-dim);letter-spacing:.14em;margin:8px 0 4px;border-top:1px solid var(--line);padding-top:7px">${t}</div>`;
+      const numRow=(id2,mn,mx,val,def)=>`<div style="display:flex;gap:4px;align-items:center;margin-bottom:5px">
+          <input type="number" id="${id2}" min="${mn}" max="${mx}" value="${val}" style="flex:1;background:var(--bg);border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:12px;padding:4px 6px;border-radius:3px">
+          <button class="btn ${id2}-reset" style="font-size:9px">↺ ${def}</button>
+        </div>`;
+      const lbl=t=>`<div style="font-size:9px;color:var(--ink-dim);letter-spacing:.08em;margin-bottom:3px">${t}</div>`;
       el.innerHTML=`<div style="font-size:9px;color:#ff4400;letter-spacing:.1em;margin-bottom:5px">CRIATURA</div>
-        <div style="display:flex;gap:4px;margin-bottom:5px">
+        <div style="display:flex;gap:4px;margin-bottom:2px">
           <button class="btn sel-vis" data-v="true" style="flex:1;font-size:9px${vis?';color:var(--live);border-color:var(--live-dim)':''}">VISÍVEL</button>
           <button class="btn sel-vis" data-v="false" style="flex:1;font-size:9px${!vis?';color:var(--ink-dim);border-color:var(--ink-dim)':''}">OCULTO</button>
         </div>
-        <div style="font-size:9px;color:var(--ink-dim);letter-spacing:.08em;margin-bottom:3px">VELOCIDADE (wu/s)</div>
-        <div style="display:flex;gap:4px;align-items:center;margin-bottom:5px">
-          <input type="number" id="sel-spd" min="1" max="300" value="${spd}" style="flex:1;background:var(--bg);border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:12px;padding:4px 6px;border-radius:3px">
-          <button class="btn sel-spd-reset" style="font-size:9px">↺ 50</button>
-        </div>
-        <div style="font-size:9px;color:var(--ink-dim);letter-spacing:.08em;margin-bottom:3px">COMPORTAMENTO</div>
+        ${secHd('MOVIMENTO')}
+        ${lbl('VELOCIDADE (wu/s)')}${numRow('sel-spd',1,300,spd,50)}
         <div style="display:flex;gap:4px;margin-bottom:5px">
           <button class="btn sel-beh" data-b="wander" style="flex:1;font-size:9px${beh==='wander'?';color:var(--live);border-color:var(--live-dim)':''}">PASSEAR</button>
           <button class="btn sel-beh" data-b="stalk" style="flex:1;font-size:9px${beh==='stalk'?';color:var(--warn);border-color:var(--warn-dim)':''}">STALKAR</button>
           <button class="btn sel-beh" data-b="chase" style="flex:1;font-size:9px${beh==='chase'?';color:var(--danger);border-color:var(--danger)':''}">PERSEGUIR</button>
         </div>
-        ${beh==='stalk'?`<div style="font-size:9px;color:var(--ink-dim);letter-spacing:.08em;margin-bottom:3px">DIST. DE STALKING (wu)</div>
-        <div style="display:flex;gap:4px;align-items:center;margin-bottom:5px">
-          <input type="number" id="sel-stalk" min="150" max="1500" value="${stalkD}" style="flex:1;background:var(--bg);border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:12px;padding:4px 6px;border-radius:3px">
-          <button class="btn sel-stalk-reset" style="font-size:9px">↺ 380</button>
-        </div>`:''}
-        <div style="font-size:9px;color:var(--ink-dim);letter-spacing:.08em;margin-bottom:3px;border-top:1px solid var(--line);padding-top:8px">MODO DE ATAQUE</div>
+        ${beh==='stalk'?lbl('DIST. DE STALKING (wu)')+numRow('sel-stalk',150,1500,stalkD,380):''}
+        ${secHd('SENTIDOS')}
+        ${lbl('ALCANCE DE VISÃO (wu) — jogadores ≈300')}${numRow('sel-sight',100,2000,sightR,550)}
+        <div style="font-size:8px;color:var(--ink-dim);line-height:1.5;margin-bottom:4px">na perseguição ela só sabe onde o sub está se O VÊ (rocha bloqueia); sem visão vai ao último ponto visto e depois PROCURA pelo mapa</div>
+        ${secHd('ATAQUE')}
         <div style="display:flex;gap:4px;margin-bottom:5px">
-          <button class="btn sel-atk" data-a="collision" style="flex:1;font-size:9px${!isGrab?';color:var(--warn);border-color:var(--warn-dim)':''}">COLISÃO</button>
+          <button class="btn sel-atk" data-a="collision" style="flex:1;font-size:9px${(!isGrab&&!isSwipe)?';color:var(--warn);border-color:var(--warn-dim)':''}">COLISÃO</button>
           <button class="btn sel-atk" data-a="grab" style="flex:1;font-size:9px${isGrab?';color:var(--danger);border-color:var(--danger)':''}">AGARRAR</button>
+          <button class="btn sel-atk" data-a="swipe" style="flex:1;font-size:9px${isSwipe?';color:#c86dd8;border-color:#7a4088':''}">INVESTIDA</button>
         </div>
-        ${!isGrab?`<div style="font-size:9px;color:var(--ink-dim);letter-spacing:.08em;margin-bottom:3px">DIST. PÓS-COLISÃO (wu)</div>
-        <div style="display:flex;gap:4px;align-items:center;margin-bottom:5px">
-          <input type="number" id="sel-pcd" min="50" max="2000" value="${aggrD}" style="flex:1;background:var(--bg);border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:12px;padding:4px 6px;border-radius:3px">
-          <button class="btn sel-pcd-reset" style="font-size:9px">↺ 300</button>
-        </div>`:`<div style="display:flex;gap:4px;margin-bottom:5px">
+        ${(!isGrab&&!isSwipe)?lbl('DIST. PÓS-COLISÃO (wu)')+numRow('sel-pcd',50,2000,aggrD,300):''}
+        ${isSwipe?lbl('DIST. DE DISPARO DA INVESTIDA (wu)')+numRow('sel-swd',100,600,swipeD,250)+
+          `<div style="font-size:8px;color:var(--ink-dim);line-height:1.5;margin-bottom:4px">passada a ~7× a velocidade rente a uma lateral — o sub TOMBA pro lado do impacto</div>`:''}
+        ${isGrab?`<div style="display:flex;gap:4px;margin-bottom:4px">
           <button class="btn sel-grab-target" style="flex:1;font-size:9px;color:${settingGrabTarget?'#ff8800':'var(--ink-dim)'}">
             ${settingGrabTarget?'↙ CLIQUE NO MAPA':'DEFINIR ALVO'}
           </button>
           ${isGrabbed?`<button class="btn sel-grab-release" style="flex:1;font-size:9px;color:var(--danger)">SOLTAR</button>`:''}
-        </div>`}
+        </div>
+        ${isGrabbed?`<div style="font-size:8px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:2px">LUTA DOS OCUPANTES</div>
+        <div style="height:4px;background:#1a2025;border-radius:2px;margin-bottom:5px">
+          <div id="struggleBar" style="height:100%;width:${currentStruggle}%;background:var(--warn);border-radius:2px;transition:width .4s"></div>
+        </div>`:''}`:''}
+        ${secHd('AÇÕES')}
         <div style="display:flex;gap:4px;margin-bottom:5px">
           <button class="btn sel-dismiss" style="flex:1;font-size:9px;color:var(--warn-dim)">DISPENSAR</button>
           <button class="btn sel-rm" style="flex:1;font-size:9px;color:var(--danger)">REMOVER</button>
@@ -1544,6 +1560,10 @@
     if(rs){ const inp=document.getElementById('sel-spd'); if(inp) inp.value=50; entities[id]={...entities[id],speed:50}; subRef.child('entities/'+id+'/speed').set(50); renderSelectedPanel(); return; }
     const stk=e.target.closest('.sel-stalk-reset');
     if(stk){ const inp=document.getElementById('sel-stalk'); if(inp) inp.value=380; entities[id]={...entities[id],stalkDist:380}; subRef.child('entities/'+id+'/stalkDist').set(380); renderSelectedPanel(); return; }
+    const sgr=e.target.closest('.sel-sight-reset');
+    if(sgr){ const inp=document.getElementById('sel-sight'); if(inp) inp.value=550; entities[id]={...entities[id],sightRange:550}; subRef.child('entities/'+id+'/sightRange').set(550); renderSelectedPanel(); return; }
+    const swr=e.target.closest('.sel-swd-reset');
+    if(swr){ const inp=document.getElementById('sel-swd'); if(inp) inp.value=250; entities[id]={...entities[id],swipeDist:250}; subRef.child('entities/'+id+'/swipeDist').set(250); renderSelectedPanel(); return; }
     const ab=e.target.closest('.sel-atk');
     if(ab){ const atk=ab.dataset.a; entities[id]={...entities[id],attackMode:atk}; subRef.child('entities/'+id+'/attackMode').set(atk); renderSelectedPanel(); return; }
     const pcd=e.target.closest('.sel-pcd-reset');
@@ -1572,6 +1592,8 @@
     if(e.target.id==='sel-spd'){ const spd=Math.max(1,Math.min(300,parseInt(e.target.value)||20)); e.target.value=spd; entities[id]={...entities[id],speed:spd}; subRef.child('entities/'+id+'/speed').set(spd); }
     if(e.target.id==='sel-pcd'){ const a=Math.max(50,Math.min(2000,parseInt(e.target.value)||300)); e.target.value=a; entities[id]={...entities[id],postCollisionDist:a}; subRef.child('entities/'+id+'/postCollisionDist').set(a); }
     if(e.target.id==='sel-stalk'){ const s=Math.max(150,Math.min(1500,parseInt(e.target.value)||380)); e.target.value=s; entities[id]={...entities[id],stalkDist:s}; subRef.child('entities/'+id+'/stalkDist').set(s); }
+    if(e.target.id==='sel-sight'){ const s=Math.max(100,Math.min(2000,parseInt(e.target.value)||550)); e.target.value=s; entities[id]={...entities[id],sightRange:s}; subRef.child('entities/'+id+'/sightRange').set(s); }
+    if(e.target.id==='sel-swd'){ const s=Math.max(100,Math.min(600,parseInt(e.target.value)||250)); e.target.value=s; entities[id]={...entities[id],swipeDist:s}; subRef.child('entities/'+id+'/swipeDist').set(s); }
   });
 
   // ---- Lista compacta de entidades ----
