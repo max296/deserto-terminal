@@ -396,6 +396,12 @@
     return null;
   }
   function isPillar(px, depth){ return pillarAt(px,depth)!==null; }
+  // hitbox do SUB contra pilares: raio próprio, maior que o das paredes (26)
+  const SUB_PILLAR_R=30;
+  function pillarBlocked(px,pd){
+    const R=SUB_PILLAR_R;
+    return !!(pillarAt(px,pd)||pillarAt(px-R,pd)||pillarAt(px+R,pd)||pillarAt(px,pd-R)||pillarAt(px,pd+R));
+  }
 
   // ====== navegação compartilhada ======
   // estado autoritativo: submarine/nav = { x, depth, heading, mode }
@@ -406,6 +412,8 @@
   let lastWallHit=0, wallHitCount=0, lastWallShake=0;
   // suspensão do veículo: trancos de terreno (mola+amortecedor) enquanto se move
   let shkX=0,shkY=0,shkVX=0,shkVY=0,nextJoltT=0,_shkPX=null,_shkPD=null,_shkPH=null;
+  let rollA=0,rollV=0;                 // tombo (graus) — investida da criatura
+  let struggleAmt=0,_struggleSyncT=0;  // luta dos players durante o grab (0-100)
   let navPath=[], lastPathPoint=null, reelingSpeed=80;
   let reelingPath=[], reelingWpIdx=-1;  // reelingPath = caminho esticado calculado ao iniciar reeling
   let navPathWriteT=0;
@@ -816,7 +824,7 @@
           const rib=0.80+0.20*Math.abs(Math.sin(u*6.28*6));
           const seam=(y&63)<3?0.55:1.0;
           const scratch=vnoise((u*8)%1,v,32)>0.86?1.30:1.0;
-          lum=(88+n*52)*rib*seam*scratch;
+          lum=(112+n*58)*rib*seam*scratch;
         }
         lum=Math.max(14,Math.min(235,lum));
         // tints: pilar frio metálico; caverna esverdeada; rocha quase neutra
@@ -863,7 +871,18 @@
         const cnv=document.createElement('canvas'); cnv.width=cnv.height=TEX_SIZE;
         const c2=cnv.getContext('2d');
         c2.drawImage(im,0,0,TEX_SIZE,TEX_SIZE);
-        const px=new Uint32Array(c2.getImageData(0,0,TEX_SIZE,TEX_SIZE).data.buffer);
+        const imgd=c2.getImageData(0,0,TEX_SIZE,TEX_SIZE);
+        if(kind==='pillar'){
+          // concreto mais BRANCO: gain + lift — destaca da rocha em volta
+          const d=imgd.data;
+          for(let p=0;p<d.length;p+=4){
+            d[p]=Math.min(255,d[p]*1.32+10);
+            d[p+1]=Math.min(255,d[p+1]*1.32+10);
+            d[p+2]=Math.min(255,d[p+2]*1.32+10);
+          }
+          c2.putImageData(imgd,0,0);
+        }
+        const px=new Uint32Array(imgd.data.buffer);
         TEXSETS.img[kind][i]={cnv,px,w:TEX_SIZE,h:TEX_SIZE};
         rebuildTexR();
       };
@@ -1207,7 +1226,7 @@
         x.imageSmoothingEnabled=true;
         // escurecimento ambiente: rocha no breu é escura; o facho recupera a cor.
         // pilar recebe luz base maior — concreto claro se destaca da rocha
-        const ambBase=hitKind==="pillar"?(0.38+ambLight*0.62):(0.24+ambLight*0.60);
+        const ambBase=hitKind==="pillar"?(0.46+ambLight*0.58):(0.24+ambLight*0.60);
         const ambF=Math.max(0,Math.min(1,ambBase*sideShade+lit*0.72));
         if(ambF<0.995){ x.fillStyle=`rgba(0,0,0,${(1-ambF).toFixed(3)})`; x.fillRect(xL,y0,wW,hS); }
         // fog: dissolve na cor da água pela DISTÂNCIA (única fonte de fade)
@@ -1621,6 +1640,12 @@
 
     if(nav.mode==="diving"){
       if(isGrabbed){
+        // STRUGGLE: o WASD travado vira LUTA — enche a barra no painel do guardião
+        // (~12s de luta contínua pra encher; decai devagar quando param)
+        const fighting=keys["KeyW"]||keys["KeyA"]||keys["KeyS"]||keys["KeyD"]
+          ||keys["ArrowUp"]||keys["ArrowDown"]||keys["ArrowLeft"]||keys["ArrowRight"];
+        struggleAmt=Math.max(0,Math.min(100,struggleAmt+(fighting?dt*8.3:-dt*2)));
+        if(now-_struggleSyncT>500){ _struggleSyncT=now; ref.child('struggle').set(Math.round(struggleAmt)); }
         // sub preso: só se move se o guardião definiu um alvo (arrasto por BFS)
         if(grabTarget){
           if(!grabPath){
@@ -1641,9 +1666,9 @@
               let nx=nav.x+gdx/gdist*spd;
               let nd=Math.max(MIN_DIVE_DEPTH,Math.min(MAX_DEPTH,nav.depth+gdd/gdist*spd));
               const R=26;
-              if(isWall(nx,nd)||isWall(nx-R,nd)||isWall(nx+R,nd)){
-                if(!isWall(nav.x,nd)&&!isWall(nav.x-R,nd)&&!isWall(nav.x+R,nd)) nx=nav.x;
-                else if(!isWall(nx,nav.depth)&&!isWall(nx-R,nav.depth)&&!isWall(nx+R,nav.depth)) nd=nav.depth;
+              if(isWall(nx,nd)||isWall(nx-R,nd)||isWall(nx+R,nd)||pillarBlocked(nx,nd)){
+                if(!isWall(nav.x,nd)&&!isWall(nav.x-R,nd)&&!isWall(nav.x+R,nd)&&!pillarBlocked(nav.x,nd)) nx=nav.x;
+                else if(!isWall(nx,nav.depth)&&!isWall(nx-R,nav.depth)&&!isWall(nx+R,nav.depth)&&!pillarBlocked(nx,nav.depth)) nd=nav.depth;
                 else {nx=nav.x;nd=nav.depth;}
               }
               nav.x=nx; nav.depth=nd; pushNav();
@@ -1687,10 +1712,10 @@
               nx=nav.x; nd=nav.depth; hitWall=true;
             }
           }
-          // pilares decorativos da estação (sobrepostos ao grid)
-          if(isPillar(nx, nd)){
-            if(!isPillar(nav.x, nd)){ nx=nav.x; hitWall=true; }
-            else if(!isPillar(nx, nav.depth)){ nd=nav.depth; hitWall=true; }
+          // pilares (sobrepostos ao grid) — hitbox com raio próprio
+          if(pillarBlocked(nx, nd)){
+            if(!pillarBlocked(nav.x, nd)){ nx=nav.x; hitWall=true; }
+            else if(!pillarBlocked(nx, nav.depth)){ nd=nav.depth; hitWall=true; }
             else { nx=nav.x; nd=nav.depth; hitWall=true; }
           }
           if(isStationBackWall(nd) && !isStationBackWall(nav.depth)){
@@ -1745,9 +1770,9 @@
           // move com collision detection — não trava em parede
           const R=26, stepX=(dx/dist)*reelingSpeed*dt, stepD=(dd/dist)*reelingSpeed*dt;
           let nx=nav.x+stepX, nd=nav.depth+stepD;
-          if(isWall(nx,nd)||isWall(nx-R,nd)||isWall(nx+R,nd)||isPillar(nx,nd)){
-            if(!isWall(nav.x,nd)&&!isWall(nav.x-R,nd)&&!isWall(nav.x+R,nd)&&!isPillar(nav.x,nd)) nx=nav.x;
-            else if(!isWall(nx,nav.depth)&&!isWall(nx-R,nav.depth)&&!isWall(nx+R,nav.depth)&&!isPillar(nx,nav.depth)) nd=nav.depth;
+          if(isWall(nx,nd)||isWall(nx-R,nd)||isWall(nx+R,nd)||pillarBlocked(nx,nd)){
+            if(!isWall(nav.x,nd)&&!isWall(nav.x-R,nd)&&!isWall(nav.x+R,nd)&&!pillarBlocked(nav.x,nd)) nx=nav.x;
+            else if(!isWall(nx,nav.depth)&&!isWall(nx-R,nav.depth)&&!isWall(nx+R,nav.depth)&&!pillarBlocked(nx,nav.depth)) nd=nav.depth;
             else { nx=nav.x; nd=nav.depth; }
           }
           nav.x=nx; nav.depth=nd;
@@ -1800,9 +1825,73 @@
         }
 
         if(phase===null){
-          if(dist>8){ const spd=entSpd*dt; vx=(dx/dist)*spd; vd=(dd/dist)*spd; }
-          // gatilho de ataque ao se aproximar (bloqueado na moonpool e no cooldown)
-          if(dist<110&&nav.mode!=="moonpool"&&now-jumpscareT>jumpscareCD){
+          // ===== CAÇA POR LAST-SEEN: ela só sabe onde o sub está se O VÊ =====
+          // Visão: alcance configurável (default 550wu — mais que os ~300 dos
+          // players, mas o fog vale pra ela também) + linha de visão real (rocha
+          // bloqueia). Estados: hunt (vendo) → last (vai ao último ponto visto)
+          // → search (procura em raio crescente, re-centrando em cada canto).
+          const sightR=typeof ent.sightRange==='number'&&ent.sightRange>0?ent.sightRange:550;
+          let hu=creatureHuntState[id];
+          if(!hu) hu=creatureHuntState[id]={mode:'hunt',lastSeen:{x:nav.x,d:nav.depth},path:null,wpIdx:0,calcT:0,goal:null,goalPos:null,searchR:220};
+          const sees=dist<sightR&&lineOfSight(ewx,ewd,nav.x,nav.depth);
+          if(sees){
+            hu.mode='hunt'; hu.lastSeen={x:nav.x,d:nav.depth}; hu.searchR=220;
+          } else if(hu.mode==='hunt'){
+            hu.mode='last'; hu.path=null; hu.goalPos=null;
+          }
+          let tgtX,tgtD,spdMul=1;
+          if(hu.mode==='hunt'){ tgtX=nav.x; tgtD=nav.depth; }
+          else if(hu.mode==='last'){
+            tgtX=hu.lastSeen.x; tgtD=hu.lastSeen.d;
+            if(Math.hypot(ewx-tgtX,ewd-tgtD)<50){ hu.mode='search'; hu.goal=null; }
+          }
+          if(hu.mode==='search'){
+            spdMul=0.7;
+            if(!hu.goal||Math.hypot(ewx-hu.goal.x,ewd-hu.goal.d)<50){
+              const g=findSearchPoint(hu.lastSeen.x,hu.lastSeen.d,hu.searchR);
+              if(g){ hu.goal=g; hu.goalPos=null; hu.lastSeen={x:g.x,d:g.d}; } // re-centra: espalha
+              hu.searchR=Math.min(800,hu.searchR+120);
+            }
+            if(hu.goal){ tgtX=hu.goal.x; tgtD=hu.goal.d; }
+            else { tgtX=ewx; tgtD=ewd; }
+          }
+          // pathfinding dinâmico (recalcula ao alvo mover >60wu ou a cada 600ms)
+          const needP=!hu.path||hu.wpIdx>=hu.path.length
+            ||(hu.goalPos&&Math.hypot(tgtX-hu.goalPos.x,tgtD-hu.goalPos.d)>60)
+            ||now-hu.calcT>600;
+          if(needP&&now-hu.calcT>250){
+            let raw=bfsPath(ewx,ewd,tgtX,tgtD,true);
+            if(!raw) raw=bfsPath(ewx,ewd,tgtX,tgtD);
+            hu.path=raw?smoothBfsPathW(raw):null;
+            hu.wpIdx=0; hu.calcT=now; hu.goalPos={x:tgtX,d:tgtD};
+          }
+          if(hu.path&&hu.wpIdx<hu.path.length){
+            const wp=hu.path[hu.wpIdx];
+            const dwx=wp.x-ewx, dwd=wp.depth-ewd;
+            const wdist=Math.hypot(dwx,dwd);
+            if(wdist<TILE*0.6) hu.wpIdx++;
+            else { const spd=entSpd*spdMul*dt; vx=dwx/wdist*spd; vd=dwd/wdist*spd; }
+          } else if(hu.mode==='hunt'&&dist>8){
+            const spd=entSpd*dt; vx=(dx/dist)*spd; vd=(dd/dist)*spd;
+          }
+          // INVESTIDA: passada rasante a alta velocidade por uma LATERAL do sub
+          if(sees&&attackMode==='swipe'&&nav.mode!=="moonpool"&&now-jumpscareT>jumpscareCD){
+            const swD=typeof ent.swipeDist==='number'&&ent.swipeDist>0?ent.swipeDist:250;
+            if(dist<swD){
+              jumpscareT=now;
+              const hdgR=nav.heading*Math.PI/180;
+              const fwdX=Math.sin(hdgR), fwdD=Math.cos(hdgR);
+              const latX=Math.cos(hdgR), latD=-Math.sin(hdgR);
+              const side=Math.random()<0.5?-1:1;
+              // trajetória sempre no semiplano frontal+lateral — NUNCA atrás
+              const p1={x:nav.x+fwdX*180+latX*side*70, d:nav.depth+fwdD*180+latD*side*70};
+              const p2={x:nav.x+fwdX*10+latX*side*70,  d:nav.depth+fwdD*10+latD*side*70};
+              creatureEntities[id]={...ent,_attackPhase:'swiping',_swipe:{p1,p2,side,stage:0,hit:false}};
+              return;
+            }
+          }
+          // gatilho de ataque frontal (colisão/agarrar) — só quando VENDO e perto
+          if(sees&&attackMode!=='swipe'&&dist<110&&nav.mode!=="moonpool"&&now-jumpscareT>jumpscareCD){
             jumpscareT=now; collisionFlicker=1.0;
             const jf=document.getElementById("jflash");
             jf.style.display="block"; jf.style.transition="none"; jf.style.opacity="1";
@@ -1819,6 +1908,30 @@
               // colisão: lança a criatura em frente (continua por postCollisionDist)
               creatureEntities[id]={...ent,_attackPhase:'charging',
                 _chargeDir:{x:dx/dist,d:dd/dist},_chargeTraveled:0};
+            }
+          }
+        } else if(phase==='swiping'){
+          // PASSADA: ~7× a velocidade — um vulto rente à lateral
+          const sw=ent._swipe;
+          if(!sw){ creatureEntities[id]={...ent,_attackPhase:null}; }
+          else{
+            const tgt=sw.stage===0?sw.p1:sw.p2;
+            const dtx=tgt.x-ewx, dtd=tgt.d-ewd;
+            const tdist=Math.hypot(dtx,dtd);
+            const spd=entSpd*7*dt;
+            if(tdist<Math.max(20,spd*1.5)){
+              if(sw.stage===0) creatureEntities[id]={...ent,_swipe:{...sw,stage:1}};
+              else creatureEntities[id]={...ent,_attackPhase:'recovering',_recoverT:now,_swipe:null};
+            } else {
+              vx=dtx/tdist*spd; vd=dtd/tdist*spd;
+            }
+            // impacto no ponto de máxima aproximação: o sub TOMBA pro lado
+            if(!sw.hit&&dist<95){
+              creatureEntities[id]={...creatureEntities[id],_swipe:{...(creatureEntities[id]._swipe||sw),hit:true}};
+              collisionFlicker=0.6;
+              wallHitCount+=6; ref.child("hullDamage").set(wallHitCount);
+              rollV+=sw.side*45;   // tombo (roll com mola — cai e volta)
+              shkVX+=sw.side*55;   // tranco lateral forte
             }
           }
         } else if(phase==='charging'){
@@ -1946,8 +2059,13 @@
       let dh=Math.abs(nav.heading-(_shkPH??nav.heading)); if(dh>180)dh=360-dh;
       _shkPX=nav.x; _shkPD=nav.depth; _shkPH=nav.heading;
       const idt=Math.max(dt,0.001);
-      const moveI=Math.min(1,(mvd/idt)/30)+Math.min(0.4,(dh/idt)/52*0.4);
+      let moveI=Math.min(1,(mvd/idt)/30)+Math.min(0.4,(dh/idt)/52*0.4);
       const grabMul=(grabbedBy&&nav.mode==='diving')?2:1;
+      // LUTA durante o grab: a nave se mexe mais (único sinal pros players)
+      if(grabbedBy&&nav.mode==='diving'&&(keys["KeyW"]||keys["KeyA"]||keys["KeyS"]||keys["KeyD"]
+        ||keys["ArrowUp"]||keys["ArrowDown"]||keys["ArrowLeft"]||keys["ArrowRight"])){
+        moveI=Math.max(moveI,0.5+struggleAmt*0.005);
+      }
       if(moveI>0.05&&now>=nextJoltT){
         nextJoltT=now+400+Math.random()*800;      // próximo tranco em 0.4-1.2s
         const amp=(0.8+Math.random()*1.6)*Math.min(1.4,moveI)*grabMul;
@@ -1958,14 +2076,18 @@
       const K=90, D=7.5;
       shkVX+=(-shkX*K-shkVX*D)*dt; shkX+=shkVX*dt;
       shkVY+=(-shkY*K-shkVY*D)*dt; shkY+=shkVY*dt;
+      // TOMBO (roll) da investida: mola própria, mais lenta — tomba e volta
+      const KR=60, DR=5.5;
+      rollV+=(-rollA*KR-rollV*DR)*dt; rollA+=rollV*dt;
       // micro-vibração de motor por baixo, só com propulsão
       const eng=moveI>0.05?0.3*Math.min(1,moveI):0;
       const ex=eng*Math.sin(now*0.055), ey=eng*0.5*Math.sin(now*0.043+1.3);
       const subEl_=document.getElementById('sub');
       const tx2=Math.max(-3,Math.min(3,shkX+ex));
       const ty2=Math.max(-2,Math.min(2,shkY+ey));
-      subEl_.style.transform=(Math.abs(tx2)>0.02||Math.abs(ty2)>0.02)
-        ?`translate(${tx2.toFixed(2)}px,${ty2.toFixed(2)}px)`:'';
+      const rr2=Math.max(-7,Math.min(7,rollA));
+      subEl_.style.transform=(Math.abs(tx2)>0.02||Math.abs(ty2)>0.02||Math.abs(rr2)>0.05)
+        ?`translate(${tx2.toFixed(2)}px,${ty2.toFixed(2)}px) rotate(${rr2.toFixed(2)}deg)`:'';
     }
 
     // HUD local
@@ -2146,7 +2268,9 @@
     if(!prev&&grabbedBy){
       grabPath=null; grabWpIdx=0;
       grabStartT=performance.now();
+      struggleAmt=0; ref.child('struggle').set(0);
     } else if(prev&&!grabbedBy){
+      struggleAmt=0; ref.child('struggle').set(0);
       jumpscareT=performance.now(); // cooldown: evita re-agarrar imediato
       // DESGRUDA: a criatura NADA se afastando na direção que o jogador está
       // olhando — aparece logo à frente do visor e percorre DIST. PÓS-COLISÃO
@@ -2188,6 +2312,25 @@
   let grabbedBy=null, grabTarget=null, grabPath=null, grabWpIdx=0;
   let creatureWanderTargets={}, creatureWanderPhase={};
   let creatureStalkState={};
+  let creatureHuntState={};
+  // ponto de BUSCA: tile navegável com folga num anel ao redor de (cx,cd),
+  // escolhido pseudo-aleatório — a criatura vai de canto em canto procurando
+  let _searchSeed=17;
+  function findSearchPoint(cx,cd,radius){
+    const cands=[];
+    const r0=Math.max(0,Math.floor((cd-radius-80)/TILE));
+    const r1=Math.min(GRID_ROWS-1,Math.ceil((cd+radius+80)/TILE));
+    for(let r=r0;r<=r1;r++)for(let c=0;c<GRID_COLS;c++){
+      if(!tileClear(r,c)) continue;
+      const px=X_MIN_W+c*TILE+TILE/2, pd=r*TILE+TILE/2;
+      const dC=Math.hypot(px-cx,pd-cd);
+      if(dC<radius*0.5||dC>radius+80) continue;
+      cands.push({x:px,d:pd});
+    }
+    if(!cands.length) return null;
+    _searchSeed=(_searchSeed*1664525+1013904223)>>>0;
+    return cands[_searchSeed%cands.length];
+  }
   // acha um tile navegável (com folga) num anel de raio ~rTgt ao redor do SUB,
   // o mais próximo possível da criatura — ela se move o mínimo pra manter o anel
   function findStalkPoint(cx,cd,rTgt){
