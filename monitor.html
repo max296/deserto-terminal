@@ -132,6 +132,17 @@
   .stat-txt{font-size:8.5px;color:#2f6478;letter-spacing:.06em;margin-top:3px}
   #glassStat{font-size:12px;letter-spacing:.16em;color:#6ee3ff;margin-top:2px}
   #glassStat.bad{color:#e86a5a;animation:pdanger .7s ease-in-out infinite alternate}
+  /* janelas menores (sem F11): encolhe o sensor e a barra pra nada estourar */
+  @media (max-height:860px){
+    #monSonarCv{width:220px;height:220px}
+    #bottomBar{height:100px}
+    #crt{padding:18px 18px 32px}
+    #umbBox{padding:6px 14px}
+  }
+  @media (max-height:700px){
+    #monSonarCv{width:170px;height:170px}
+    #sparkCv{display:none}
+  }
 </style>
 </head>
 <body>
@@ -595,6 +606,7 @@
     if(typeof n.x==='number')nav.x=n.x;
     if(typeof n.depth==='number')nav.depth=n.depth;
     if(typeof n.heading==='number')nav.heading=n.heading;
+    if(n.mode)nav.mode=n.mode;
     if(n.mode&&n.mode!==prevMode){
       if(prevMode!==null){
         if(n.mode==='diving') addLog('DSV SUBMERSO — telemetria ativa');
