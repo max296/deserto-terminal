@@ -713,10 +713,14 @@
       // visível até 500wu de distância, pulsa lentamente
       const biolumPhase=(id.charCodeAt(0)*1.37)%(Math.PI*2);
       const biolumPulse=0.35+0.65*Math.abs(Math.sin(t*0.038+biolumPhase));
-      const glowAlpha=Math.max(0,(1-tY/500)*biolumPulse*0.82);
-      // depth-test: luz não atravessa rocha — só brilha se a coluna está visível
+      // alcance maior que os pontos ambientes (ela anuncia de longe) + oclusão SUAVE:
+      // fade temporal em vez de sumir num frame (o pop denunciava que era a criatura)
       const gcol=Math.max(0,Math.min(COLS_-1,Math.floor(screenX/colW_)));
-      if(glowAlpha>0.01&&tY<zBuf[gcol]+12){
+      const occluded=tY>=zBuf[gcol]+12;
+      const gv=(creatureGlowVis[id]===undefined?1:creatureGlowVis[id]);
+      creatureGlowVis[id]=gv+((occluded?0:1)-gv)*0.09;
+      const glowAlpha=Math.max(0,(1-tY/650)*biolumPulse*0.82)*creatureGlowVis[id];
+      if(glowAlpha>0.01){
         // verde IGUAL à bioluminescência ambiente — a criatura se disfarça entre elas
         const glowR=Math.min(h*0.20,110/Math.max(1,tY*0.08));
         const gr2=x.createRadialGradient(screenX,h/2,0,screenX,h/2,glowR*3.8);
@@ -1414,7 +1418,9 @@
     const fogA=exhale*exhale*(0.06+stressF*0.38);
     const bfEl=document.getElementById('breathFog');
     if(bfEl) bfEl.style.opacity=fogA.toFixed(3);
-    const blurPx=0.9+exhale*(0.35+stressF*1.5);
+    // na INSPIRAÇÃO o vidro fica quase límpido (0.2px) — nitidez ocasional real;
+    // o embaço vive só no pico da expiração
+    const blurPx=0.2+exhale*(0.9+stressF*1.6);
     document.getElementById("visionBlur").style.backdropFilter=`blur(${blurPx.toFixed(2)}px)`;
 
     requestAnimationFrame(draw);
@@ -1863,16 +1869,20 @@
       // se afasta em diagonal frontal → volta ao que estava fazendo antes
       if(ent._swipePhase){
         const sp=ent._swipePhase;
+        if(!sp.stageT) sp.stageT=now;
         const tgt=sp.stage===0?sp.p1:sp.stage===1?sp.p2:sp.away;
         const dtx=tgt.x-ewx, dtd=tgt.d-ewd;
         const tdist=Math.hypot(dtx,dtd);
         const spd=entSpd*(sp.stage===2?3:7)*dt;
-        if(tdist<Math.max(20,spd*1.5)){
-          if(sp.stage<2) creatureEntities[id]={...ent,_swipePhase:{...sp,stage:sp.stage+1}};
+        // timeout: se um estágio empacar (alvo bloqueado), avança em vez de
+        // esfregar na parede pra sempre
+        const stuck=now-sp.stageT>2600;
+        if(tdist<Math.max(20,spd*1.5)||stuck){
+          if(sp.stage<2) creatureEntities[id]={...ent,_swipePhase:{...sp,stage:sp.stage+1,stageT:now}};
           else creatureEntities[id]={...ent,_swipePhase:null}; // fim: retoma o comportamento
         } else { vx=dtx/tdist*spd; vd=dtd/tdist*spd; }
         // impacto rasante: o sub TOMBA pro lado da passada (uma vez)
-        if(!sp.hit&&sp.stage<2&&dist<95){
+        if(!sp.hit&&sp.stage<2&&dist<80){
           creatureEntities[id]={...creatureEntities[id],_swipePhase:{...(creatureEntities[id]._swipePhase||sp),hit:true}};
           collisionFlicker=0.6;
           recentHits+=1.5;
@@ -1890,10 +1900,11 @@
         const fwdX=Math.sin(hdgR), fwdD=Math.cos(hdgR);
         const latX=Math.cos(hdgR), latD=-Math.sin(hdgR);
         const side=Math.random()<0.5?-1:1;
-        const p1={x:nav.x+fwdX*180+latX*side*70, d:nav.depth+fwdD*180+latD*side*70};
-        const p2={x:nav.x+fwdX*10+latX*side*70,  d:nav.depth+fwdD*10+latD*side*70};
-        const away={x:nav.x+fwdX*250+latX*side*450, d:nav.depth+fwdD*250+latD*side*450};
-        creatureEntities[id]={...ent,_swipeAck:ent.swipeCmd,_swipePhase:{stage:0,side,p1,p2,away,hit:false}};
+        // pontos SEMPRE em água navegável — nunca dentro de rocha (prendia a fase)
+        const p1=nearestWater(nav.x+fwdX*180+latX*side*70, nav.depth+fwdD*180+latD*side*70);
+        const p2=nearestWater(nav.x+fwdX*10+latX*side*70,  nav.depth+fwdD*10+latD*side*70);
+        const away=nearestWater(nav.x+fwdX*250+latX*side*450, nav.depth+fwdD*250+latD*side*450);
+        creatureEntities[id]={...ent,_swipeAck:ent.swipeCmd,_swipePhase:{stage:0,side,p1,p2,away,hit:false,stageT:now}};
         ref.child('entities/'+id+'/_swipeAck').set(ent.swipeCmd);
         return;
       }
@@ -1938,7 +1949,8 @@
               hu.noiseT=lastNoiseT;
               if(Math.hypot(lastNoiseX-ewx,lastNoiseD-ewd)<1400){
                 const ang=Math.random()*6.28, rr=Math.random()*220;
-                hu.lastSeen={x:lastNoiseX+Math.cos(ang)*rr, d:lastNoiseD+Math.sin(ang)*rr};
+                const nw=nearestWater(lastNoiseX+Math.cos(ang)*rr,lastNoiseD+Math.sin(ang)*rr);
+                hu.lastSeen={x:nw.x,d:nw.d};
                 hu.hintR=Math.max(160,(hu.hintR||650)-60); // barulho também aperta o cerco
                 hu.mode='last'; hu.path=null; hu.goalPos=null; hu.goal=null; hu.searchR=260;
               }
@@ -1948,7 +1960,8 @@
             if(subMoving&&dist<hearR&&now-(hu.heardT||0)>1200){
               hu.heardT=now;
               const ang=Math.random()*6.28, rr=Math.random()*100;
-              hu.lastSeen={x:nav.x+Math.cos(ang)*rr, d:nav.depth+Math.sin(ang)*rr};
+              const nw=nearestWater(nav.x+Math.cos(ang)*rr,nav.depth+Math.sin(ang)*rr);
+              hu.lastSeen={x:nw.x,d:nw.d};
               if(hu.mode!=='last'){ hu.mode='last'; hu.path=null; hu.goalPos=null; hu.goal=null; }
             }
             if(hu.mode==='hunt'){
@@ -1976,7 +1989,8 @@
               hu.nextHintT=now+hintIv;
               hu.hintR=Math.max(160,hu.hintR-90);
               const ang=Math.random()*6.28, rr=Math.random()*hu.hintR;
-              hu.lastSeen={x:nav.x+Math.cos(ang)*rr, d:nav.depth+Math.sin(ang)*rr};
+              const nw=nearestWater(nav.x+Math.cos(ang)*rr,nav.depth+Math.sin(ang)*rr);
+              hu.lastSeen={x:nw.x,d:nw.d};
               hu.searchR=Math.max(240,hu.hintR*0.6);
               hu.goal=null; // re-centra a varredura na dica nova
             }
@@ -2018,10 +2032,15 @@
             else { const spd=entSpd*spdMul*dt; vx=dwx/wdist*spd; vd=dwd/wdist*spd; }
           } else if(hu.mode==='hunt'&&dist>8){
             const spd=entSpd*dt; vx=(dx/dist)*spd; vd=(dd/dist)*spd;
+          } else if(tgtX!==undefined){
+            // BFS falhou (alvo inalcançável): NUNCA fica parada — vai na direção
+            // do alvo e o steerMove desvia das paredes no caminho
+            const gx=tgtX-ewx, gd=tgtD-ewd, gl=Math.hypot(gx,gd);
+            if(gl>12){ const spd=entSpd*spdMul*0.8*dt; vx=gx/gl*spd; vd=gd/gl*spd; }
           }
           // gatilho de ataque frontal (colisão/agarrar): vendo E perto — ou
           // QUASE ENCOSTANDO (70wu): mesmo cega/no escuro ela sente a pressão da água
-          if((sees||dist<70)&&dist<110&&nav.mode!=="moonpool"&&now-jumpscareT>jumpscareCD){
+          if((sees||dist<58)&&dist<85&&nav.mode!=="moonpool"&&now-jumpscareT>jumpscareCD){
             jumpscareT=now; collisionFlicker=1.35;
             recentHits+=3; // fôlego dispara
             const jf=document.getElementById("jflash");
@@ -2420,6 +2439,21 @@
   let creatureWanderTargets={}, creatureWanderPhase={};
   let creatureStalkState={};
   let creatureHuntState={};
+  let creatureGlowVis={}; // fade de oclusão do glow (por entidade, imune ao eco do sync)
+  // célula de ÁGUA mais próxima (espiral): alvos de IA nunca caem dentro de rocha
+  function nearestWater(wx,wd){
+    const c0=Math.floor((wx-X_MIN_W)/TILE), r0=Math.floor(wd/TILE);
+    if(MAP[r0]&&MAP[r0][c0]===0) return {x:wx,d:wd};
+    for(let rad=1;rad<=6;rad++){
+      for(let dr=-rad;dr<=rad;dr++)for(let dc=-rad;dc<=rad;dc++){
+        if(Math.max(Math.abs(dr),Math.abs(dc))!==rad) continue;
+        const r=r0+dr,c=c0+dc;
+        if(r<0||r>=GRID_ROWS||c<0||c>=GRID_COLS) continue;
+        if(MAP[r][c]===0) return {x:X_MIN_W+c*TILE+TILE/2,d:r*TILE+TILE/2};
+      }
+    }
+    return {x:wx,d:wd};
+  }
   // ponto de BUSCA: tile navegável com folga num anel ao redor de (cx,cd),
   // escolhido pseudo-aleatório — a criatura vai de canto em canto procurando
   let _searchSeed=17;
