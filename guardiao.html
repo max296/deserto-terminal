@@ -486,6 +486,7 @@
   let viewers = {};
   let entities = {};
   let navPathData = [];
+  let ropeStateG = 'slack';
 
   const LEVELS = [
     { id:"helipad",  tag:"L-07", name:"Helipad" },
@@ -907,12 +908,20 @@
       if(major){ mctx.fillStyle='rgba(0,130,190,.7)'; mctx.fillText(md+'m',2,py-2); }
     }
 
-    // Cabo (corda ESTICADA: âncora → quinas → sub, segmentos retos)
+    // Cabo: FROUXO = ondulação suave (corda largada no leito) · TENSIONADO = retas
     if(navPathData.length>0){
-      mctx.save(); mctx.strokeStyle='rgba(100,170,255,0.45)'; mctx.lineWidth=1.5; mctx.setLineDash([3,3]);
+      const taut=ropeStateG==='taut';
+      mctx.save();
+      mctx.strokeStyle=taut?'rgba(140,190,255,0.65)':'rgba(100,170,255,0.40)';
+      mctx.lineWidth=taut?1.6:1.2;
+      if(!taut) mctx.setLineDash([4,3]);
       mctx.beginPath();
       navPathData.forEach((pt,i)=>{
-        const {px,py}=worldToMapPx(pt.x||0,pt.depth||0);
+        let {px,py}=worldToMapPx(pt.x||0,pt.depth||0);
+        if(!taut&&i>0&&i<navPathData.length-1){
+          // ondulação determinística por ponto: corda descansando, não reta
+          px+=Math.sin(i*1.83)*2.4; py+=Math.cos(i*2.41)*1.8;
+        }
         if(i===0) mctx.moveTo(px,py); else mctx.lineTo(px,py);
       });
       mctx.stroke(); mctx.setLineDash([]); mctx.restore();
@@ -1800,7 +1809,9 @@
 
   subRef.child("viewers").on("value",snap=>{viewers=snap.val()||{};});
   subRef.child("rope").on("value",snap=>{
-    const v=snap.val(); navPathData=v?Object.values(v):[];
+    const v=snap.val();
+    if(v&&v.pts){ navPathData=Object.values(v.pts); ropeStateG=v.state||'slack'; }
+    else { navPathData=[]; ropeStateG='slack'; }
   });
 
   // ---- Velocidade de navegação ----
