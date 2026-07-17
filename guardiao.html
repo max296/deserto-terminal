@@ -200,6 +200,17 @@
             <div style="margin-top:8px">
               <button class="btn" id="blackoutBtn" style="width:100%;background:#111;border-color:#333;color:#999">APAGAR TELA (BLACKOUT)</button>
             </div>
+            <details style="margin-top:12px;border-top:1px solid var(--line);padding-top:8px">
+              <summary style="cursor:pointer;font-size:10px;letter-spacing:.16em;color:var(--ink-dim);user-select:none">▸ TEXTURAS (avançado)</summary>
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <button class="btn" id="texImgBtn" style="flex:1">IMAGENS</button>
+                <button class="btn" id="texProcBtn" style="flex:1">PROCEDURAIS</button>
+              </div>
+              <div style="font-size:10px;color:var(--ink-dim);margin-top:6px;line-height:1.6">
+                IMAGENS = texturas reais (default). PROCEDURAIS = geradas por código.
+                Troca AO VIVO no visor dos jogadores.
+              </div>
+            </details>
           </div>
           <div>
             <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:7px">PERCURSO / PILOTAGEM
@@ -334,6 +345,7 @@
                 <div style="display:flex;gap:5px">
                   <button class="btn" id="edPaintOpen" style="flex:1;font-size:10px;padding:7px">▣ ÁGUA</button>
                   <button class="btn" id="edPaintClose" style="flex:1;font-size:10px;padding:7px">▩ ROCHA</button>
+                  <button class="btn" id="edPaintCave" style="flex:1;font-size:10px;padding:7px">▩ CAVERNA</button>
                 </div>
 
                 <div style="font-size:9px;color:#8a97a0;letter-spacing:.12em;margin-top:6px;border-top:1px solid #223142;padding-top:8px">3 · FERRAMENTA</div>
@@ -385,6 +397,7 @@
                 <div style="font-size:10px;line-height:1.9;color:#aeb8bf">
                   <span style="display:inline-block;width:11px;height:11px;background:#0c2a40;vertical-align:-1px"></span> água (navegável)<br>
                   <span style="display:inline-block;width:11px;height:11px;background:#0b0e14;border:1px solid #223142;vertical-align:-1px"></span> rocha (parede)<br>
+                  <span style="display:inline-block;width:11px;height:11px;background:#1d3018;vertical-align:-1px"></span> caverna (parede c/ textura própria)<br>
                   <span style="display:inline-block;width:11px;height:11px;background:rgba(150,170,200,.55);vertical-align:-1px"></span> pilar da petroleira<br>
                   <span style="color:#33ff88">◎</span> spawn do submarino<br>
                   <span style="color:#4c8fc8">●</span> submarino (ao vivo)<br>
@@ -398,7 +411,7 @@
                 <div style="font-size:10px;color:#aeb8bf;line-height:1.8">
                   <b>M</b> mover · <b>P</b> pintar<br>
                   <b>R</b> retângulo · <b>B</b> pincel · <b>C</b> corredor<br>
-                  <b>A</b> água · <b>F</b> rocha<br>
+                  <b>A</b> água · <b>F</b> rocha · <b>V</b> caverna<br>
                   <b>Ctrl+Z</b> desfazer · <b>Ctrl+Y</b> refazer<br>
                   <b>ESC</b> sair · <b>botão direito</b> panea sempre
                 </div>
@@ -670,6 +683,16 @@
     });
   });
 
+  // ---- texturas do visor: IMAGENS (PNGs reais) vs PROCEDURAIS ----
+  document.getElementById("texImgBtn").addEventListener("click",()=>subRef.child("texMode").set("img"));
+  document.getElementById("texProcBtn").addEventListener("click",()=>subRef.child("texMode").set("proc"));
+  subRef.child("texMode").on("value",snap=>{
+    const mode=snap.val()==='proc'?'proc':'img';
+    const bi=document.getElementById("texImgBtn"), bp=document.getElementById("texProcBtn");
+    if(bi){ bi.style.color=mode==='img'?'var(--live)':'var(--ink-dim)'; bi.style.borderColor=mode==='img'?'var(--live-dim)':''; }
+    if(bp){ bp.style.color=mode==='proc'?'var(--live)':'var(--ink-dim)'; bp.style.borderColor=mode==='proc'?'var(--live-dim)':''; }
+  });
+
   // blackout: apaga/restaura a tela do submarino
   let blackoutOn=false;
   const elBlackoutBtn=document.getElementById("blackoutBtn");
@@ -746,6 +769,8 @@
     [100,130,3,6],[130,180,2,6],[175,192,2,9],[185,225,4,7],
     [190,210,14,19],[200,265,17,20],[250,285,13,20],[270,300,15,18]
   ];
+  // regiões de CAVERNA default (valor 2): moldura da caverna do hive-mind
+  const DEFAULT_CAVE=[[585,639,1,19]];
   function buildMap(ops){
     const m=Array.from({length:GRID_ROWS},()=>new Uint8Array(GRID_COLS).fill(1));
     const paint=(r0,r1,c0,c1,v)=>{
@@ -753,8 +778,9 @@
         for(let c=Math.max(0,c0);c<=Math.min(GRID_COLS-1,c1);c++) m[r][c]=v;
     };
     // default no grid ORIGINAL: desloca por COL_OFFSET quando expandido à esquerda
+    for(const [r0,r1,c0,c1] of DEFAULT_CAVE) paint(r0,r1,c0+COL_OFFSET,c1+COL_OFFSET,2);
     for(const [r0,r1,c0,c1] of DEFAULT_OPEN) paint(r0,r1,c0+COL_OFFSET,c1+COL_OFFSET,0);
-    for(const o of (ops||[])) paint(o.r0,o.r1,o.c0,o.c1,o.op==='close'?1:0);
+    for(const o of (ops||[])) paint(o.r0,o.r1,o.c0,o.c1,o.op==='close'?1:o.op==='cave'?2:0);
     return m;
   }
   let mapOps=[], mapDirty=false;
@@ -807,7 +833,7 @@
     for(let r=rStart;r<=rEnd;r++){
       const py=(r-viewStart)*cellH;
       for(let c=0;c<GRID_COLS;c++){
-        mctx.fillStyle=MAP[r]&&MAP[r][c]===0?'#04111e':'#030609';
+        mctx.fillStyle=MAP[r]&&MAP[r][c]===0?'#04111e':MAP[r]&&MAP[r][c]===2?'#0e1c0a':'#030609';
         mctx.fillRect(c*cellW,py,cellW-0.5,cellH);
       }
     }
@@ -1044,7 +1070,7 @@
     for(let r=r0;r<=r1;r++){
       const py=edPxY(r), row=MAP[r];
       for(let c=c0;c<=c1;c++){
-        edCtx.fillStyle=row[c]===0?'#0c2a40':'#0b0e14';
+        edCtx.fillStyle=row[c]===0?'#0c2a40':row[c]===2?'#1d3018':'#0b0e14';
         edCtx.fillRect(edPxX(c),py,edZoom-gap,edZoom-gap);
       }
     }
@@ -1101,12 +1127,13 @@
      edCtx.textAlign='left';}
   }
   function edDrawPreview(){
-    const openCol='rgba(60,180,255,.30)', closeCol='rgba(255,70,40,.30)';
-    const strokeCol=edPaint==='open'?'#44ccff':'#ff5533';
+    const fillCols={open:'rgba(60,180,255,.30)',close:'rgba(255,70,40,.30)',cave:'rgba(90,200,80,.30)'};
+    const strokeCols={open:'#44ccff',close:'#ff5533',cave:'#55cc44'};
+    const paintCol=fillCols[edPaint], strokeCol=strokeCols[edPaint];
     if(edDrag&&edDrag.type==='rect'){
       const a=edDrag.a,b=edDrag.b;
       const r0=Math.min(a.r,b.r),r1=Math.max(a.r,b.r),c0=Math.min(a.c,b.c),c1=Math.max(a.c,b.c);
-      edCtx.fillStyle=edPaint==='open'?openCol:closeCol;
+      edCtx.fillStyle=paintCol;
       edCtx.fillRect(edPxX(c0),edPxY(r0),(c1-c0+1)*edZoom,(r1-r0+1)*edZoom);
       edCtx.strokeStyle=strokeCol;
       edCtx.strokeRect(edPxX(c0),edPxY(r0),(c1-c0+1)*edZoom,(r1-r0+1)*edZoom);
@@ -1124,7 +1151,7 @@
       const half=Math.floor(edCorrW/2);
       const vC0=edCorrA.c-half, vR0=Math.min(edCorrA.r,bR), vR1=Math.max(edCorrA.r,bR);
       const hR0=bR-half, hC0=Math.min(edCorrA.c,bC), hC1=Math.max(edCorrA.c,bC);
-      edCtx.fillStyle=edPaint==='open'?openCol:closeCol;
+      edCtx.fillStyle=paintCol;
       edCtx.fillRect(edPxX(vC0),edPxY(vR0),edCorrW*edZoom,(vR1-vR0+1)*edZoom);
       edCtx.fillRect(edPxX(hC0),edPxY(hR0),(hC1-hC0+1)*edZoom,edCorrW*edZoom);
       edCtx.strokeStyle=strokeCol;
@@ -1136,6 +1163,31 @@
       edCtx.fillStyle='rgba(180,200,230,.4)';
       edCtx.fillRect(px0,edPxY(d0/TILE),Math.max(2,px1-px0),edPxY(d1/TILE)-edPxY(d0/TILE));
     }
+    // ferramenta PILAR sem arrasto: mostra ANTES o que o clique fará
+    if(edTool==='pillar'&&edMode2==='paint'&&!edDrag){
+      const wx=edWorldX(edMouse.x), wd=edWorldD(edMouse.y);
+      const hitP=mapPillars.find(P=>Math.abs(wx-P.x)<=P.r&&wd>=P.top&&wd<=P.bot);
+      edCtx.font='10px monospace';
+      if(hitP){
+        // clique aqui REMOVE este pilar — outline vermelho
+        const px0=edPxX((hitP.x-hitP.r-X_MIN_W)/TILE), px1=edPxX((hitP.x+hitP.r-X_MIN_W)/TILE);
+        edCtx.strokeStyle='#ff4444'; edCtx.lineWidth=2;
+        edCtx.strokeRect(px0,edPxY(hitP.top/TILE),Math.max(2,px1-px0),edPxY(hitP.bot/TILE)-edPxY(hitP.top/TILE));
+        edCtx.lineWidth=1;
+        edCtx.fillStyle='#ff6666';
+        edCtx.fillText('clique: REMOVER pilar',px1+6,edPxY(hitP.top/TILE)+12);
+      } else {
+        // fora de pilar: ghost do que o ARRASTO criaria
+        const px0=edPxX((wx-22-X_MIN_W)/TILE), px1=edPxX((wx+22-X_MIN_W)/TILE);
+        edCtx.save(); edCtx.setLineDash([3,3]);
+        edCtx.strokeStyle='rgba(180,200,230,.55)';
+        edCtx.strokeRect(px0,edPxY(wd/TILE)-14,Math.max(2,px1-px0),28);
+        edCtx.restore();
+        edCtx.fillStyle='rgba(180,200,230,.65)';
+        edCtx.fillText('arraste ↕ pra criar pilar',px1+6,edPxY(wd/TILE)+4);
+      }
+      edCtx.font='9px monospace';
+    }
   }
   // minimapa (pré-renderizado; refeito quando o grid muda)
   function edRenderMini(){
@@ -1145,8 +1197,10 @@
     const cw=mw/GRID_COLS, rh=Math.max(1,mh/GRID_ROWS);
     for(let r=0;r<GRID_ROWS;r++){
       const py=r/GRID_ROWS*mh, row=MAP[r];
-      for(let c=0;c<GRID_COLS;c++)
+      for(let c=0;c<GRID_COLS;c++){
         if(row[c]===0){ g.fillStyle='#0e3a58'; g.fillRect(c*cw,py,Math.max(1,cw-0.3),rh); }
+        else if(row[c]===2){ g.fillStyle='#26401e'; g.fillRect(c*cw,py,Math.max(1,cw-0.3),rh); }
+      }
     }
     g.fillStyle='rgba(255,60,60,.7)'; g.fillRect(0,CORAL_ROW/GRID_ROWS*mh,mw,1);
     edMiniDirty=false;
@@ -1186,7 +1240,7 @@
   function edBrushApply(px,py,drag){
     const half=Math.floor(edBrushSz/2);
     const cr=Math.floor(edCellR(py)), cc=Math.floor(edCellC(px));
-    const v=edPaint==='close'?1:0;
+    const v=edPaint==='close'?1:edPaint==='cave'?2:0;
     for(let r=cr-half;r<=cr+half;r++)for(let c=cc-half;c<=cc+half;c++){
       if(r<0||r>=GRID_ROWS||c<0||c>=GRID_COLS) continue;
       const k=r+','+c;
@@ -1236,7 +1290,7 @@
       edBrushApply(e.offsetX,e.offsetY,edDrag);
     } else if(edDrag.type==='pillar'){
       edDrag.d1=edWorldD(e.offsetY);
-      if(Math.abs(edDrag.d1-edDrag.d0)>TILE) edDrag.moved=true;
+      if(Math.abs(edDrag.d1-edDrag.d0)>TILE*0.75) edDrag.moved=true;
     }
   });
   edCv.addEventListener('mouseup',()=>{
@@ -1266,7 +1320,9 @@
         mapPillars=[...mapPillars,{x:Math.round(d.wx),top:Math.round(Math.min(d.d0,d.d1)),bot:Math.round(Math.max(d.d0,d.d1)),r:22}];
         edPushHist();
       } else {
-        const idx=mapPillars.findIndex(P=>Math.abs(d.wx-P.x)<P.r+12&&d.d0>P.top-60&&d.d0<P.bot+60);
+        // remoção EXIGE clique DENTRO do corpo do pilar (sem raio de tolerância):
+        // desenhar um pilar perto de outro não deleta mais o vizinho
+        const idx=mapPillars.findIndex(P=>Math.abs(d.wx-P.x)<=P.r&&d.d0>=P.top&&d.d0<=P.bot);
         if(idx>=0){ mapPillars=mapPillars.filter((_,i)=>i!==idx); edPushHist(); }
       }
     }
@@ -1316,6 +1372,7 @@
     on('edModePaint',edMode2==='paint','#44ccff');
     on('edPaintOpen',edPaint==='open','#44ccff');
     on('edPaintClose',edPaint==='close','#ff5533');
+    on('edPaintCave',edPaint==='cave','#55cc44');
     on('edToolRect',edTool==='rect','#88ffdd');
     on('edToolBrush',edTool==='brush','#88ffdd');
     on('edToolCorr',edTool==='corridor','#88ffdd');
@@ -1337,6 +1394,7 @@
   document.getElementById('edModePaint').addEventListener('click',()=>{edMode2='paint';edUpdateUI();});
   document.getElementById('edPaintOpen').addEventListener('click',()=>{edPaint='open';edUpdateUI();});
   document.getElementById('edPaintClose').addEventListener('click',()=>{edPaint='close';edUpdateUI();});
+  document.getElementById('edPaintCave').addEventListener('click',()=>{edPaint='cave';edUpdateUI();});
   document.getElementById('edToolRect').addEventListener('click',()=>{edTool='rect';edMode2='paint';edUpdateUI();});
   document.getElementById('edToolBrush').addEventListener('click',()=>{edTool='brush';edMode2='paint';edUpdateUI();});
   document.getElementById('edToolCorr').addEventListener('click',()=>{edTool='corridor';edMode2='paint';edUpdateUI();});
@@ -1388,6 +1446,7 @@
     if(e.code==='KeyC'){ edTool='corridor'; edMode2='paint'; edUpdateUI(); }
     if(e.code==='KeyA'){ edPaint='open'; edUpdateUI(); }
     if(e.code==='KeyF'){ edPaint='close'; edUpdateUI(); }
+    if(e.code==='KeyV'){ edPaint='cave'; edUpdateUI(); }
   });
   // edições vindas do Firebase (só aplica se não há edição local pendente)
   subRef.child('worldMap').on('value',snap=>{
