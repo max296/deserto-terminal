@@ -1183,13 +1183,17 @@
         let texObj, texU;
         if(hitKind==="pillar"&&hitPillar){
           texObj=texVar(TEXR.pillar,hitPillar.x|0,hitPillar.top|0);
-          // face FRONTAL (raio ~norte-sul): U = offset lateral (lê como cilindro).
-          // face LATERAL (raio ~leste-oeste): U corre pela profundidade — senão toda
-          // coluna amostraria a mesma borda da textura (listra esticada).
-          if(Math.abs(dx)>Math.abs(dd)){
-            texU=((rd*(TEX_SIZE/(2*hitPillar.r)))|0)%TEX_SIZE;
-            if(texU<0)texU+=TEX_SIZE;
+          // A face é decidida pela GEOMETRIA do ponto de hit (estável por coluna),
+          // NUNCA pelo ângulo do raio — com FOV de 78°, colunas vizinhas da tela
+          // classificariam a mesma face de formas diferentes (mapeamento misturado).
+          const dSide=hitPillar.r-Math.abs(rx-hitPillar.x);      // fundura na face leste/oeste
+          const dCap=Math.min(rd-hitPillar.top,hitPillar.bot-rd); // fundura na face norte/sul
+          if(dSide<=dCap){
+            // face LESTE/OESTE: U desliza pela profundidade na MESMA densidade das
+            // paredes (1.7 texel/wu) — colunas vizinhas ficam contíguas na textura
+            texU=(((rd*1.7)|0)%TEX_SIZE+TEX_SIZE)%TEX_SIZE;
           } else {
+            // face NORTE/SUL: offset lateral — o shading cilíndrico lê como cilindro
             texU=Math.max(0,Math.min(TEX_SIZE-1,((rx-(hitPillar.x-hitPillar.r))/(2*hitPillar.r))*TEX_SIZE))|0;
           }
         } else {
