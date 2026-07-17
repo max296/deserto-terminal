@@ -197,6 +197,15 @@
               <button class="btn" id="neuCrackBtn" style="flex:1">⚠ RACHAR CASCO (moderno)</button>
               <span id="neuCrackStat" style="font-size:10px;letter-spacing:.1em;color:var(--ink-dim);min-width:90px;text-align:center">intacto</span>
             </div>
+            <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+              <button class="btn" id="glassCrackBtn" style="flex:1">💥 RACHAR VIDRO DO VISOR</button>
+              <span id="glassCrackStat" style="font-size:10px;letter-spacing:.1em;color:var(--ink-dim);min-width:90px;text-align:center">intacto</span>
+            </div>
+            <div style="margin-top:10px">
+              <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:5px">PISCA DA LUZ INTERNA (ambos os cascos) <span id="flickVal" style="color:var(--ink)">auto</span></div>
+              <input type="range" id="flickerSlider" min="0" max="100" value="0" style="width:100%">
+              <div style="font-size:9px;color:var(--ink-dim)">0 = apagado · direita = mais frequente · sem mexer = padrão do casco</div>
+            </div>
             <div style="margin-top:8px">
               <button class="btn" id="blackoutBtn" style="width:100%;background:#111;border-color:#333;color:#999">APAGAR TELA (BLACKOUT)</button>
             </div>
@@ -683,6 +692,41 @@
     });
   });
 
+  // ---- vidro do visor: rachar/consertar + estado ----
+  document.getElementById("glassCrackBtn").addEventListener("click",()=>{
+    subRef.child("glassCrack").once("value").then(s=>{
+      const cur=!!s.val();
+      if(!cur){ if(confirm("Rachar o VIDRO do visor?")) subRef.child("glassCrack").set(true); }
+      else subRef.child("glassCrack").set(false);
+    });
+  });
+  subRef.child("glassCrack").on("value",snap=>{
+    const v=!!snap.val();
+    const b=document.getElementById("glassCrackBtn"), s2=document.getElementById("glassCrackStat");
+    if(b){ b.textContent=v?"✓ CONSERTAR VIDRO":"💥 RACHAR VIDRO DO VISOR";
+           b.style.color=v?"var(--danger)":""; b.style.borderColor=v?"var(--danger)":""; }
+    if(s2){ s2.textContent=v?"RACHADO":"intacto"; s2.style.color=v?"var(--danger)":"var(--ink-dim)"; }
+  });
+
+  // ---- pisca da luz interna: slider → flickerRate (throttled) ----
+  let _flickThrottle=0;
+  document.getElementById("flickerSlider").addEventListener("input",e=>{
+    const v=parseInt(e.target.value)||0;
+    document.getElementById("flickVal").textContent=v===0?"off":v;
+    const nw=Date.now();
+    if(nw-_flickThrottle>150){ _flickThrottle=nw; subRef.child("flickerRate").set(v); }
+  });
+  document.getElementById("flickerSlider").addEventListener("change",e=>{
+    subRef.child("flickerRate").set(parseInt(e.target.value)||0);
+  });
+  subRef.child("flickerRate").on("value",snap=>{
+    const v=snap.val();
+    const sl=document.getElementById("flickerSlider"), fv=document.getElementById("flickVal");
+    if(v===null||v===undefined){ if(fv) fv.textContent="auto"; return; }
+    if(sl&&document.activeElement!==sl) sl.value=v;
+    if(fv) fv.textContent=v===0?"off":v;
+  });
+
   // barra de LUTA do grab: atualiza direto no elemento (sem re-render do painel)
   subRef.child('struggle').on('value',snap=>{
     currentStruggle=Math.max(0,Math.min(100,snap.val()||0));
@@ -863,13 +907,14 @@
       if(major){ mctx.fillStyle='rgba(0,130,190,.7)'; mctx.fillText(md+'m',2,py-2); }
     }
 
-    // Cabo
+    // Cabo (corda ESTICADA: âncora → quinas → sub, segmentos retos)
     if(navPathData.length>0){
-      const moon=worldToMapPx(0,1000);
-      mctx.save(); mctx.strokeStyle='rgba(100,170,255,0.4)'; mctx.lineWidth=1.5; mctx.setLineDash([3,3]);
-      mctx.beginPath(); mctx.moveTo(moon.px,moon.py);
-      navPathData.forEach(pt=>{ const {px,py}=worldToMapPx(pt.x||0,pt.depth||0); mctx.lineTo(px,py); });
-      mctx.lineTo(subPX,subPY);
+      mctx.save(); mctx.strokeStyle='rgba(100,170,255,0.45)'; mctx.lineWidth=1.5; mctx.setLineDash([3,3]);
+      mctx.beginPath();
+      navPathData.forEach((pt,i)=>{
+        const {px,py}=worldToMapPx(pt.x||0,pt.depth||0);
+        if(i===0) mctx.moveTo(px,py); else mctx.lineTo(px,py);
+      });
       mctx.stroke(); mctx.setLineDash([]); mctx.restore();
     }
 
@@ -1754,7 +1799,7 @@
   });
 
   subRef.child("viewers").on("value",snap=>{viewers=snap.val()||{};});
-  subRef.child("navPath").on("value",snap=>{
+  subRef.child("rope").on("value",snap=>{
     const v=snap.val(); navPathData=v?Object.values(v):[];
   });
 
