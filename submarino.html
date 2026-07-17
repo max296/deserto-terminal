@@ -421,6 +421,7 @@
   let rollA=0,rollV=0;                 // tombo (graus) — investida da criatura
   let struggleAmt=0,_struggleSyncT=0;  // luta dos players durante o grab (0-100)
   let lastNoiseT=0,lastNoiseX=0,lastNoiseD=0; // batida na parede: "som" que a criatura ouve
+  let subSpeedNow=0; // velocidade real do sub (wu/s) — stealth: parado = discreto
   let navPath=[], lastPathPoint=null, reelingSpeed=80;
   let reelingPath=[], reelingWpIdx=-1;  // reelingPath = caminho esticado calculado ao iniciar reeling
   let navPathWriteT=0;
@@ -1406,14 +1407,14 @@
     // calma: ciclo de ~4s, embaço quase imperceptível. Dano recente acelera o
     // fôlego (até ~1.1s/ciclo) e o bafo passa a comprometer a visão de verdade.
     recentHits*=0.9994; // decai: meia-vida ~20s a 60fps
-    const breathRate=0.25+Math.min(0.75,recentHits*0.12);
+    const breathRate=0.25+Math.min(0.65,recentHits*0.065);
     breathPhase+=breathRate/60;
     const exhale=Math.max(0,Math.sin(breathPhase*6.2832)); // metade do ciclo = expira
-    const stressF=Math.min(1,recentHits*0.18);
-    const fogA=exhale*exhale*(0.10+stressF*0.45);
+    const stressF=Math.min(1,recentHits*0.11);
+    const fogA=exhale*exhale*(0.06+stressF*0.38);
     const bfEl=document.getElementById('breathFog');
     if(bfEl) bfEl.style.opacity=fogA.toFixed(3);
-    const blurPx=0.9+exhale*(0.5+stressF*1.9);
+    const blurPx=0.9+exhale*(0.35+stressF*1.5);
     document.getElementById("visionBlur").style.backdropFilter=`blur(${blurPx.toFixed(2)}px)`;
 
     requestAnimationFrame(draw);
@@ -1790,7 +1791,7 @@
             subEl.classList.remove('wallhit'); void subEl.offsetWidth; subEl.classList.add('wallhit');
             // o som do impacto viaja: a criatura ganha uma dica da região do sub
             lastNoiseT=now; lastNoiseX=nav.x; lastNoiseD=nav.depth;
-            recentHits+=1; // respiração acelera um pouco
+            recentHits+=0.25; // raspar na parede quase não mexe no fôlego
           }
         }
       }
@@ -1874,7 +1875,7 @@
         if(!sp.hit&&sp.stage<2&&dist<95){
           creatureEntities[id]={...creatureEntities[id],_swipePhase:{...(creatureEntities[id]._swipePhase||sp),hit:true}};
           collisionFlicker=0.6;
-          recentHits+=2;
+          recentHits+=1.5;
           wallHitCount+=6; ref.child("hullDamage").set(wallHitCount);
           rollV+=sp.side*45;
           shkVX+=sp.side*55;
@@ -1914,23 +1915,43 @@
           // players, mas o fog vale pra ela também) + linha de visão real (rocha
           // bloqueia). Estados: hunt (vendo) → last (vai ao último ponto visto)
           // → search (procura em raio crescente, re-centrando em cada canto).
-          const sightR=typeof ent.sightRange==='number'&&ent.sightRange>0?ent.sightRange:550;
+          const sightBase=typeof ent.sightRange==='number'&&ent.sightRange>0?ent.sightRange:550;
+          // TRÊS MODOS DE VISÃO (guardião):
+          //  full    = visão COMPLETA, sempre (esconder parado não ajuda)
+          //  partial = fortemente limitada: 30% movendo, 8% parado — o modo do STEALTH
+          //  blind   = zero: vive de SOM (last heard) e das dicas
+          const subMoving=subSpeedNow>6;
+          const vMode=ent.visionMode||(ent.blind?'blind':'full');
+          const effSight=vMode==='blind'?0
+            :vMode==='partial'?sightBase*(subMoving?0.30:0.08)
+            :sightBase;
           let hu=creatureHuntState[id];
           if(!hu) hu=creatureHuntState[id]={mode:'hunt',lastSeen:{x:nav.x,d:nav.depth},path:null,wpIdx:0,calcT:0,goal:null,goalPos:null,searchR:220};
-          const sees=dist<sightR&&lineOfSight(ewx,ewd,nav.x,nav.depth);
+          const sees=effSight>0&&dist<effSight&&lineOfSight(ewx,ewd,nav.x,nav.depth);
           hu._sees=sees; // o facing do render usa: ela só ENCARA o sub quando o vê
           if(sees){
             hu.mode='hunt'; hu.lastSeen={x:nav.x,d:nav.depth}; hu.searchR=220;
             hu.hintR=650; hu.nextHintT=0; // reencontrou: o cerco reseta
           } else {
-            // OUVIU o casco bater na parede: dica PRECISA da região — vai investigar
+            // OUVIU o casco bater na parede (o impacto viaja ~140m): last HEARD preciso
             if(lastNoiseT>(hu.noiseT||0)){
               hu.noiseT=lastNoiseT;
-              const ang=Math.random()*6.28, rr=Math.random()*220;
-              hu.lastSeen={x:lastNoiseX+Math.cos(ang)*rr, d:lastNoiseD+Math.sin(ang)*rr};
-              hu.hintR=Math.max(160,(hu.hintR||650)-60); // barulho também aperta o cerco
-              hu.mode='last'; hu.path=null; hu.goalPos=null; hu.goal=null; hu.searchR=260;
-            } else if(hu.mode==='hunt'){
+              if(Math.hypot(lastNoiseX-ewx,lastNoiseD-ewd)<1400){
+                const ang=Math.random()*6.28, rr=Math.random()*220;
+                hu.lastSeen={x:lastNoiseX+Math.cos(ang)*rr, d:lastNoiseD+Math.sin(ang)*rr};
+                hu.hintR=Math.max(160,(hu.hintR||650)-60); // barulho também aperta o cerco
+                hu.mode='last'; hu.path=null; hu.goalPos=null; hu.goal=null; hu.searchR=260;
+              }
+            }
+            // OUVE o sub em MOVIMENTO perto dela (motor/água): rastreio grosseiro
+            const hearR=180+subSpeedNow*6;
+            if(subMoving&&dist<hearR&&now-(hu.heardT||0)>1200){
+              hu.heardT=now;
+              const ang=Math.random()*6.28, rr=Math.random()*100;
+              hu.lastSeen={x:nav.x+Math.cos(ang)*rr, d:nav.depth+Math.sin(ang)*rr};
+              if(hu.mode!=='last'){ hu.mode='last'; hu.path=null; hu.goalPos=null; hu.goal=null; }
+            }
+            if(hu.mode==='hunt'){
               hu.mode='last'; hu.path=null; hu.goalPos=null;
             }
           }
@@ -1948,10 +1969,11 @@
             // "DIRETOR" (Alien Isolation): dicas periódicas da REGIÃO do sub —
             // um ponto = posição real + erro de raio hintR. Quanto mais tempo
             // procurando sem achar, menor o hintR: o cerco vai apertando.
+            const hintIv=(typeof ent.hintInterval==='number'&&ent.hintInterval>0?ent.hintInterval:9)*1000;
             if(!hu.hintR) hu.hintR=650;
-            if(!hu.nextHintT) hu.nextHintT=now+3500; // primeira dica vem RÁPIDO
+            if(!hu.nextHintT) hu.nextHintT=now+hintIv*0.45; // primeira vem mais cedo
             if(now>=hu.nextHintT){
-              hu.nextHintT=now+8000;
+              hu.nextHintT=now+hintIv;
               hu.hintR=Math.max(160,hu.hintR-90);
               const ang=Math.random()*6.28, rr=Math.random()*hu.hintR;
               hu.lastSeen={x:nav.x+Math.cos(ang)*rr, d:nav.depth+Math.sin(ang)*rr};
@@ -1997,8 +2019,9 @@
           } else if(hu.mode==='hunt'&&dist>8){
             const spd=entSpd*dt; vx=(dx/dist)*spd; vd=(dd/dist)*spd;
           }
-          // gatilho de ataque frontal (colisão/agarrar) — só quando VENDO e perto
-          if(sees&&dist<110&&nav.mode!=="moonpool"&&now-jumpscareT>jumpscareCD){
+          // gatilho de ataque frontal (colisão/agarrar): vendo E perto — ou
+          // QUASE ENCOSTANDO (70wu): mesmo cega/no escuro ela sente a pressão da água
+          if((sees||dist<70)&&dist<110&&nav.mode!=="moonpool"&&now-jumpscareT>jumpscareCD){
             jumpscareT=now; collisionFlicker=1.35;
             recentHits+=3; // fôlego dispara
             const jf=document.getElementById("jflash");
@@ -2148,6 +2171,7 @@
       let dh=Math.abs(nav.heading-(_shkPH??nav.heading)); if(dh>180)dh=360-dh;
       _shkPX=nav.x; _shkPD=nav.depth; _shkPH=nav.heading;
       const idt=Math.max(dt,0.001);
+      subSpeedNow=mvd/idt; // exposto pro stealth da criatura
       let moveI=Math.min(1,(mvd/idt)/30)+Math.min(0.4,(dh/idt)/52*0.4);
       const grabMul=(grabbedBy&&nav.mode==='diving')?2:1;
       // LUTA durante o grab: a nave se debate VISIVELMENTE (sinal pros players)
