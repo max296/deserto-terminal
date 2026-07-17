@@ -804,20 +804,25 @@
   function applyLocalOps(){ MAP=buildMap(mapOps); }
 
   function getMapMetrics(){
-    const visRows=Math.round(120/mapZoom);
-    const cellH=M_H/(visRows*2), cellW=M_W/GRID_COLS;
+    // células ISOTRÓPICAS (mesma escala nos dois eixos — 40wu é 40wu em qualquer direção)
+    const visRows=Math.round(32/mapZoom);
+    const cell=M_H/(visRows*2);
+    const gridW=GRID_COLS*cell, offX=(M_W-gridW)/2;
     const subDepth=currentSubNav.depth||1000, subX=currentSubNav.x||0;
     const subRow=subDepth/TILE, subCol=(subX-X_MIN_W)/TILE;
     const viewStart=subRow-visRows+mapPanOffsetRows;
-    return {visRows,cellH,cellW,subRow,subCol,viewStart,subPX:subCol*cellW,subPY:(subRow-viewStart)*cellH};
+    // eixo X ESPELHADO na apresentação: o visor renderiza o mundo com paridade
+    // espelhada — assim "esquerda" no mapa = esquerda dos pilotos
+    return {visRows,cell,cellH:cell,cellW:cell,offX,subRow,subCol,viewStart,
+      subPX:offX+(GRID_COLS-subCol)*cell,subPY:(subRow-viewStart)*cell};
   }
   function worldToMapPx(wx,wd){
-    const {cellW,cellH,viewStart}=getMapMetrics();
-    return {px:((wx-X_MIN_W)/TILE)*cellW, py:(wd/TILE-viewStart)*cellH};
+    const {cell,offX,viewStart}=getMapMetrics();
+    return {px:offX+(GRID_COLS-((wx-X_MIN_W)/TILE))*cell, py:(wd/TILE-viewStart)*cell};
   }
   function mapPxToWorld(px,py){
-    const {cellW,cellH,viewStart}=getMapMetrics();
-    return {wx:X_MIN_W+(px/cellW)*TILE, wd:(py/cellH+viewStart)*TILE};
+    const {cell,offX,viewStart}=getMapMetrics();
+    return {wx:X_MIN_W+(GRID_COLS-((px-offX)/cell))*TILE, wd:(py/cell+viewStart)*TILE};
   }
   function entityAtMapPx(px,py){
     let best=null, bestD=12;
@@ -832,17 +837,17 @@
 
   // ---- Desenho do mapa ----
   function drawMap(){
-    const {visRows,cellH,cellW,viewStart,subPX,subPY}=getMapMetrics();
+    const {visRows,cellH,cellW,offX,viewStart,subPX,subPY}=getMapMetrics();
     mctx.fillStyle='#070a0f'; mctx.fillRect(0,0,M_W,M_H);
 
-    // Tiles
+    // Tiles (X espelhado: col 0 do mundo desenha à DIREITA)
     const rStart=Math.max(0,Math.floor(viewStart));
     const rEnd=Math.min(GRID_ROWS-1,Math.ceil(viewStart+visRows*2));
     for(let r=rStart;r<=rEnd;r++){
       const py=(r-viewStart)*cellH;
       for(let c=0;c<GRID_COLS;c++){
         mctx.fillStyle=MAP[r]&&MAP[r][c]===0?'#04111e':MAP[r]&&MAP[r][c]===2?'#0e1c0a':'#030609';
-        mctx.fillRect(c*cellW,py,cellW-0.5,cellH);
+        mctx.fillRect(offX+(GRID_COLS-1-c)*cellW,py,cellW-0.5,cellH);
       }
     }
 
@@ -919,14 +924,14 @@
     mctx.fillStyle='rgba(76,143,200,0.1)';
     mctx.beginPath();
     mctx.moveTo(subPX,subPY);
-    mctx.lineTo(subPX+Math.sin(hRad-FOV_HALF)*coneLen,subPY+Math.cos(hRad-FOV_HALF)*coneLen);
-    mctx.lineTo(subPX+Math.sin(hRad+FOV_HALF)*coneLen,subPY+Math.cos(hRad+FOV_HALF)*coneLen);
+    mctx.lineTo(subPX-Math.sin(hRad-FOV_HALF)*coneLen,subPY+Math.cos(hRad-FOV_HALF)*coneLen);
+    mctx.lineTo(subPX-Math.sin(hRad+FOV_HALF)*coneLen,subPY+Math.cos(hRad+FOV_HALF)*coneLen);
     mctx.closePath(); mctx.fill();
     mctx.strokeStyle='rgba(76,143,200,0.22)'; mctx.lineWidth=0.8;
     mctx.beginPath();
-    mctx.moveTo(subPX+Math.sin(hRad-FOV_HALF)*coneLen,subPY+Math.cos(hRad-FOV_HALF)*coneLen);
+    mctx.moveTo(subPX-Math.sin(hRad-FOV_HALF)*coneLen,subPY+Math.cos(hRad-FOV_HALF)*coneLen);
     mctx.lineTo(subPX,subPY);
-    mctx.lineTo(subPX+Math.sin(hRad+FOV_HALF)*coneLen,subPY+Math.cos(hRad+FOV_HALF)*coneLen);
+    mctx.lineTo(subPX-Math.sin(hRad+FOV_HALF)*coneLen,subPY+Math.cos(hRad+FOV_HALF)*coneLen);
     mctx.stroke(); mctx.restore();
 
     const pulse2=0.65+0.35*Math.sin(Date.now()/500);
@@ -934,7 +939,7 @@
     gr.addColorStop(0,`rgba(76,143,200,${0.5*pulse2})`); gr.addColorStop(1,'rgba(76,143,200,0)');
     mctx.fillStyle=gr; mctx.beginPath(); mctx.arc(subPX,subPY,12,0,Math.PI*2); mctx.fill();
     mctx.strokeStyle='#4c8fc8'; mctx.lineWidth=2;
-    mctx.beginPath(); mctx.moveTo(subPX,subPY); mctx.lineTo(subPX+Math.sin(hRad)*18,subPY+Math.cos(hRad)*18); mctx.stroke();
+    mctx.beginPath(); mctx.moveTo(subPX,subPY); mctx.lineTo(subPX-Math.sin(hRad)*18,subPY+Math.cos(hRad)*18); mctx.stroke();
     mctx.fillStyle='#4c8fc8'; mctx.beginPath(); mctx.arc(subPX,subPY,3,0,Math.PI*2); mctx.fill();
 
     // HUD
@@ -1029,9 +1034,13 @@
   let edMiniDirty=true;
   const edClampR=r=>Math.max(0,Math.min(GRID_ROWS-1,r));
   const edClampC=c=>Math.max(0,Math.min(GRID_COLS-1,c));
-  const edCellR=py=>py/edZoom+edScrollR, edCellC=px=>px/edZoom+edScrollC;
-  const edPxY=r=>(r-edScrollR)*edZoom, edPxX=c=>(c-edScrollC)*edZoom;
+  // eixo X ESPELHADO na apresentação (mesma paridade do visor dos pilotos):
+  // edScrollC vive no espaço de colunas DE TELA; col de mundo c desenha em GRID_COLS-c
+  const edCellR=py=>py/edZoom+edScrollR, edCellC=px=>GRID_COLS-(px/edZoom+edScrollC);
+  const edPxY=r=>(r-edScrollR)*edZoom, edPxX=c=>(GRID_COLS-c-edScrollC)*edZoom;
   const edWorldX=px=>X_MIN_W+edCellC(px)*TILE, edWorldD=py=>edCellR(py)*TILE;
+  // retângulo em colunas de MUNDO [c0..c1] → x de tela do lado esquerdo
+  const edPxRectX=(c0,c1)=>edPxX(Math.max(c0,c1)+1);
 
   // ---- histórico (undo/redo por snapshot do estado editável inteiro) ----
   function edSnapshot(){ return JSON.stringify({ops:mapOps,pillars:mapPillars,spawn:mapSpawn,cols:GRID_COLS,xMin:X_MIN_W,off:COL_OFFSET}); }
@@ -1073,17 +1082,17 @@
     const W=edCv.width,H=edCv.height;
     edCtx.fillStyle='#030407'; edCtx.fillRect(0,0,W,H);
     const r0=Math.max(0,Math.floor(edScrollR)), r1=Math.min(GRID_ROWS-1,Math.ceil(edScrollR+H/edZoom));
-    const c0=Math.max(0,Math.floor(edScrollC)), c1=Math.min(GRID_COLS-1,Math.ceil(edScrollC+W/edZoom));
+    const c0=Math.max(0,Math.floor(edCellC(W))), c1=Math.min(GRID_COLS-1,Math.ceil(edCellC(0)));
     const gap=edZoom>6?0.5:0;
     for(let r=r0;r<=r1;r++){
       const py=edPxY(r), row=MAP[r];
       for(let c=c0;c<=c1;c++){
         edCtx.fillStyle=row[c]===0?'#0c2a40':row[c]===2?'#1d3018':'#0b0e14';
-        edCtx.fillRect(edPxX(c),py,edZoom-gap,edZoom-gap);
+        edCtx.fillRect(edPxX(c+1),py,edZoom-gap,edZoom-gap); // flip: célula c = [PxX(c+1),PxX(c)]
       }
     }
     edCtx.strokeStyle='rgba(255,136,0,.35)'; edCtx.lineWidth=1;
-    edCtx.strokeRect(edPxX(0),edPxY(0),GRID_COLS*edZoom,GRID_ROWS*edZoom);
+    edCtx.strokeRect(edPxX(GRID_COLS),edPxY(0),GRID_COLS*edZoom,GRID_ROWS*edZoom);
     // réguas de profundidade
     edCtx.font='9px monospace'; edCtx.textAlign='left';
     for(let md=0;md<=2560;md+=100){
@@ -1099,16 +1108,17 @@
        edCtx.beginPath(); edCtx.moveTo(0,py); edCtx.lineTo(W,py); edCtx.stroke(); edCtx.setLineDash([]);
        edCtx.fillStyle='rgba(255,80,80,.8)'; edCtx.fillText('CORAL 600m',3,py+10); edCtx.restore(); }}
     // canal da moonpool (região protegida)
-    {const mx0=edPxX(9+COL_OFFSET), my0=edPxY(25);
+    {const mx0=edPxRectX(9+COL_OFFSET,11+COL_OFFSET), my0=edPxY(25);
      edCtx.strokeStyle='rgba(80,200,255,.6)';
      edCtx.strokeRect(mx0,my0,3*edZoom,5*edZoom);
      if(edZoom>5){edCtx.fillStyle='rgba(80,200,255,.7)';edCtx.fillText('MOONPOOL',mx0+2,my0-4);}}
-    // pilares
+    // pilares (flip: ordena as bordas com min/abs)
     for(const P of mapPillars){
-      const px0=edPxX((P.x-P.r-X_MIN_W)/TILE), px1=edPxX((P.x+P.r-X_MIN_W)/TILE);
+      const pa=edPxX((P.x-P.r-X_MIN_W)/TILE), pb=edPxX((P.x+P.r-X_MIN_W)/TILE);
+      const px0=Math.min(pa,pb), pw2=Math.max(2,Math.abs(pb-pa));
       const py0=edPxY(P.top/TILE), py1=edPxY(P.bot/TILE);
-      edCtx.fillStyle='rgba(150,170,200,.45)'; edCtx.fillRect(px0,py0,Math.max(2,px1-px0),py1-py0);
-      edCtx.strokeStyle='rgba(180,200,230,.7)'; edCtx.strokeRect(px0,py0,Math.max(2,px1-px0),py1-py0);
+      edCtx.fillStyle='rgba(150,170,200,.45)'; edCtx.fillRect(px0,py0,pw2,py1-py0);
+      edCtx.strokeStyle='rgba(180,200,230,.7)'; edCtx.strokeRect(px0,py0,pw2,py1-py0);
     }
     // spawn
     {const sx=edPxX((mapSpawn.x-X_MIN_W)/TILE), sy=edPxY(mapSpawn.depth/TILE);
@@ -1142,17 +1152,17 @@
       const a=edDrag.a,b=edDrag.b;
       const r0=Math.min(a.r,b.r),r1=Math.max(a.r,b.r),c0=Math.min(a.c,b.c),c1=Math.max(a.c,b.c);
       edCtx.fillStyle=paintCol;
-      edCtx.fillRect(edPxX(c0),edPxY(r0),(c1-c0+1)*edZoom,(r1-r0+1)*edZoom);
+      edCtx.fillRect(edPxRectX(c0,c1),edPxY(r0),(c1-c0+1)*edZoom,(r1-r0+1)*edZoom);
       edCtx.strokeStyle=strokeCol;
-      edCtx.strokeRect(edPxX(c0),edPxY(r0),(c1-c0+1)*edZoom,(r1-r0+1)*edZoom);
+      edCtx.strokeRect(edPxRectX(c0,c1),edPxY(r0),(c1-c0+1)*edZoom,(r1-r0+1)*edZoom);
       edCtx.fillStyle='#fff';
-      edCtx.fillText(`${c1-c0+1}×${r1-r0+1}t (${(c1-c0+1)*4}×${(r1-r0+1)*4}m)`,edPxX(c0)+2,edPxY(r0)-4);
+      edCtx.fillText(`${c1-c0+1}×${r1-r0+1}t (${(c1-c0+1)*4}×${(r1-r0+1)*4}m)`,edPxRectX(c0,c1)+2,edPxY(r0)-4);
     }
     if(edTool==='brush'&&edMode2==='paint'&&!edDrag){
       const half=Math.floor(edBrushSz/2);
       const r=Math.floor(edCellR(edMouse.y))-half, c=Math.floor(edCellC(edMouse.x))-half;
       edCtx.strokeStyle=strokeCol;
-      edCtx.strokeRect(edPxX(c),edPxY(r),edBrushSz*edZoom,edBrushSz*edZoom);
+      edCtx.strokeRect(edPxRectX(c,c+edBrushSz-1),edPxY(r),edBrushSz*edZoom,edBrushSz*edZoom);
     }
     if(edTool==='corridor'&&edCorrA){
       const bR=Math.floor(edCellR(edMouse.y)), bC=Math.floor(edCellC(edMouse.x));
@@ -1160,16 +1170,16 @@
       const vC0=edCorrA.c-half, vR0=Math.min(edCorrA.r,bR), vR1=Math.max(edCorrA.r,bR);
       const hR0=bR-half, hC0=Math.min(edCorrA.c,bC), hC1=Math.max(edCorrA.c,bC);
       edCtx.fillStyle=paintCol;
-      edCtx.fillRect(edPxX(vC0),edPxY(vR0),edCorrW*edZoom,(vR1-vR0+1)*edZoom);
-      edCtx.fillRect(edPxX(hC0),edPxY(hR0),(hC1-hC0+1)*edZoom,edCorrW*edZoom);
+      edCtx.fillRect(edPxRectX(vC0,vC0+edCorrW-1),edPxY(vR0),edCorrW*edZoom,(vR1-vR0+1)*edZoom);
+      edCtx.fillRect(edPxRectX(hC0,hC1),edPxY(hR0),(hC1-hC0+1)*edZoom,edCorrW*edZoom);
       edCtx.strokeStyle=strokeCol;
-      edCtx.strokeRect(edPxX(edCorrA.c)+edZoom/2-2,edPxY(edCorrA.r)+edZoom/2-2,4,4);
+      edCtx.strokeRect(edPxX(edCorrA.c)-edZoom/2-2,edPxY(edCorrA.r)+edZoom/2-2,4,4);
     }
     if(edDrag&&edDrag.type==='pillar'&&edDrag.moved){
       const d0=Math.min(edDrag.d0,edDrag.d1), d1=Math.max(edDrag.d0,edDrag.d1);
-      const px0=edPxX((edDrag.wx-22-X_MIN_W)/TILE), px1=edPxX((edDrag.wx+22-X_MIN_W)/TILE);
+      const pa=edPxX((edDrag.wx-22-X_MIN_W)/TILE), pb=edPxX((edDrag.wx+22-X_MIN_W)/TILE);
       edCtx.fillStyle='rgba(180,200,230,.4)';
-      edCtx.fillRect(px0,edPxY(d0/TILE),Math.max(2,px1-px0),edPxY(d1/TILE)-edPxY(d0/TILE));
+      edCtx.fillRect(Math.min(pa,pb),edPxY(d0/TILE),Math.max(2,Math.abs(pb-pa)),edPxY(d1/TILE)-edPxY(d0/TILE));
     }
     // ferramenta PILAR sem arrasto: mostra ANTES o que o clique fará
     if(edTool==='pillar'&&edMode2==='paint'&&!edDrag){
@@ -1178,21 +1188,23 @@
       edCtx.font='10px monospace';
       if(hitP){
         // clique aqui REMOVE este pilar — outline vermelho
-        const px0=edPxX((hitP.x-hitP.r-X_MIN_W)/TILE), px1=edPxX((hitP.x+hitP.r-X_MIN_W)/TILE);
+        const pa=edPxX((hitP.x-hitP.r-X_MIN_W)/TILE), pb=edPxX((hitP.x+hitP.r-X_MIN_W)/TILE);
+        const pxL=Math.min(pa,pb), pxR=Math.max(pa,pb);
         edCtx.strokeStyle='#ff4444'; edCtx.lineWidth=2;
-        edCtx.strokeRect(px0,edPxY(hitP.top/TILE),Math.max(2,px1-px0),edPxY(hitP.bot/TILE)-edPxY(hitP.top/TILE));
+        edCtx.strokeRect(pxL,edPxY(hitP.top/TILE),Math.max(2,pxR-pxL),edPxY(hitP.bot/TILE)-edPxY(hitP.top/TILE));
         edCtx.lineWidth=1;
         edCtx.fillStyle='#ff6666';
-        edCtx.fillText('clique: REMOVER pilar',px1+6,edPxY(hitP.top/TILE)+12);
+        edCtx.fillText('clique: REMOVER pilar',pxR+6,edPxY(hitP.top/TILE)+12);
       } else {
         // fora de pilar: ghost do que o ARRASTO criaria
-        const px0=edPxX((wx-22-X_MIN_W)/TILE), px1=edPxX((wx+22-X_MIN_W)/TILE);
+        const pa=edPxX((wx-22-X_MIN_W)/TILE), pb=edPxX((wx+22-X_MIN_W)/TILE);
+        const pxL=Math.min(pa,pb), pxR=Math.max(pa,pb);
         edCtx.save(); edCtx.setLineDash([3,3]);
         edCtx.strokeStyle='rgba(180,200,230,.55)';
-        edCtx.strokeRect(px0,edPxY(wd/TILE)-14,Math.max(2,px1-px0),28);
+        edCtx.strokeRect(pxL,edPxY(wd/TILE)-14,Math.max(2,pxR-pxL),28);
         edCtx.restore();
         edCtx.fillStyle='rgba(180,200,230,.65)';
-        edCtx.fillText('arraste ↕ pra criar pilar',px1+6,edPxY(wd/TILE)+4);
+        edCtx.fillText('arraste ↕ pra criar pilar',pxR+6,edPxY(wd/TILE)+4);
       }
       edCtx.font='9px monospace';
     }
@@ -1206,8 +1218,8 @@
     for(let r=0;r<GRID_ROWS;r++){
       const py=r/GRID_ROWS*mh, row=MAP[r];
       for(let c=0;c<GRID_COLS;c++){
-        if(row[c]===0){ g.fillStyle='#0e3a58'; g.fillRect(c*cw,py,Math.max(1,cw-0.3),rh); }
-        else if(row[c]===2){ g.fillStyle='#26401e'; g.fillRect(c*cw,py,Math.max(1,cw-0.3),rh); }
+        if(row[c]===0){ g.fillStyle='#0e3a58'; g.fillRect((GRID_COLS-1-c)*cw,py,Math.max(1,cw-0.3),rh); }
+        else if(row[c]===2){ g.fillStyle='#26401e'; g.fillRect((GRID_COLS-1-c)*cw,py,Math.max(1,cw-0.3),rh); }
       }
     }
     g.fillStyle='rgba(255,60,60,.7)'; g.fillRect(0,CORAL_ROW/GRID_ROWS*mh,mw,1);
@@ -1343,11 +1355,14 @@
   // ---- expandir grid (esquerda re-baseia as colunas das ops; mundo-coords não mudam) ----
   function edExpand(side){
     const n=5;
-    if(side==='right'){ GRID_COLS+=n; }
+    if(side==='right'){
+      GRID_COLS+=n;
+      edScrollC+=n; // com o X espelhado, é a DIREITA que desloca a vista
+    }
     else{
       GRID_COLS+=n; X_MIN_W-=n*TILE; COL_OFFSET+=n;
       for(const o of mapOps){ o.c0+=n; o.c1+=n; }
-      edScrollC+=n; // mantém a vista no mesmo lugar do mundo
+      // esquerda: GRID_COLS e as colunas sobem juntos — a vista já fica no lugar
     }
     applyLocalOps(); edPushHist();
   }
