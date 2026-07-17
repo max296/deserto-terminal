@@ -734,6 +734,25 @@
     const el=document.getElementById('struggleBar');
     if(el) el.style.width=currentStruggle+'%';
   });
+  // redução do guincho durante o grab: slider (delegado — o painel re-renderiza)
+  let _grsThrottle=0;
+  document.getElementById('selectedControls').addEventListener('input',e=>{
+    if(e.target.id==='grabReelSlider'){
+      const v=Math.max(0,Math.min(100,parseInt(e.target.value)||0));
+      currentGrabSlow=v;
+      const sp=document.getElementById('grsVal'); if(sp) sp.textContent=v;
+      const nw=Date.now();
+      if(nw-_grsThrottle>150){ _grsThrottle=nw; subRef.child('grabReelSlow').set(v); }
+    }
+  });
+  subRef.child('grabReelSlow').on('value',snap=>{
+    const v=snap.val();
+    if(typeof v==='number'){ currentGrabSlow=v;
+      const sl=document.getElementById('grabReelSlider');
+      if(sl&&document.activeElement!==sl) sl.value=v;
+      const sp=document.getElementById('grsVal'); if(sp) sp.textContent=v;
+    }
+  });
 
   // ---- texturas do visor: IMAGENS (PNGs reais) vs PROCEDURAIS ----
   document.getElementById("texImgBtn").addEventListener("click",()=>subRef.child("texMode").set("img"));
@@ -846,6 +865,7 @@
   let mapPanOffsetRows=0, panActive=false, panLastY=0, panJustMoved=false;
   let settingGrabTarget=false, currentGrabbedBy=null, currentGrabTarget=null;
   let currentStruggle=0;
+  let currentGrabSlow=50;
   function applyLocalOps(){ MAP=buildMap(mapOps); }
 
   function getMapMetrics(){
@@ -1610,9 +1630,11 @@
           ${isGrabbed?`<button class="btn sel-grab-release" style="flex:1;font-size:9px;color:var(--danger)">SOLTAR</button>`:''}
         </div>
         ${isGrabbed?`<div style="font-size:8px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:2px">LUTA DOS OCUPANTES</div>
-        <div style="height:4px;background:#1a2025;border-radius:2px;margin-bottom:5px">
+        <div style="height:4px;background:#1a2025;border-radius:2px;margin-bottom:6px">
           <div id="struggleBar" style="height:100%;width:${currentStruggle}%;background:var(--warn);border-radius:2px;transition:width .4s"></div>
-        </div>`:''}`:''}
+        </div>
+        <div style="font-size:8px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:2px">REDUÇÃO DO GUINCHO (agarrada): <span id="grsVal" style="color:var(--ink)">${currentGrabSlow}</span>%</div>
+        <input type="range" id="grabReelSlider" min="0" max="100" value="${currentGrabSlow}" style="width:100%;margin-bottom:5px">`:''}`:''}
         ${secHd('AÇÕES')}
         <div style="display:flex;gap:4px;margin-bottom:5px">
           <button class="btn sel-dismiss" style="flex:1;font-size:9px;color:var(--warn-dim)">DISPENSAR</button>
@@ -1674,6 +1696,7 @@
     if(e.target.id==='sel-stalk'){ const s=Math.max(150,Math.min(1500,parseInt(e.target.value)||380)); e.target.value=s; entities[id]={...entities[id],stalkDist:s}; subRef.child('entities/'+id+'/stalkDist').set(s); }
     if(e.target.id==='sel-sight'){ const s=Math.max(100,Math.min(2000,parseInt(e.target.value)||550)); e.target.value=s; entities[id]={...entities[id],sightRange:s}; subRef.child('entities/'+id+'/sightRange').set(s); }
     if(e.target.id==='sel-hint'){ const s=Math.max(3,Math.min(60,parseInt(e.target.value)||9)); e.target.value=s; entities[id]={...entities[id],hintInterval:s}; subRef.child('entities/'+id+'/hintInterval').set(s); }
+    if(e.target.id==='grabReelSlider'){ subRef.child('grabReelSlow').set(Math.max(0,Math.min(100,parseInt(e.target.value)||0))); }
   });
 
   // ---- Lista compacta de entidades ----
