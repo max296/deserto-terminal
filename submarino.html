@@ -342,6 +342,8 @@
     // saída 4: placeholder direita profunda
     [190,210,14,19],[200,265,17,20],[250,285,13,20],[270,300,15,18]
   ];
+  // regiões de CAVERNA default (valor 2): moldura da caverna do hive-mind
+  const DEFAULT_CAVE=[[585,639,1,19]];
   function buildMap(ops){
     const m=Array.from({length:GRID_ROWS},()=>new Uint8Array(GRID_COLS).fill(1));
     const paint=(r0,r1,c0,c1,v)=>{
@@ -350,19 +352,24 @@
     };
     // o default é definido no grid ORIGINAL: desloca por COL_OFFSET quando o
     // mapa foi expandido à esquerda. Ops já vêm no sistema de colunas atual.
+    // moldura de CAVERNA (tipo 2) ao redor da caverna do hive-mind, pintada
+    // ANTES da água: as paredes remanescentes ali ficam com textura de caverna
+    for(const [r0,r1,c0,c1] of DEFAULT_CAVE) paint(r0,r1,c0+COL_OFFSET,c1+COL_OFFSET,2);
     for(const [r0,r1,c0,c1] of DEFAULT_OPEN) paint(r0,r1,c0+COL_OFFSET,c1+COL_OFFSET,0);
-    for(const o of (ops||[])) paint(o.r0,o.r1,o.c0,o.c1,o.op==='close'?1:0);
+    for(const o of (ops||[])) paint(o.r0,o.r1,o.c0,o.c1,o.op==='close'?1:o.op==='cave'?2:0);
     return m;
   }
   let MAP=buildMap([]);
 
   // Lookup de parede no grid (ponto do mundo → tile)
-  function isWall(wx,depth){
+  // valores: 0=água · 1=rocha do canyon · 2=rocha de CAVERNA (textura própria)
+  function tileValueAt(wx,depth){
     const col=Math.floor((wx-X_MIN_W)/TILE);
     const row=Math.floor(depth/TILE);
-    if(row<0||row>=GRID_ROWS||col<0||col>=GRID_COLS) return true;
-    return MAP[row][col]!==0;
+    if(row<0||row>=GRID_ROWS||col<0||col>=GRID_COLS) return 1;
+    return MAP[row][col];
   }
+  function isWall(wx,depth){ return tileValueAt(wx,depth)!==0; }
 
   // ===== ESTRUTURA DA PETROLEIRA (declarativa) =====
   // Laje/parede de fundo da estação logo acima do limite de subida do sub.
@@ -381,13 +388,14 @@
     {x: 36, top:1650, bot:2350, r:22},
   ];
   let PILLARS=DEFAULT_PILLARS.slice(); // o editor de mapa pode substituir (worldMap.pillars)
-  function isPillar(px, depth){
+  function pillarAt(px, depth){
     for(let i=0;i<PILLARS.length;i++){
       const P=PILLARS[i];
-      if(depth>=P.top && depth<=P.bot && Math.abs(px-P.x)<P.r) return true;
+      if(depth>=P.top && depth<=P.bot && Math.abs(px-P.x)<P.r) return P;
     }
-    return false;
+    return null;
   }
+  function isPillar(px, depth){ return pillarAt(px,depth)!==null; }
 
   // ====== navegação compartilhada ======
   // estado autoritativo: submarine/nav = { x, depth, heading, mode }
@@ -796,6 +804,11 @@
           const crackF=vnoise((u*3)%1,(v*3)%1,16)>0.78?0.52:1.0;
           const patch=0.70+0.30*vnoise(u,v,8);
           lum=(34+n*118)*crackF*patch;
+        } else if(kind==='cave'){
+          // caverna: blocos musgosos + gotejamento vertical
+          const drip=0.80+0.20*Math.sin(u*6.28*7+n*3);
+          const moss=vnoise((u*2)%1,(v*2)%1,16)>0.70?1.18:1.0;
+          lum=(40+n*120)*drip*moss;
         } else {
           // pilar: AÇO — painéis verticais, linhas de solda horizontais, riscos claros
           const rib=0.80+0.20*Math.abs(Math.sin(u*6.28*6));
@@ -804,15 +817,63 @@
           lum=(88+n*52)*rib*seam*scratch;
         }
         lum=Math.max(14,Math.min(235,lum));
-        // pilar recebe tint frio de metal; rocha fica quase neutra (tint vem da água/luz)
-        const cRk=kind==='pillar'?0.90:1.00, cGk=kind==='pillar'?0.97:0.96, cBk=kind==='pillar'?1.06:0.90;
+        // tints: pilar frio metálico; caverna esverdeada; rocha quase neutra
+        const cRk=kind==='pillar'?0.90:kind==='cave'?0.88:1.00;
+        const cGk=kind==='pillar'?0.97:kind==='cave'?1.00:0.96;
+        const cBk=kind==='pillar'?1.06:kind==='cave'?0.86:0.90;
         px[y*TEX_SIZE+xx]=(255<<24)|(((lum*cBk)|0)<<16)|(((lum*cGk)|0)<<8)|((lum*cRk)|0);
       }
     }
     c2.putImageData(img,0,0);
     return {cnv, px, w:TEX_SIZE, h:TEX_SIZE};
   }
-  const TEX_WALL=makeTexture('wall'), TEX_FLOOR=makeTexture('floor'), TEX_PILLAR=makeTexture('pillar');
+  // ===== DOIS SETS: IMAGENS (PNGs reais, default) e PROCEDURAIS (fallback/opção) =====
+  // O guardião troca ao vivo via Firebase (texMode). Imagem que falhar ao carregar
+  // cai no procedural. Variantes: escolha determinística por posição no mundo
+  // (mesmo lugar = mesma variante sempre, sem flicker).
+  const TEXSETS={
+    proc:{
+      wall:[makeTexture('wall')],
+      floor:[makeTexture('floor')],
+      pillar:[makeTexture('pillar')],
+      cave:[makeTexture('cave')]
+    },
+    img:{ wall:[], floor:[], pillar:[], cave:[] }
+  };
+  let texMode='img';
+  const TEXR={wall:TEXSETS.proc.wall,floor:TEXSETS.proc.floor,pillar:TEXSETS.proc.pillar,cave:TEXSETS.proc.cave};
+  function rebuildTexR(){
+    for(const k of ['wall','floor','pillar','cave']){
+      const arr=(TEXSETS[texMode][k]||[]).filter(Boolean);
+      TEXR[k]=arr.length?arr:TEXSETS.proc[k];
+    }
+  }
+  const TEX_FILES={
+    wall:['img/tex_canyon.png'],
+    pillar:['img/tex_pillar_0.png','img/tex_pillar_1.png','img/tex_pillar_2.png'],
+    floor:['img/tex_floor_0.png','img/tex_floor_1.png','img/tex_floor_2.png','img/tex_floor_3.png'],
+    cave:['img/tex_cave_0.png','img/tex_cave_1.png','img/tex_cave_2.png']
+  };
+  Object.entries(TEX_FILES).forEach(([kind,files])=>{
+    files.forEach((src,i)=>{
+      const im=new Image();
+      im.onload=()=>{
+        const cnv=document.createElement('canvas'); cnv.width=cnv.height=TEX_SIZE;
+        const c2=cnv.getContext('2d');
+        c2.drawImage(im,0,0,TEX_SIZE,TEX_SIZE);
+        const px=new Uint32Array(c2.getImageData(0,0,TEX_SIZE,TEX_SIZE).data.buffer);
+        TEXSETS.img[kind][i]={cnv,px,w:TEX_SIZE,h:TEX_SIZE};
+        rebuildTexR();
+      };
+      im.src=src;
+    });
+  });
+  // variante determinística por posição (hash de coordenadas de bloco)
+  function texVar(arr,a,b){
+    if(arr.length===1) return arr[0];
+    let h=((a|0)*73856093)^((b|0)*19349663); h=(h^(h>>>13))>>>0;
+    return arr[h%arr.length];
+  }
 
   let grabStartT=0;
   // canvas offscreen do chão: putImageData ignora o transform de DPR do contexto
@@ -1032,10 +1093,19 @@
           const fstx=(fex-fsx)/wI, fsty=(fey-fsy)/wI;
           let flX=fsx, flY=fsy;
           const fi0=(y-floorStart)*wI;
+          const fArr=TEXR.floor, fN=fArr.length;
           for(let sx=0;sx<wI;sx++){
-            // amostra da TEXTURA do chão por coords de mundo (1.6 texel/wu → tile=16m)
-            const ti=((((flY*1.6)|0)&TEX_MASK)<<TEX_SHIFT)|(((flX*1.6)|0)&TEX_MASK);
-            const tc=TEX_FLOOR.px[ti];
+            // amostra da TEXTURA do chão por coords de mundo (1.6 texel/wu → tile=16m);
+            // variante determinística por bloco de textura (dá vida sem flicker)
+            const txx=(flX*1.6)|0, tyy=(flY*1.6)|0;
+            let fpx;
+            if(fN===1) fpx=fArr[0].px;
+            else{
+              let hv=((txx>>8)*73856093)^((tyy>>8)*19349663);
+              hv=(hv^(hv>>>13))>>>0;
+              fpx=fArr[hv%fN].px;
+            }
+            const tc=fpx[((tyy&TEX_MASK)<<TEX_SHIFT)|(txx&TEX_MASK)];
             const spotI=lightOn?Math.max(0,1-Math.hypot(sx-bxw,y-byh)/spotR_):0;
             const kt=(lvBase+spotI*0.95*fogF)*fogFK;
             const r=Math.min(255,(tc&255)*kt*fTr+waterR*wMixF)|0;
@@ -1057,13 +1127,15 @@
         const a = hdg + (i/(COLS-1) - 0.5)*FOV;
         const camAng = (i/(COLS-1)-0.5)*FOV;
         const dx=Math.sin(a), dd=Math.cos(a);
-        let rx=nav.x, rd=nav.depth, dist=0, hitSide=0, hitKind="wall";
+        let rx=nav.x, rd=nav.depth, dist=0, hitSide=0, hitKind="wall", hitPillar=null;
         for(let s=STEP;s<=MAXD;s+=STEP){
           rx=nav.x+dx*s; rd=nav.depth+dd*s;
           if(rd>=MAX_DEPTH){ dist=s; hitSide=0; hitKind="floor_end"; break; }
           if(isStationBackWall(rd)){ dist=s; hitSide=0; hitKind="station_wall"; break; }
-          if(isPillar(rx,rd)){ dist=s; hitSide=0; hitKind="pillar"; break; }
-          if(isWall(rx,rd)){ dist=s; hitSide=dx<0?-1:1; break; }
+          const hp=pillarAt(rx,rd);
+          if(hp){ dist=s; hitSide=0; hitKind="pillar"; hitPillar=hp; break; }
+          const tv=tileValueAt(rx,rd);
+          if(tv){ dist=s; hitSide=dx<0?-1:1; hitKind=tv===2?"cave":"wall"; break; }
           if(s>=VIS_WALL){ dist=s; hitSide=0; hitKind="dark"; break; }
         }
         if(!dist) continue;
@@ -1084,15 +1156,24 @@
         const litV=lightOn?Math.max(0,1-Math.abs(beamY-0.5)*2.5):0;
         const lit=litH*litV*fog;
         const sideShade=hitSide<0?0.84:1.0;
-        // ---- TIRA DE TEXTURA (pipeline pronto pra spritesheet real) ----
-        // U = (rx+rd): coordenada DIAGONAL do mundo. Numa parede norte-sul o rd varia;
-        // numa face leste-oeste o rx varia — nunca fica constante (sem coluna esticada).
-        const texObj=hitKind==="pillar"?TEX_PILLAR:TEX_WALL;
-        const texU=hitKind==="pillar"
-          ? (((((rx+rd)*2.6)|0)%TEX_SIZE)+TEX_SIZE)%TEX_SIZE
-          : (((((rx+rd)*1.7)|0)%TEX_SIZE)+TEX_SIZE)%TEX_SIZE;
+        // ---- TIRA DE TEXTURA ----
+        // U = (rx+rd): coordenada DIAGONAL do mundo — nunca constante em nenhuma face.
+        // Pilar: U = offset lateral DENTRO do pilar (preserva o shading cilíndrico da
+        // textura) e variante fixa por pilar. Cave/wall: variante por bloco de 4×4
+        // tiles (troca a cada 16m — o fog esconde a emenda).
+        let texObj, texU;
+        if(hitKind==="pillar"&&hitPillar){
+          texObj=texVar(TEXR.pillar,hitPillar.x|0,hitPillar.top|0);
+          texU=Math.max(0,Math.min(TEX_SIZE-1,((rx-(hitPillar.x-hitPillar.r))/(2*hitPillar.r))*TEX_SIZE))|0;
+        } else {
+          const arr=hitKind==="cave"?TEXR.cave:TEXR.wall;
+          texObj=texVar(arr,Math.floor(rd/(TILE*4)),Math.floor((rx-X_MIN_W)/(TILE*4)));
+          texU=(((((rx+rd)*1.7)|0)%TEX_SIZE)+TEX_SIZE)%TEX_SIZE;
+        }
         const xL=colX-colW/2-0.5, wW=colW+1, hS=y1-y0;
+        x.imageSmoothingEnabled=false; // nearest: nitidez PS2 nas tiras
         x.drawImage(texObj.cnv, texU, 0, 1, TEX_SIZE, xL, y0, wW, hS);
+        x.imageSmoothingEnabled=true;
         // escurecimento ambiente: rocha no breu é escura; o facho recupera a cor
         const ambF=Math.max(0,Math.min(1,(0.24+ambLight*0.60)*sideShade+lit*0.72));
         if(ambF<0.995){ x.fillStyle=`rgba(0,0,0,${(1-ambF).toFixed(3)})`; x.fillRect(xL,y0,wW,hS); }
@@ -1977,6 +2058,11 @@
   // cooldown do jumpscare (configurado pelo guardião)
   ref.child("jumpscareCD").on("value",snap=>{
     const v=snap.val(); if(typeof v==="number"&&v>=0) jumpscareCD=v;
+  });
+  // troca de texturas ao vivo (guardião): 'img' = PNGs reais, 'proc' = procedurais
+  ref.child("texMode").on("value",snap=>{
+    texMode=snap.val()==='proc'?'proc':'img';
+    rebuildTexR();
   });
   // mapa editado pelo guardião: dimensões horizontais, grid, pilares e spawn
   // (render/colisão/IA leem tudo dinamicamente — vale na hora)
