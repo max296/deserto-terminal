@@ -1493,8 +1493,7 @@
       const aggrD=typeof ent.postCollisionDist==='number'?ent.postCollisionDist:300;
       const stalkD=typeof ent.stalkDist==='number'?ent.stalkDist:380;
       const sightR=typeof ent.sightRange==='number'?ent.sightRange:550;
-      const swipeD=typeof ent.swipeDist==='number'?ent.swipeDist:250;
-      const isGrab=(atk==='grab'), isSwipe=(atk==='swipe');
+      const isGrab=(atk==='grab');
       const isGrabbed=(currentGrabbedBy===id);
       const secHd=t=>`<div style="font-size:9px;color:var(--ink-dim);letter-spacing:.14em;margin:8px 0 4px;border-top:1px solid var(--line);padding-top:7px">${t}</div>`;
       const numRow=(id2,mn,mx,val,def)=>`<div style="display:flex;gap:4px;align-items:center;margin-bottom:5px">
@@ -1520,13 +1519,12 @@
         <div style="font-size:8px;color:var(--ink-dim);line-height:1.5;margin-bottom:4px">na perseguição ela só sabe onde o sub está se O VÊ (rocha bloqueia); sem visão vai ao último ponto visto e depois PROCURA pelo mapa</div>
         ${secHd('ATAQUE')}
         <div style="display:flex;gap:4px;margin-bottom:5px">
-          <button class="btn sel-atk" data-a="collision" style="flex:1;font-size:9px${(!isGrab&&!isSwipe)?';color:var(--warn);border-color:var(--warn-dim)':''}">COLISÃO</button>
+          <button class="btn sel-atk" data-a="collision" style="flex:1;font-size:9px${!isGrab?';color:var(--warn);border-color:var(--warn-dim)':''}">COLISÃO</button>
           <button class="btn sel-atk" data-a="grab" style="flex:1;font-size:9px${isGrab?';color:var(--danger);border-color:var(--danger)':''}">AGARRAR</button>
-          <button class="btn sel-atk" data-a="swipe" style="flex:1;font-size:9px${isSwipe?';color:#c86dd8;border-color:#7a4088':''}">INVESTIDA</button>
         </div>
-        ${(!isGrab&&!isSwipe)?lbl('DIST. PÓS-COLISÃO (wu)')+numRow('sel-pcd',50,2000,aggrD,300):''}
-        ${isSwipe?lbl('DIST. DE DISPARO DA INVESTIDA (wu)')+numRow('sel-swd',100,600,swipeD,250)+
-          `<div style="font-size:8px;color:var(--ink-dim);line-height:1.5;margin-bottom:4px">passada a ~7× a velocidade rente a uma lateral — o sub TOMBA pro lado do impacto</div>`:''}
+        ${!isGrab?lbl('DIST. PÓS-COLISÃO (wu)')+numRow('sel-pcd',50,2000,aggrD,300):''}
+        <button class="btn sel-swipe-now" style="width:100%;font-size:9px;color:#c86dd8;border-color:#7a4088;margin-bottom:4px">⚡ INVESTIDA AGORA (one-shot)</button>
+        <div style="font-size:8px;color:var(--ink-dim);line-height:1.5;margin-bottom:4px">passada rasante a ~7× por uma lateral (o sub TOMBA pro lado), se afasta e VOLTA ao que estava fazendo — funciona em qualquer comportamento</div>
         ${isGrab?`<div style="display:flex;gap:4px;margin-bottom:4px">
           <button class="btn sel-grab-target" style="flex:1;font-size:9px;color:${settingGrabTarget?'#ff8800':'var(--ink-dim)'}">
             ${settingGrabTarget?'↙ CLIQUE NO MAPA':'DEFINIR ALVO'}
@@ -1562,8 +1560,8 @@
     if(stk){ const inp=document.getElementById('sel-stalk'); if(inp) inp.value=380; entities[id]={...entities[id],stalkDist:380}; subRef.child('entities/'+id+'/stalkDist').set(380); renderSelectedPanel(); return; }
     const sgr=e.target.closest('.sel-sight-reset');
     if(sgr){ const inp=document.getElementById('sel-sight'); if(inp) inp.value=550; entities[id]={...entities[id],sightRange:550}; subRef.child('entities/'+id+'/sightRange').set(550); renderSelectedPanel(); return; }
-    const swr=e.target.closest('.sel-swd-reset');
-    if(swr){ const inp=document.getElementById('sel-swd'); if(inp) inp.value=250; entities[id]={...entities[id],swipeDist:250}; subRef.child('entities/'+id+'/swipeDist').set(250); renderSelectedPanel(); return; }
+    const sn=e.target.closest('.sel-swipe-now');
+    if(sn){ subRef.child('entities/'+id+'/swipeCmd').set(Date.now()); sn.textContent='⚡ INVESTINDO…'; setTimeout(()=>{renderSelectedPanel();},1500); return; }
     const ab=e.target.closest('.sel-atk');
     if(ab){ const atk=ab.dataset.a; entities[id]={...entities[id],attackMode:atk}; subRef.child('entities/'+id+'/attackMode').set(atk); renderSelectedPanel(); return; }
     const pcd=e.target.closest('.sel-pcd-reset');
@@ -1593,7 +1591,6 @@
     if(e.target.id==='sel-pcd'){ const a=Math.max(50,Math.min(2000,parseInt(e.target.value)||300)); e.target.value=a; entities[id]={...entities[id],postCollisionDist:a}; subRef.child('entities/'+id+'/postCollisionDist').set(a); }
     if(e.target.id==='sel-stalk'){ const s=Math.max(150,Math.min(1500,parseInt(e.target.value)||380)); e.target.value=s; entities[id]={...entities[id],stalkDist:s}; subRef.child('entities/'+id+'/stalkDist').set(s); }
     if(e.target.id==='sel-sight'){ const s=Math.max(100,Math.min(2000,parseInt(e.target.value)||550)); e.target.value=s; entities[id]={...entities[id],sightRange:s}; subRef.child('entities/'+id+'/sightRange').set(s); }
-    if(e.target.id==='sel-swd'){ const s=Math.max(100,Math.min(600,parseInt(e.target.value)||250)); e.target.value=s; entities[id]={...entities[id],swipeDist:s}; subRef.child('entities/'+id+'/swipeDist').set(s); }
   });
 
   // ---- Lista compacta de entidades ----
