@@ -404,6 +404,8 @@
   let navReady=false;
   const keys={};
   let lastWallHit=0, wallHitCount=0, lastWallShake=0;
+  // suspensão do veículo: trancos de terreno (mola+amortecedor) enquanto se move
+  let shkX=0,shkY=0,shkVX=0,shkVY=0,nextJoltT=0,_shkPX=null,_shkPD=null,_shkPH=null;
   let navPath=[], lastPathPoint=null, reelingSpeed=80;
   let reelingPath=[], reelingWpIdx=-1;  // reelingPath = caminho esticado calculado ao iniciar reeling
   let navPathWriteT=0;
@@ -1139,6 +1141,23 @@
           if(s>=VIS_WALL){ dist=s; hitSide=0; hitKind="dark"; break; }
         }
         if(!dist) continue;
+        // refina o hit por BISSECÇÃO: o march de 5wu penetra até 5wu na parede com
+        // erro aleatório por coluna — o texU herdava esse ruído (rasgado visível nas
+        // faces vistas de frente). 5 iterações → erro ~0.16wu; a distância precisa
+        // também estabiliza a altura projetada (paredes não "respiram" ao girar).
+        if(hitKind!=="dark"&&dist>STEP){
+          let lo=dist-STEP, hi=dist;
+          for(let bi=0;bi<5;bi++){
+            const mid=(lo+hi)*0.5;
+            const mx=nav.x+dx*mid, md=nav.depth+dd*mid;
+            const solid=hitKind==="pillar"?!!pillarAt(mx,md)
+              :hitKind==="station_wall"?isStationBackWall(md)
+              :hitKind==="floor_end"?md>=MAX_DEPTH
+              :tileValueAt(mx,md)!==0;
+            if(solid) hi=mid; else lo=mid;
+          }
+          dist=hi; rx=nav.x+dx*hi; rd=nav.depth+dd*hi;
+        }
         const perp=Math.max(8, dist*Math.cos(camAng));
         zBuffer[i]=perp;
         // além do alcance: a rocha já dissolveu 100% na água — não desenha NADA
@@ -1164,7 +1183,15 @@
         let texObj, texU;
         if(hitKind==="pillar"&&hitPillar){
           texObj=texVar(TEXR.pillar,hitPillar.x|0,hitPillar.top|0);
-          texU=Math.max(0,Math.min(TEX_SIZE-1,((rx-(hitPillar.x-hitPillar.r))/(2*hitPillar.r))*TEX_SIZE))|0;
+          // face FRONTAL (raio ~norte-sul): U = offset lateral (lê como cilindro).
+          // face LATERAL (raio ~leste-oeste): U corre pela profundidade — senão toda
+          // coluna amostraria a mesma borda da textura (listra esticada).
+          if(Math.abs(dx)>Math.abs(dd)){
+            texU=((rd*(TEX_SIZE/(2*hitPillar.r)))|0)%TEX_SIZE;
+            if(texU<0)texU+=TEX_SIZE;
+          } else {
+            texU=Math.max(0,Math.min(TEX_SIZE-1,((rx-(hitPillar.x-hitPillar.r))/(2*hitPillar.r))*TEX_SIZE))|0;
+          }
         } else {
           const arr=hitKind==="cave"?TEXR.cave:TEXR.wall;
           texObj=texVar(arr,Math.floor(rd/(TILE*4)),Math.floor((rx-X_MIN_W)/(TILE*4)));
@@ -1174,8 +1201,10 @@
         x.imageSmoothingEnabled=false; // nearest: nitidez PS2 nas tiras
         x.drawImage(texObj.cnv, texU, 0, 1, TEX_SIZE, xL, y0, wW, hS);
         x.imageSmoothingEnabled=true;
-        // escurecimento ambiente: rocha no breu é escura; o facho recupera a cor
-        const ambF=Math.max(0,Math.min(1,(0.24+ambLight*0.60)*sideShade+lit*0.72));
+        // escurecimento ambiente: rocha no breu é escura; o facho recupera a cor.
+        // pilar recebe luz base maior — concreto claro se destaca da rocha
+        const ambBase=hitKind==="pillar"?(0.38+ambLight*0.62):(0.24+ambLight*0.60);
+        const ambF=Math.max(0,Math.min(1,ambBase*sideShade+lit*0.72));
         if(ambF<0.995){ x.fillStyle=`rgba(0,0,0,${(1-ambF).toFixed(3)})`; x.fillRect(xL,y0,wW,hS); }
         // fog: dissolve na cor da água pela DISTÂNCIA (única fonte de fade)
         const pres=fogK;
@@ -1902,6 +1931,37 @@
       Object.entries(creatureEntities).forEach(([id,ent])=>{
         if(ent) ref.child("entities/"+id).update({wx:ent.wx,wd:ent.wd});
       });
+    }
+
+    // ===== SUSPENSÃO: trancos de terreno enquanto o veículo se move =====
+    // Nada de senoide — impulsos aleatórios numa mola amortecida (bate seco,
+    // assenta com meia oscilação). Intensidade segue a velocidade REAL do sub,
+    // então cobre WASD, reeling, descida da moonpool e arrasto do grab.
+    {
+      const mvd=Math.hypot(nav.x-(_shkPX??nav.x),nav.depth-(_shkPD??nav.depth));
+      let dh=Math.abs(nav.heading-(_shkPH??nav.heading)); if(dh>180)dh=360-dh;
+      _shkPX=nav.x; _shkPD=nav.depth; _shkPH=nav.heading;
+      const idt=Math.max(dt,0.001);
+      const moveI=Math.min(1,(mvd/idt)/30)+Math.min(0.4,(dh/idt)/52*0.4);
+      const grabMul=(grabbedBy&&nav.mode==='diving')?2:1;
+      if(moveI>0.05&&now>=nextJoltT){
+        nextJoltT=now+400+Math.random()*800;      // próximo tranco em 0.4-1.2s
+        const amp=(0.8+Math.random()*1.6)*Math.min(1.4,moveI)*grabMul;
+        shkVX+=(Math.random()<0.5?-1:1)*amp*18;   // impulso lateral dominante
+        shkVY+=(Math.random()-0.5)*amp*10;        // vertical menor
+      }
+      // mola amortecida (K=rigidez, D=amortecimento) — ~1.5Hz, assenta em ~0.5s
+      const K=90, D=7.5;
+      shkVX+=(-shkX*K-shkVX*D)*dt; shkX+=shkVX*dt;
+      shkVY+=(-shkY*K-shkVY*D)*dt; shkY+=shkVY*dt;
+      // micro-vibração de motor por baixo, só com propulsão
+      const eng=moveI>0.05?0.3*Math.min(1,moveI):0;
+      const ex=eng*Math.sin(now*0.055), ey=eng*0.5*Math.sin(now*0.043+1.3);
+      const subEl_=document.getElementById('sub');
+      const tx2=Math.max(-3,Math.min(3,shkX+ex));
+      const ty2=Math.max(-2,Math.min(2,shkY+ey));
+      subEl_.style.transform=(Math.abs(tx2)>0.02||Math.abs(ty2)>0.02)
+        ?`translate(${tx2.toFixed(2)}px,${ty2.toFixed(2)}px)`:'';
     }
 
     // HUD local
