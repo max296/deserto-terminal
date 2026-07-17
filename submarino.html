@@ -74,16 +74,17 @@
   }
   #sub.wallhit{animation:wallhit .38s ease-out}
   @keyframes jshake{
-    0%,100%{transform:translate(0,0) rotate(0deg)}
-    10%{transform:translate(-5px,-3px) rotate(-.6deg)}
-    20%{transform:translate(6px,4px) rotate(.6deg)}
-    30%{transform:translate(-6px,-2px) rotate(-.4deg)}
-    40%{transform:translate(5px,3px) rotate(.4deg)}
-    50%{transform:translate(-4px,-4px) rotate(-.25deg)}
-    60%{transform:translate(4px,2px) rotate(.25deg)}
-    70%{transform:translate(-5px,3px) rotate(-.15deg)}
-    80%{transform:translate(5px,-2px) rotate(.15deg)}
-    90%{transform:translate(-2px,2px) rotate(0deg)}
+    0%{transform:translate(0,0) rotate(0deg) scale(1)}
+    6%{transform:translate(-12px,-7px) rotate(-1.6deg) scale(1.035)}
+    14%{transform:translate(13px,8px) rotate(1.5deg) scale(1.03)}
+    24%{transform:translate(-11px,-5px) rotate(-1.2deg) scale(1.022)}
+    34%{transform:translate(10px,6px) rotate(1.0deg) scale(1.015)}
+    46%{transform:translate(-8px,-6px) rotate(-.7deg) scale(1.01)}
+    58%{transform:translate(7px,4px) rotate(.5deg) scale(1.006)}
+    70%{transform:translate(-6px,4px) rotate(-.35deg) scale(1.003)}
+    82%{transform:translate(5px,-3px) rotate(.2deg) scale(1.001)}
+    92%{transform:translate(-2px,2px) rotate(-.1deg) scale(1)}
+    100%{transform:translate(0,0) rotate(0deg) scale(1)}
   }
 
   /* blur global da VISÃO (na frente de tudo — casco + visor). Focar reduz. */
@@ -414,6 +415,7 @@
   let shkX=0,shkY=0,shkVX=0,shkVY=0,nextJoltT=0,_shkPX=null,_shkPD=null,_shkPH=null;
   let rollA=0,rollV=0;                 // tombo (graus) — investida da criatura
   let struggleAmt=0,_struggleSyncT=0;  // luta dos players durante o grab (0-100)
+  let lastNoiseT=0,lastNoiseX=0,lastNoiseD=0; // batida na parede: "som" que a criatura ouve
   let navPath=[], lastPathPoint=null, reelingSpeed=80;
   let reelingPath=[], reelingWpIdx=-1;  // reelingPath = caminho esticado calculado ao iniciar reeling
   let navPathWriteT=0;
@@ -702,7 +704,9 @@
       const biolumPhase=(id.charCodeAt(0)*1.37)%(Math.PI*2);
       const biolumPulse=0.35+0.65*Math.abs(Math.sin(t*0.038+biolumPhase));
       const glowAlpha=Math.max(0,(1-tY/500)*biolumPulse*0.82);
-      if(glowAlpha>0.01){
+      // depth-test: luz não atravessa rocha — só brilha se a coluna está visível
+      const gcol=Math.max(0,Math.min(COLS_-1,Math.floor(screenX/colW_)));
+      if(glowAlpha>0.01&&tY<zBuf[gcol]+12){
         // verde IGUAL à bioluminescência ambiente — a criatura se disfarça entre elas
         const glowR=Math.min(h*0.20,110/Math.max(1,tY*0.08));
         const gr2=x.createRadialGradient(screenX,h/2,0,screenX,h/2,glowR*3.8);
@@ -949,10 +953,12 @@
     const frameA=dfFrames[Math.min(dfFrames.length-1,4*DF_COLS)];
     const frameB=dfFrames[Math.min(dfFrames.length-1,4*DF_COLS+1)];
     const breathe=1+0.045*Math.sin(t*0.06);
-    const shX=Math.sin(t*0.31+1.7)*4+Math.cos(t*0.73+0.3)*2.5;
-    const shY=Math.cos(t*0.26+0.9)*3+Math.sin(t*0.57)*1.8;
+    // a LUTA dos players chacoalha a criatura na tela (structAmt 0-100)
+    const stg=1+struggleAmt*0.012;
+    const shX=(Math.sin(t*0.31+1.7)*4+Math.cos(t*0.73+0.3)*2.5)*stg;
+    const shY=(Math.cos(t*0.26+0.9)*3+Math.sin(t*0.57)*1.8)*stg;
     // bbox real escalada pra estourar as bordas; entra crescendo (vem pro vidro)
-    const gw=w*1.55*breathe*(0.62+0.38*appear);
+    const gw=w*1.80*breathe*(0.62+0.38*appear);
     const gh2=gw*(_grabTrim.h/_grabTrim.w);
     const cx2=w/2+shX, cy2=h*0.54+shY;
     const baseAl=Math.min(1,appear*1.15)*0.97;
@@ -1267,6 +1273,9 @@
           if(tY<=0.3||tY>VIS_WALL*1.15) continue;
           const sx=w/2*(1+tX/tY);
           if(sx<-w*0.15||sx>w*1.15) continue;
+          // depth-test: não brilha através de rocha
+          const bcol=Math.max(0,Math.min(COLS-1,Math.floor(sx/colW)));
+          if(tY>=zBuffer[bcol]+12) continue;
           const pulse=0.4+0.6*Math.abs(Math.sin(t*bp.spd+bp.ph));
           const fade=Math.max(0,(1-tY/(VIS_WALL*0.80))*pulse);
           if(fade<0.015) continue;
@@ -1747,6 +1756,8 @@
             lastWallShake=now;
             const subEl=document.getElementById('sub');
             subEl.classList.remove('wallhit'); void subEl.offsetWidth; subEl.classList.add('wallhit');
+            // o som do impacto viaja: a criatura ganha uma dica da região do sub
+            lastNoiseT=now; lastNoiseX=nav.x; lastNoiseD=nav.depth;
           }
         }
       }
@@ -1813,6 +1824,45 @@
       const entSpd=typeof ent.speed==="number"&&ent.speed>0?ent.speed:50;
       let vx=0, vd=0;
 
+      // ===== INVESTIDA (botão one-shot do guardião) — roda em QUALQUER comportamento =====
+      // sequência: rasante a 7× por uma lateral (nunca atrás) → impacto/tombo →
+      // se afasta em diagonal frontal → volta ao que estava fazendo antes
+      if(ent._swipePhase){
+        const sp=ent._swipePhase;
+        const tgt=sp.stage===0?sp.p1:sp.stage===1?sp.p2:sp.away;
+        const dtx=tgt.x-ewx, dtd=tgt.d-ewd;
+        const tdist=Math.hypot(dtx,dtd);
+        const spd=entSpd*(sp.stage===2?3:7)*dt;
+        if(tdist<Math.max(20,spd*1.5)){
+          if(sp.stage<2) creatureEntities[id]={...ent,_swipePhase:{...sp,stage:sp.stage+1}};
+          else creatureEntities[id]={...ent,_swipePhase:null}; // fim: retoma o comportamento
+        } else { vx=dtx/tdist*spd; vd=dtd/tdist*spd; }
+        // impacto rasante: o sub TOMBA pro lado da passada (uma vez)
+        if(!sp.hit&&sp.stage<2&&dist<95){
+          creatureEntities[id]={...creatureEntities[id],_swipePhase:{...(creatureEntities[id]._swipePhase||sp),hit:true}};
+          collisionFlicker=0.6;
+          wallHitCount+=6; ref.child("hullDamage").set(wallHitCount);
+          rollV+=sp.side*45;
+          shkVX+=sp.side*55;
+        }
+        const movedSw=steerMove(ewx,ewd,vx,vd);
+        creatureEntities[id]={...creatureEntities[id],wx:movedSw.x,wd:movedSw.d,
+          _facing:(Math.hypot(vx,vd)>0.01?Math.atan2(vx,vd):(ent._facing||0))};
+        return;
+      }
+      if(ent.swipeCmd&&ent.swipeCmd>(ent._swipeAck||0)&&grabbedBy!==id){
+        const hdgR=nav.heading*Math.PI/180;
+        const fwdX=Math.sin(hdgR), fwdD=Math.cos(hdgR);
+        const latX=Math.cos(hdgR), latD=-Math.sin(hdgR);
+        const side=Math.random()<0.5?-1:1;
+        const p1={x:nav.x+fwdX*180+latX*side*70, d:nav.depth+fwdD*180+latD*side*70};
+        const p2={x:nav.x+fwdX*10+latX*side*70,  d:nav.depth+fwdD*10+latD*side*70};
+        const away={x:nav.x+fwdX*250+latX*side*450, d:nav.depth+fwdD*250+latD*side*450};
+        creatureEntities[id]={...ent,_swipeAck:ent.swipeCmd,_swipePhase:{stage:0,side,p1,p2,away,hit:false}};
+        ref.child('entities/'+id+'/_swipeAck').set(ent.swipeCmd);
+        return;
+      }
+
       if(beh==="chase"||ent.chasing){
         const attackMode=ent.attackMode||'collision';
         const postCollisionDist=typeof ent.postCollisionDist==='number'&&ent.postCollisionDist>0?ent.postCollisionDist:300;
@@ -1836,8 +1886,18 @@
           const sees=dist<sightR&&lineOfSight(ewx,ewd,nav.x,nav.depth);
           if(sees){
             hu.mode='hunt'; hu.lastSeen={x:nav.x,d:nav.depth}; hu.searchR=220;
-          } else if(hu.mode==='hunt'){
-            hu.mode='last'; hu.path=null; hu.goalPos=null;
+            hu.hintR=650; hu.nextHintT=0; // reencontrou: o cerco reseta
+          } else {
+            // OUVIU o casco bater na parede: dica PRECISA da região — vai investigar
+            if(lastNoiseT>(hu.noiseT||0)){
+              hu.noiseT=lastNoiseT;
+              const ang=Math.random()*6.28, rr=Math.random()*220;
+              hu.lastSeen={x:lastNoiseX+Math.cos(ang)*rr, d:lastNoiseD+Math.sin(ang)*rr};
+              hu.hintR=Math.max(160,(hu.hintR||650)-60); // barulho também aperta o cerco
+              hu.mode='last'; hu.path=null; hu.goalPos=null; hu.goal=null; hu.searchR=260;
+            } else if(hu.mode==='hunt'){
+              hu.mode='last'; hu.path=null; hu.goalPos=null;
+            }
           }
           let tgtX,tgtD,spdMul=1;
           if(hu.mode==='hunt'){ tgtX=nav.x; tgtD=nav.depth; }
@@ -1847,9 +1907,22 @@
           }
           if(hu.mode==='search'){
             spdMul=0.7;
+            // "DIRETOR" (Alien Isolation): dicas periódicas da REGIÃO do sub —
+            // um ponto = posição real + erro de raio hintR. Quanto mais tempo
+            // procurando sem achar, menor o hintR: o cerco vai apertando.
+            if(!hu.hintR) hu.hintR=650;
+            if(!hu.nextHintT) hu.nextHintT=now+9000;
+            if(now>=hu.nextHintT){
+              hu.nextHintT=now+9000;
+              hu.hintR=Math.max(160,hu.hintR-90);
+              const ang=Math.random()*6.28, rr=Math.random()*hu.hintR;
+              hu.lastSeen={x:nav.x+Math.cos(ang)*rr, d:nav.depth+Math.sin(ang)*rr};
+              hu.searchR=Math.max(240,hu.hintR*0.6);
+              hu.goal=null; // re-centra a varredura na dica nova
+            }
             if(!hu.goal||Math.hypot(ewx-hu.goal.x,ewd-hu.goal.d)<50){
               const g=findSearchPoint(hu.lastSeen.x,hu.lastSeen.d,hu.searchR);
-              if(g){ hu.goal=g; hu.goalPos=null; hu.lastSeen={x:g.x,d:g.d}; } // re-centra: espalha
+              if(g){ hu.goal=g; hu.goalPos=null; }
               hu.searchR=Math.min(800,hu.searchR+120);
             }
             if(hu.goal){ tgtX=hu.goal.x; tgtD=hu.goal.d; }
@@ -1874,33 +1947,19 @@
           } else if(hu.mode==='hunt'&&dist>8){
             const spd=entSpd*dt; vx=(dx/dist)*spd; vd=(dd/dist)*spd;
           }
-          // INVESTIDA: passada rasante a alta velocidade por uma LATERAL do sub
-          if(sees&&attackMode==='swipe'&&nav.mode!=="moonpool"&&now-jumpscareT>jumpscareCD){
-            const swD=typeof ent.swipeDist==='number'&&ent.swipeDist>0?ent.swipeDist:250;
-            if(dist<swD){
-              jumpscareT=now;
-              const hdgR=nav.heading*Math.PI/180;
-              const fwdX=Math.sin(hdgR), fwdD=Math.cos(hdgR);
-              const latX=Math.cos(hdgR), latD=-Math.sin(hdgR);
-              const side=Math.random()<0.5?-1:1;
-              // trajetória sempre no semiplano frontal+lateral — NUNCA atrás
-              const p1={x:nav.x+fwdX*180+latX*side*70, d:nav.depth+fwdD*180+latD*side*70};
-              const p2={x:nav.x+fwdX*10+latX*side*70,  d:nav.depth+fwdD*10+latD*side*70};
-              creatureEntities[id]={...ent,_attackPhase:'swiping',_swipe:{p1,p2,side,stage:0,hit:false}};
-              return;
-            }
-          }
           // gatilho de ataque frontal (colisão/agarrar) — só quando VENDO e perto
-          if(sees&&attackMode!=='swipe'&&dist<110&&nav.mode!=="moonpool"&&now-jumpscareT>jumpscareCD){
-            jumpscareT=now; collisionFlicker=1.0;
+          if(sees&&dist<110&&nav.mode!=="moonpool"&&now-jumpscareT>jumpscareCD){
+            jumpscareT=now; collisionFlicker=1.35;
             const jf=document.getElementById("jflash");
             jf.style.display="block"; jf.style.transition="none"; jf.style.opacity="1";
-            setTimeout(()=>{jf.style.transition="opacity 0.9s ease";jf.style.opacity="0";
-              setTimeout(()=>{jf.style.display="none";jf.style.transition="none";},1000);},80);
+            setTimeout(()=>{jf.style.transition="opacity 1.3s ease";jf.style.opacity="0";
+              setTimeout(()=>{jf.style.display="none";jf.style.transition="none";},1400);},110);
             const sub_=document.getElementById("sub");
             sub_.style.animation="none"; sub_.offsetHeight;
-            sub_.style.animation="jshake 0.55s ease-in-out";
+            sub_.style.animation="jshake 0.75s cubic-bezier(.2,.9,.3,1)";
             sub_.addEventListener("animationend",()=>{sub_.style.animation="";},{once:true});
+            rollV+=(Math.random()<0.5?-1:1)*38; // o impacto TOMBA o sub
+            shkVX+=(Math.random()<0.5?-1:1)*45;
             wallHitCount+=10; ref.child("hullDamage").set(wallHitCount);
             if(attackMode==='grab'){
               ref.child('grabbedBy').set(id);
@@ -1908,30 +1967,6 @@
               // colisão: lança a criatura em frente (continua por postCollisionDist)
               creatureEntities[id]={...ent,_attackPhase:'charging',
                 _chargeDir:{x:dx/dist,d:dd/dist},_chargeTraveled:0};
-            }
-          }
-        } else if(phase==='swiping'){
-          // PASSADA: ~7× a velocidade — um vulto rente à lateral
-          const sw=ent._swipe;
-          if(!sw){ creatureEntities[id]={...ent,_attackPhase:null}; }
-          else{
-            const tgt=sw.stage===0?sw.p1:sw.p2;
-            const dtx=tgt.x-ewx, dtd=tgt.d-ewd;
-            const tdist=Math.hypot(dtx,dtd);
-            const spd=entSpd*7*dt;
-            if(tdist<Math.max(20,spd*1.5)){
-              if(sw.stage===0) creatureEntities[id]={...ent,_swipe:{...sw,stage:1}};
-              else creatureEntities[id]={...ent,_attackPhase:'recovering',_recoverT:now,_swipe:null};
-            } else {
-              vx=dtx/tdist*spd; vd=dtd/tdist*spd;
-            }
-            // impacto no ponto de máxima aproximação: o sub TOMBA pro lado
-            if(!sw.hit&&dist<95){
-              creatureEntities[id]={...creatureEntities[id],_swipe:{...(creatureEntities[id]._swipe||sw),hit:true}};
-              collisionFlicker=0.6;
-              wallHitCount+=6; ref.child("hullDamage").set(wallHitCount);
-              rollV+=sw.side*45;   // tombo (roll com mola — cai e volta)
-              shkVX+=sw.side*55;   // tranco lateral forte
             }
           }
         } else if(phase==='charging'){
@@ -2061,14 +2096,16 @@
       const idt=Math.max(dt,0.001);
       let moveI=Math.min(1,(mvd/idt)/30)+Math.min(0.4,(dh/idt)/52*0.4);
       const grabMul=(grabbedBy&&nav.mode==='diving')?2:1;
-      // LUTA durante o grab: a nave se mexe mais (único sinal pros players)
+      // LUTA durante o grab: a nave se debate VISIVELMENTE (sinal pros players)
+      let joltMin=400, joltRng=800;
       if(grabbedBy&&nav.mode==='diving'&&(keys["KeyW"]||keys["KeyA"]||keys["KeyS"]||keys["KeyD"]
         ||keys["ArrowUp"]||keys["ArrowDown"]||keys["ArrowLeft"]||keys["ArrowRight"])){
-        moveI=Math.max(moveI,0.5+struggleAmt*0.005);
+        moveI=Math.max(moveI,0.85+struggleAmt*0.007);
+        joltMin=170; joltRng=330; // trancos bem mais frequentes na luta
       }
       if(moveI>0.05&&now>=nextJoltT){
-        nextJoltT=now+400+Math.random()*800;      // próximo tranco em 0.4-1.2s
-        const amp=(0.8+Math.random()*1.6)*Math.min(1.4,moveI)*grabMul;
+        nextJoltT=now+joltMin+Math.random()*joltRng;
+        const amp=(0.8+Math.random()*1.6)*Math.min(1.6,moveI)*grabMul;
         shkVX+=(Math.random()<0.5?-1:1)*amp*18;   // impulso lateral dominante
         shkVY+=(Math.random()-0.5)*amp*10;        // vertical menor
       }
