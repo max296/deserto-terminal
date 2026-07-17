@@ -57,6 +57,8 @@
   #flickerLight{position:absolute;left:0;right:0;top:-10%;height:60%;z-index:5;pointer-events:none;opacity:0;
     background:radial-gradient(ellipse 70% 100% at 50% 0%, rgba(180,150,90,.22) 0%, transparent 65%)}
   #sub.old #flickerLight{opacity:1;animation:flick 4s linear infinite}
+  /* NeuroStat: luz fria — o flicker só liga quando o guardião define flickerRate */
+  #sub.modern #flickerLight{background:radial-gradient(ellipse 70% 100% at 50% 0%, rgba(120,180,215,.20) 0%, transparent 65%)}
   @keyframes flick{
     0%{opacity:.7}3%{opacity:.15}5%{opacity:.6}7%{opacity:.2}8%{opacity:.75}
     40%{opacity:.7}42%{opacity:.1}43%{opacity:.65}
@@ -94,6 +96,8 @@
      ofegante embaça de verdade */
   #breathFog{position:absolute;inset:0;z-index:3;pointer-events:none;opacity:0;
     background:radial-gradient(ellipse 95% 75% at 50% 80%, rgba(200,220,228,.55), rgba(180,200,210,.20) 55%, transparent 78%)}
+  /* rachadura no VIDRO do visor (guardião dispara; desenhada procedural no canvas) */
+  #glassCrackCv{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none;display:none}
   /* SYSTEM OVERRIDE: fora do visor, no painel de controle */
   #sysOverride{position:absolute;bottom:18vh;left:0;right:0;text-align:center;z-index:9;pointer-events:none;opacity:0;font-size:11px;letter-spacing:.3em;color:#ff2800;text-shadow:0 0 16px rgba(255,40,0,.9)}
 
@@ -176,6 +180,7 @@
       <div id="glassReflect"></div>
       <div id="viewportVignette"></div>
     <div id="breathFog"></div>
+    <canvas id="glassCrackCv"></canvas>
       <img id="shutter" src="img/shutter.png" alt="">
       <div id="coralFlash"></div>
     </div>
@@ -422,12 +427,89 @@
   let struggleAmt=0,_struggleSyncT=0;  // luta dos players durante o grab (0-100)
   let lastNoiseT=0,lastNoiseX=0,lastNoiseD=0; // batida na parede: "som" que a criatura ouve
   let subSpeedNow=0; // velocidade real do sub (wu/s) — stealth: parado = discreto
-  let navPath=[], lastPathPoint=null, reelingSpeed=80;
-  let reelingPath=[], reelingWpIdx=-1;  // reelingPath = caminho esticado calculado ao iniciar reeling
-  let navPathWriteT=0;
-  function pushNavPath(){
-    // sync do navPath para Firebase: guardião e monitor desenham o cabo
-    ref.child("navPath").set(navPath.length ? navPath : null);
+  let reelingSpeed=80;
+  // ===== CORDA (umbilical): simulação de corda ESTICADA em tempo real =====
+  // A corda é SEMPRE uma sequência de segmentos retos: âncora (moonpool) →
+  // quinas de parede onde ela DOBRA (wrap) → sub. Quando o sub se move e o
+  // segmento desdobra (o pivô anterior volta a ver o sub), o pivô some (unwrap).
+  // Margem fina (6wu — corda, não submarino): sem cantos fantasmas.
+  let ropePivots=[], ropeSyncT=0;
+  const ROPE_MARGIN=6;
+  function ropeAnchor(){ return {x:SPAWN.x, depth:1000}; }
+  function ropeLOS(x1,d1,x2,d2){
+    const dist=Math.hypot(x2-x1,d2-d1);
+    if(dist<1) return true;
+    const steps=Math.max(2,Math.ceil(dist/(TILE*0.30)));
+    const nx=-(d2-d1)/dist*ROPE_MARGIN, nd=(x2-x1)/dist*ROPE_MARGIN;
+    for(let i=1;i<steps;i++){
+      const t=i/steps;
+      const cx=x1+(x2-x1)*t, cd=d1+(d2-d1)*t;
+      if(isWall(cx,cd)||isWall(cx+nx,cd+nd)||isWall(cx-nx,cd-nd)) return false;
+    }
+    return true;
+  }
+  // acha a QUINA onde a corda dobra: marcha fina do pivô ao sub até bater na
+  // parede; candidatos = os 4 cantos do tile atingido (com folga diagonal);
+  // vence o canto visível pelo pivô mais próximo da linha da corda
+  function ropeFindCorner(px,pd){
+    const dx=nav.x-px, dd=nav.depth-pd;
+    const L=Math.hypot(dx,dd); if(L<2) return null;
+    const ux=dx/L, ud=dd/L;
+    let hx=0, hd=0, hit=false;
+    for(let s=2;s<L;s+=2){
+      const cx=px+ux*s, cd=pd+ud*s;
+      if(isWall(cx,cd)){ hx=cx; hd=cd; hit=true; break; }
+    }
+    if(!hit) return null;
+    const tc=Math.floor((hx-X_MIN_W)/TILE), tr=Math.floor(hd/TILE);
+    const OF=9, cands=[];
+    for(const [qx0,qd0,sx,sd] of [
+      [X_MIN_W+tc*TILE,     tr*TILE,     -1,-1],
+      [X_MIN_W+(tc+1)*TILE, tr*TILE,      1,-1],
+      [X_MIN_W+tc*TILE,     (tr+1)*TILE, -1, 1],
+      [X_MIN_W+(tc+1)*TILE, (tr+1)*TILE,  1, 1],
+    ]){
+      const qx=qx0+sx*OF, qd=qd0+sd*OF;
+      if(isWall(qx,qd)) continue;
+      if(!ropeLOS(px,pd,qx,qd)) continue;
+      const t=(qx-px)*ux+(qd-pd)*ud;
+      const lx=px+ux*t, ld=pd+ud*t;
+      cands.push({x:qx,depth:qd,score:Math.hypot(qx-lx,qd-ld)});
+    }
+    if(!cands.length) return null;
+    cands.sort((a,b)=>a.score-b.score);
+    // pula candidato colado no pivô atual (evita travar repetindo a mesma quina)
+    for(const cd2 of cands){
+      if(Math.hypot(cd2.x-px,cd2.depth-pd)>=6) return {x:cd2.x,depth:cd2.depth};
+    }
+    return null;
+  }
+  function ropeUpdate(){
+    if(!ropePivots.length) ropePivots=[ropeAnchor()];
+    // UNWRAP: enquanto o penúltimo pivô vê o sub, o último desdobra
+    let g1=0;
+    while(ropePivots.length>1&&g1++<10){
+      const prev=ropePivots[ropePivots.length-2];
+      if(ropeLOS(prev.x,prev.depth,nav.x,nav.depth)) ropePivots.pop();
+      else break;
+    }
+    // WRAP: o último pivô não vê o sub → a corda dobra em quinas novas.
+    // Numa parede reta em ângulo raso ela deita em vários pivôs colineares
+    // (como corda de verdade) — o guard alto deixa convergir no mesmo frame.
+    let g2=0;
+    while(g2++<10&&ropePivots.length<48){
+      const last=ropePivots[ropePivots.length-1];
+      if(ropeLOS(last.x,last.depth,nav.x,nav.depth)) break;
+      const corner=ropeFindCorner(last.x,last.depth);
+      if(!corner) break;
+      ropePivots.push(corner);
+    }
+    // sync throttled: guardião desenha o cabo ESTICADO (pivôs + sub)
+    const nw=performance.now();
+    if(nw-ropeSyncT>600){
+      ropeSyncT=nw;
+      ref.child("rope").set(ropePivots.concat([{x:Math.round(nav.x),depth:Math.round(nav.depth)}]));
+    }
   }
 
   let heading=0, lightMode=false, lightOn=false;
@@ -719,7 +801,7 @@
       const occluded=tY>=zBuf[gcol]+12;
       const gv=(creatureGlowVis[id]===undefined?1:creatureGlowVis[id]);
       creatureGlowVis[id]=gv+((occluded?0:1)-gv)*0.09;
-      const glowAlpha=Math.max(0,(1-tY/650)*biolumPulse*0.82)*creatureGlowVis[id];
+      const glowAlpha=Math.max(0,(1-tY/850)*biolumPulse*0.82)*creatureGlowVis[id];
       if(glowAlpha>0.01){
         // verde IGUAL à bioluminescência ambiente — a criatura se disfarça entre elas
         const glowR=Math.min(h*0.20,110/Math.max(1,tY*0.08));
@@ -1653,27 +1735,7 @@
     return out;
   }
 
-  // Calcula o caminho esticado (taut) do sub até o início do navPath.
-  // String pulling: começa do sub, pula para o waypoint mais longe com LOS,
-  // repete até chegar em navPath[0]. Resultado = array shallow→deep (ordem Firebase).
-  function computeTautPath(){
-    if(!navPath.length) return [];
-    let px=nav.x, pd=nav.depth;
-    let i=navPath.length-1;
-    const pivots=[];
-    while(i>=0){
-      let tgt=i;
-      for(let j=i-1;j>=0;j--){
-        if(lineOfSight(px,pd,navPath[j].x,navPath[j].depth)) tgt=j;
-        else break;
-      }
-      pivots.push(navPath[tgt]);
-      px=navPath[tgt].x; pd=navPath[tgt].depth;
-      i=tgt-1;
-    }
-    pivots.reverse(); // deixa shallow (moonpool) primeiro, igual ao navPath
-    return pivots;
-  }
+  // (o caminho do cabo agora é a simulação de corda esticada — ropePivots)
 
   // loop de simulação local (~60fps): movimento livre Iron Lung em 2D
   let lastT=performance.now();
@@ -1775,15 +1837,6 @@
           nav.depth = nd;
           pushNav();
 
-          // breadcrumb: registra ponto do caminho a cada 60wu de movimento
-          if(!lastPathPoint) lastPathPoint={x:nav.x,depth:nav.depth};
-          if(Math.hypot(nav.x-lastPathPoint.x,nav.depth-lastPathPoint.depth)>60){
-            navPath.push({x:nav.x,depth:nav.depth});
-            lastPathPoint={x:nav.x,depth:nav.depth};
-            // sync throttled (3s) — guardião/monitor desenham o cabo no mapa
-            if(now-navPathWriteT>3000){ navPathWriteT=now; pushNavPath(); }
-          }
-
           // só sinaliza impacto quando DE FATO raspa a parede lateral (não nos limites de profundidade)
           if(hitWall && Math.abs(stepX)>0.5 && now-lastWallHit>450){
             lastWallHit=now; elWallHit.classList.remove("hit"); void elWallHit.offsetWidth; elWallHit.classList.add("hit");
@@ -1803,33 +1856,31 @@
       }
     }
     else if(nav.mode==="reeling"){
-      if(reelingWpIdx<0){
-        // todos os pivôs consumidos: centraliza e sobe à profundidade inicial
-        nav.x+=(SPAWN.x-nav.x)*Math.min(1,dt*3);
-        nav.depth=Math.max(SPAWN.depth,nav.depth-reelingSpeed*dt);
-        pushNav();
-        if(nav.depth<=SPAWN.depth){ nav.x=SPAWN.x; nav.mode="moonpool"; pushNav(); }
-      } else {
-        const target=reelingPath[reelingWpIdx];
-        const dx=target.x-nav.x, dd=target.depth-nav.depth;
-        const dist=Math.hypot(dx,dd);
-        if(dist<25){
-          reelingWpIdx--;
-          // poda o cabo: remove o pivô chegado
-          ref.child("navPath").set(reelingWpIdx>=0?reelingPath.slice(0,reelingWpIdx+1):null);
-        } else {
-          // move com collision detection — não trava em parede
-          const R=26, stepX=(dx/dist)*reelingSpeed*dt, stepD=(dd/dist)*reelingSpeed*dt;
-          let nx=nav.x+stepX, nd=nav.depth+stepD;
-          if(isWall(nx,nd)||isWall(nx-R,nd)||isWall(nx+R,nd)||pillarBlocked(nx,nd)){
-            if(!isWall(nav.x,nd)&&!isWall(nav.x-R,nd)&&!isWall(nav.x+R,nd)&&!pillarBlocked(nav.x,nd)) nx=nav.x;
-            else if(!isWall(nx,nav.depth)&&!isWall(nx-R,nav.depth)&&!isWall(nx+R,nav.depth)&&!pillarBlocked(nx,nav.depth)) nd=nav.depth;
-            else { nx=nav.x; nd=nav.depth; }
-          }
-          nav.x=nx; nav.depth=nd;
-          pushNav();
+      // GIRAR é permitido (só girar — quem puxa é a corda)
+      let rturn=0;
+      if(keys["KeyA"]||keys["ArrowLeft"]) rturn-=1;
+      if(keys["KeyD"]||keys["ArrowRight"]) rturn+=1;
+      if(rturn){ nav.heading=(nav.heading+rturn*TURN*dt+360)%360; }
+      // a corda esticada dita o caminho: puxa SEMPRE em linha reta pro último
+      // pivô; ao dobrar a quina o unwrap remove o pivô e a reta muda sozinha
+      const rtgt=ropePivots[ropePivots.length-1]||ropeAnchor();
+      const rdx=rtgt.x-nav.x, rdd=rtgt.depth-nav.depth;
+      const rdist=Math.hypot(rdx,rdd);
+      // criatura agarrada: o guincho sofre — 50% da velocidade
+      const rspd=reelingSpeed*(grabbedBy?0.5:1)*dt;
+      if(rdist>4){
+        const R=26;
+        let nx=nav.x+rdx/rdist*rspd, nd=nav.depth+rdd/rdist*rspd;
+        if(isWall(nx,nd)||isWall(nx-R,nd)||isWall(nx+R,nd)||pillarBlocked(nx,nd)){
+          if(!isWall(nav.x,nd)&&!isWall(nav.x-R,nd)&&!isWall(nav.x+R,nd)&&!pillarBlocked(nav.x,nd)) nx=nav.x;
+          else if(!isWall(nx,nav.depth)&&!isWall(nx-R,nav.depth)&&!isWall(nx+R,nav.depth)&&!pillarBlocked(nx,nav.depth)) nd=nav.depth;
+          else { nx=nav.x; nd=nav.depth; }
         }
+        nav.x=nx; nav.depth=nd;
       }
+      pushNav();
+      // só resta a âncora e chegou à profundidade do spawn: emerge
+      if(ropePivots.length<=1&&nav.depth<=SPAWN.depth){ nav.x=SPAWN.x; nav.mode="moonpool"; pushNav(); }
     }
 
     // blast shutter: fecha a 1000m (10000wu); pode ser forçado via Firebase
@@ -1987,12 +2038,15 @@
             if(!hu.nextHintT) hu.nextHintT=now+hintIv*0.45; // primeira vem mais cedo
             if(now>=hu.nextHintT){
               hu.nextHintT=now+hintIv;
-              hu.hintR=Math.max(160,hu.hintR-90);
-              const ang=Math.random()*6.28, rr=Math.random()*hu.hintR;
-              const nw=nearestWater(nav.x+Math.cos(ang)*rr,nav.depth+Math.sin(ang)*rr);
-              hu.lastSeen={x:nw.x,d:nw.d};
-              hu.searchR=Math.max(240,hu.hintR*0.6);
-              hu.goal=null; // re-centra a varredura na dica nova
+              // CEGA muito perto do sub NÃO ganha dica — tem que achar por som
+              if(!(vMode==='blind'&&dist<300)){
+                hu.hintR=Math.max(160,hu.hintR-90);
+                const ang=Math.random()*6.28, rr=Math.random()*hu.hintR;
+                const nw=nearestWater(nav.x+Math.cos(ang)*rr,nav.depth+Math.sin(ang)*rr);
+                hu.lastSeen={x:nw.x,d:nw.d};
+                hu.searchR=Math.max(240,hu.hintR*0.6);
+                hu.goal=null; // re-centra a varredura na dica nova
+              }
             }
             if(hu.goal&&Math.hypot(ewx-hu.goal.x,ewd-hu.goal.d)<50){
               hu.goal=null;
@@ -2038,9 +2092,11 @@
             const gx=tgtX-ewx, gd=tgtD-ewd, gl=Math.hypot(gx,gd);
             if(gl>12){ const spd=entSpd*spdMul*0.8*dt; vx=gx/gl*spd; vd=gd/gl*spd; }
           }
-          // gatilho de ataque frontal (colisão/agarrar): vendo E perto — ou
-          // QUASE ENCOSTANDO (70wu): mesmo cega/no escuro ela sente a pressão da água
-          if((sees||dist<58)&&dist<85&&nav.mode!=="moonpool"&&now-jumpscareT>jumpscareCD){
+          // gatilho de ataque: (a) vendo e perto, com o cooldown cheio; (b) TOCANDO
+          // (52wu) com cooldown curto próprio — encostou, BATE; não mata o momento
+          const seenAtk=sees&&dist<85&&now-jumpscareT>jumpscareCD;
+          const touchAtk=dist<52&&now-jumpscareT>Math.min(jumpscareCD,2500);
+          if((seenAtk||touchAtk)&&nav.mode!=="moonpool"){
             jumpscareT=now; collisionFlicker=1.35;
             recentHits+=3; // fôlego dispara
             const jf=document.getElementById("jflash");
@@ -2180,6 +2236,9 @@
         if(ent) ref.child("entities/"+id).update({wx:ent.wx,wd:ent.wd});
       });
     }
+
+    // corda esticada: wrap/unwrap contínuo (diving e reeling)
+    if(nav.mode==='diving'||nav.mode==='reeling') ropeUpdate();
 
     // ===== SUSPENSÃO: trancos de terreno enquanto o veículo se move =====
     // Nada de senoide — impulsos aleatórios numa mola amortecida (bate seco,
@@ -2338,22 +2397,12 @@
       if(nav.mode==="moonpool" && prev && prev!=="moonpool"){
         wallHitCount=0;
         ref.child("hullDamage").set(0);
-        navPath=[]; lastPathPoint=null; reelingPath=[]; reelingWpIdx=-1;
-        ref.child("navPath").set(null);
-      }
-      if(nav.mode==="reeling" && prev!=="reeling"){
-        // garante que posição atual está no caminho
-        const lastWp=navPath[navPath.length-1];
-        if(!lastWp||Math.hypot(nav.x-lastWp.x,nav.depth-lastWp.depth)>30) navPath.push({x:nav.x,depth:nav.depth});
-        // calcula o caminho esticado UMA VEZ — evita seguir loops/voltas do sub
-        reelingPath=computeTautPath();
-        reelingWpIdx=reelingPath.length-1;
-        ref.child("navPath").set(reelingPath.length?reelingPath:null);
+        ropePivots=[]; ref.child("rope").set(null);
       }
       if(nav.mode==="diving" && prev==="moonpool"){
-        navPath=[]; lastPathPoint=null; reelingPath=[]; reelingWpIdx=-1;
-        ref.child("navPath").set(null);
+        ropePivots=[ropeAnchor()]; // a corda nasce presa na moonpool
       }
+      // (reeling: a corda esticada já existe — nada a preparar)
     }
   });
 
@@ -2371,6 +2420,100 @@
   ref.child("jumpscareCD").on("value",snap=>{
     const v=snap.val(); if(typeof v==="number"&&v>=0) jumpscareCD=v;
   });
+  // pisca da luz interna: frequência controlada pelo guardião (0=apagado; vale
+  // pros DOIS cascos — inline style vence o CSS default old-only de 4s)
+  ref.child("flickerRate").on("value",snap=>{
+    const v=snap.val();
+    const fl=document.getElementById('flicker'), fll=document.getElementById('flickerLight');
+    if(!fl||!fll) return;
+    if(v===null||v===undefined){ // sem valor: comportamento default do CSS por skin
+      fl.style.opacity=''; fll.style.opacity=''; fll.style.animation='';
+      return;
+    }
+    if(v<=0){ fl.style.opacity='0'; fll.style.opacity='0'; fll.style.animation='none'; return; }
+    const period=Math.max(1.5,14-v*0.125); // 1..100 → ~13.9s (raro) .. 1.5s (frenético)
+    fl.style.opacity='1'; fll.style.opacity='1';
+    fll.style.animation=`flick ${period.toFixed(2)}s linear infinite`;
+  });
+
+  // ===== VIDRO RACHADO (guardião dispara): desenho procedural + animação =====
+  let glassCracked=false, _crackAnim=null;
+  function drawGlassCrack(prog){
+    const cv2=document.getElementById('glassCrackCv');
+    if(!cv2) return;
+    cv2.style.display='block';
+    cv2.width=Math.max(2,VPW); cv2.height=Math.max(2,VPH);
+    const g=cv2.getContext('2d');
+    g.clearRect(0,0,cv2.width,cv2.height);
+    const ix=cv2.width*0.62, iy=cv2.height*0.40; // ponto de impacto
+    let sd=1337; const rng=()=>{ sd=(sd*1664525+1013904223)>>>0; return sd/4294967296; };
+    g.lineCap='round';
+    // raios principais: linhas tortas que crescem com prog
+    const NR=9;
+    for(let i=0;i<NR;i++){
+      const a=(i/NR)*6.283+rng()*0.5;
+      const len=(cv2.width*0.16+rng()*cv2.width*0.30)*prog;
+      let px2=ix, py2=iy, ang=a;
+      g.strokeStyle=`rgba(210,230,240,${0.5+rng()*0.3})`;
+      g.lineWidth=1.4-Math.min(1,len/cv2.width)*0.8;
+      g.beginPath(); g.moveTo(px2,py2);
+      const segs=5;
+      for(let s2=0;s2<segs;s2++){
+        ang+=(rng()-0.5)*0.55;
+        const sl=len/segs;
+        px2+=Math.cos(ang)*sl; py2+=Math.sin(ang)*sl;
+        g.lineTo(px2,py2);
+      }
+      g.stroke();
+      // farpas secundárias
+      if(rng()<0.7){
+        const bx=ix+Math.cos(a)*len*0.45, by=iy+Math.sin(a)*len*0.45;
+        const ba=a+(rng()<0.5?-1:1)*(0.7+rng()*0.5);
+        g.strokeStyle='rgba(200,220,232,0.4)';
+        g.lineWidth=0.8;
+        g.beginPath(); g.moveTo(bx,by);
+        g.lineTo(bx+Math.cos(ba)*len*0.28*prog, by+Math.sin(ba)*len*0.28*prog);
+        g.stroke();
+      }
+    }
+    // anéis concêntricos parciais (conchoidal)
+    for(let ring=0;ring<3;ring++){
+      const rr=(22+ring*26)*prog*(cv2.width/420);
+      const a0=rng()*6.283, arc=1.2+rng()*2.2;
+      g.strokeStyle=`rgba(205,225,238,${0.35-ring*0.08})`;
+      g.lineWidth=0.9;
+      g.beginPath(); g.arc(ix,iy,rr,a0,a0+arc); g.stroke();
+    }
+    // núcleo esmagado
+    g.fillStyle=`rgba(225,240,248,${0.5*prog})`;
+    g.beginPath(); g.arc(ix,iy,3.2*prog,0,6.283); g.fill();
+  }
+  ref.child("glassCrack").on("value",snap=>{
+    const v=!!snap.val();
+    if(v&&!glassCracked){
+      glassCracked=true;
+      // impacto: tranco + fôlego + flicker, e a rachadura se PROPAGA em ~0.6s
+      shkVX+=(Math.random()<0.5?-1:1)*70;
+      rollV+=(Math.random()<0.5?-1:1)*30;
+      collisionFlicker=0.8; recentHits+=2.5;
+      const t0=performance.now();
+      if(_crackAnim) cancelAnimationFrame(_crackAnim);
+      const step=()=>{
+        const p=Math.min(1,(performance.now()-t0)/620);
+        drawGlassCrack(0.25+0.75*p*p);
+        if(p<1) _crackAnim=requestAnimationFrame(step);
+      };
+      step();
+    } else if(!v&&glassCracked){
+      glassCracked=false;
+      if(_crackAnim) cancelAnimationFrame(_crackAnim);
+      const cv2=document.getElementById('glassCrackCv');
+      if(cv2){ cv2.style.display='none'; }
+    } else if(v&&glassCracked){
+      drawGlassCrack(1); // já rachado (reload): desenha direto
+    }
+  });
+
   // troca de texturas ao vivo (guardião): 'img' = PNGs reais, 'proc' = procedurais
   ref.child("texMode").on("value",snap=>{
     texMode=snap.val()==='proc'?'proc':'img';
