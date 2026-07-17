@@ -1493,6 +1493,8 @@
       const aggrD=typeof ent.postCollisionDist==='number'?ent.postCollisionDist:300;
       const stalkD=typeof ent.stalkDist==='number'?ent.stalkDist:380;
       const sightR=typeof ent.sightRange==='number'?ent.sightRange:550;
+      const hintIv=typeof ent.hintInterval==='number'?ent.hintInterval:9;
+      const vMode=ent.visionMode||(ent.blind?'blind':'full');
       const isGrab=(atk==='grab');
       const isGrabbed=(currentGrabbedBy===id);
       const secHd=t=>`<div style="font-size:9px;color:var(--ink-dim);letter-spacing:.14em;margin:8px 0 4px;border-top:1px solid var(--line);padding-top:7px">${t}</div>`;
@@ -1516,7 +1518,14 @@
         ${beh==='stalk'?lbl('DIST. DE STALKING (wu)')+numRow('sel-stalk',150,1500,stalkD,380):''}
         ${secHd('SENTIDOS')}
         ${lbl('ALCANCE DE VISÃO (wu) — jogadores ≈300')}${numRow('sel-sight',100,2000,sightR,550)}
-        <div style="font-size:8px;color:var(--ink-dim);line-height:1.5;margin-bottom:4px">na perseguição ela só sabe onde o sub está se O VÊ (rocha bloqueia); sem visão vai ao último ponto visto e depois PROCURA pelo mapa</div>
+        ${lbl('INTERVALO DE DICAS (s) — "diretor" na busca')}${numRow('sel-hint',3,60,hintIv,9)}
+        ${lbl('MODO DE VISÃO')}
+        <div style="display:flex;gap:4px;margin-bottom:4px">
+          <button class="btn sel-vmode" data-m="full" style="flex:1;font-size:9px${vMode==='full'?';color:var(--live);border-color:var(--live-dim)':''}">👁 ATIVA</button>
+          <button class="btn sel-vmode" data-m="partial" style="flex:1;font-size:9px${vMode==='partial'?';color:var(--warn);border-color:var(--warn-dim)':''}">◐ PARCIAL</button>
+          <button class="btn sel-vmode" data-m="blind" style="flex:1;font-size:9px${vMode==='blind'?';color:var(--danger);border-color:var(--danger)':''}">🕶 CEGA</button>
+        </div>
+        <div style="font-size:8px;color:var(--ink-dim);line-height:1.5;margin-bottom:4px">ATIVA: visão completa sempre. PARCIAL: 30% movendo / 8% parado — o modo de STEALTH (ficar imóvel esconde). CEGA: só AUDIÇÃO. Em todos: movimento perto (~20-40m) e batidas no casco (~140m) viram last HEARD.</div>
         ${secHd('ATAQUE')}
         <div style="display:flex;gap:4px;margin-bottom:5px">
           <button class="btn sel-atk" data-a="collision" style="flex:1;font-size:9px${!isGrab?';color:var(--warn);border-color:var(--warn-dim)':''}">COLISÃO</button>
@@ -1560,6 +1569,10 @@
     if(stk){ const inp=document.getElementById('sel-stalk'); if(inp) inp.value=380; entities[id]={...entities[id],stalkDist:380}; subRef.child('entities/'+id+'/stalkDist').set(380); renderSelectedPanel(); return; }
     const sgr=e.target.closest('.sel-sight-reset');
     if(sgr){ const inp=document.getElementById('sel-sight'); if(inp) inp.value=550; entities[id]={...entities[id],sightRange:550}; subRef.child('entities/'+id+'/sightRange').set(550); renderSelectedPanel(); return; }
+    const hr=e.target.closest('.sel-hint-reset');
+    if(hr){ const inp=document.getElementById('sel-hint'); if(inp) inp.value=9; entities[id]={...entities[id],hintInterval:9}; subRef.child('entities/'+id+'/hintInterval').set(9); renderSelectedPanel(); return; }
+    const vm=e.target.closest('.sel-vmode');
+    if(vm){ const m=vm.dataset.m; entities[id]={...entities[id],visionMode:m,blind:null}; subRef.child('entities/'+id).update({visionMode:m,blind:null}); renderSelectedPanel(); return; }
     const sn=e.target.closest('.sel-swipe-now');
     if(sn){ subRef.child('entities/'+id+'/swipeCmd').set(Date.now()); sn.textContent='⚡ INVESTINDO…'; setTimeout(()=>{renderSelectedPanel();},1500); return; }
     const ab=e.target.closest('.sel-atk');
@@ -1591,6 +1604,7 @@
     if(e.target.id==='sel-pcd'){ const a=Math.max(50,Math.min(2000,parseInt(e.target.value)||300)); e.target.value=a; entities[id]={...entities[id],postCollisionDist:a}; subRef.child('entities/'+id+'/postCollisionDist').set(a); }
     if(e.target.id==='sel-stalk'){ const s=Math.max(150,Math.min(1500,parseInt(e.target.value)||380)); e.target.value=s; entities[id]={...entities[id],stalkDist:s}; subRef.child('entities/'+id+'/stalkDist').set(s); }
     if(e.target.id==='sel-sight'){ const s=Math.max(100,Math.min(2000,parseInt(e.target.value)||550)); e.target.value=s; entities[id]={...entities[id],sightRange:s}; subRef.child('entities/'+id+'/sightRange').set(s); }
+    if(e.target.id==='sel-hint'){ const s=Math.max(3,Math.min(60,parseInt(e.target.value)||9)); e.target.value=s; entities[id]={...entities[id],hintInterval:s}; subRef.child('entities/'+id+'/hintInterval').set(s); }
   });
 
   // ---- Lista compacta de entidades ----
