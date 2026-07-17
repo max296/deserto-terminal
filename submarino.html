@@ -88,7 +88,12 @@
   }
 
   /* blur global da VISÃO (na frente de tudo — casco + visor). Focar reduz. */
-  #visionBlur{position:absolute;inset:0;z-index:7;pointer-events:none;backdrop-filter:blur(1.5px);transition:backdrop-filter .35s ease}
+  #visionBlur{position:absolute;inset:0;z-index:7;pointer-events:none;backdrop-filter:blur(1.5px)}
+  /* bafo no vidro: condensação da RESPIRAÇÃO, concentrada embaixo (altura da boca).
+     opacity dirigida pelo ciclo de respiração no draw() — calma quase invisível,
+     ofegante embaça de verdade */
+  #breathFog{position:absolute;inset:0;z-index:3;pointer-events:none;opacity:0;
+    background:radial-gradient(ellipse 95% 75% at 50% 80%, rgba(200,220,228,.55), rgba(180,200,210,.20) 55%, transparent 78%)}
   /* SYSTEM OVERRIDE: fora do visor, no painel de controle */
   #sysOverride{position:absolute;bottom:18vh;left:0;right:0;text-align:center;z-index:9;pointer-events:none;opacity:0;font-size:11px;letter-spacing:.3em;color:#ff2800;text-shadow:0 0 16px rgba(255,40,0,.9)}
 
@@ -170,6 +175,7 @@
       <div id="glassCurve"></div>
       <div id="glassReflect"></div>
       <div id="viewportVignette"></div>
+    <div id="breathFog"></div>
       <img id="shutter" src="img/shutter.png" alt="">
       <div id="coralFlash"></div>
     </div>
@@ -198,11 +204,10 @@
       </div>
     </div>
 
-    <div class="hint-drag" id="hintdrag">WASD pilot · drag look · SPACE focus · CTRL light</div>
+    <div class="hint-drag" id="hintdrag">WASD pilot · drag look · CTRL light</div>
     <div id="sysOverride">■ SYSTEM OVERRIDE</div>
     <div id="ctrls">
       <div class="cbtn" id="btnLight">LIGHT: OFF</div>
-      <div class="cbtn" id="btnFocus">HOLD TO FOCUS</div>
     </div>
   </div>
 
@@ -424,8 +429,12 @@
     ref.child("navPath").set(navPath.length ? navPath : null);
   }
 
-  let heading=0, lightMode=false, lightOn=false, focusing=false;
-  let beamX=0.5, beamY=0.5, focusAmt=0;
+  let heading=0, lightMode=false, lightOn=false;
+  let beamX=0.5, beamY=0.5;
+  // RESPIRAÇÃO: embaça o vidro no ritmo do fôlego do piloto.
+  // recentHits sobe com dano (jumpscare/colisão/investida) e decai em ~20s —
+  // machucado = ofegante = vidro mais embaçado, mais vezes por minuto.
+  let breathPhase=0, recentHits=0;
   let STATE={};
   let imgEl=null, imgReady=false;
   let curHull=null;
@@ -901,6 +910,8 @@
   }
 
   let grabStartT=0;
+  // flinch do STRUGGLE: surtos de luta sacodem a criatura agarrada na tela
+  let grabFlinchX=0,grabFlinchY=0,grabFlinchVX=0,grabFlinchVY=0,nextFlinchT=0;
   // canvas offscreen do chão: putImageData ignora o transform de DPR do contexto
   // principal — renderiza aqui e blita com drawImage (que respeita o transform)
   let floorCnv=null, floorCtx=null, floorImgC=null;
@@ -953,14 +964,26 @@
     const frameA=dfFrames[Math.min(dfFrames.length-1,4*DF_COLS)];
     const frameB=dfFrames[Math.min(dfFrames.length-1,4*DF_COLS+1)];
     const breathe=1+0.045*Math.sin(t*0.06);
-    // a LUTA dos players chacoalha a criatura na tela (structAmt 0-100)
+    // a LUTA dos players chacoalha a criatura na tela (struggleAmt 0-100)
     const stg=1+struggleAmt*0.012;
     const shX=(Math.sin(t*0.31+1.7)*4+Math.cos(t*0.73+0.3)*2.5)*stg;
     const shY=(Math.cos(t*0.26+0.9)*3+Math.sin(t*0.57)*1.8)*stg;
+    // FLINCH: surtos de luta DESLOCAM a criatura com um safanão — ela escorrega
+    // alguns pixels, encolhe um tico (perdeu aderência) e reagarra com a mola
+    const nowMs=performance.now();
+    if(struggleAmt>3&&nowMs>=nextFlinchT){
+      nextFlinchT=nowMs+Math.max(350,950-struggleAmt*5);
+      grabFlinchVX+=(Math.random()<0.5?-1:1)*(45+struggleAmt*1.3);
+      grabFlinchVY+=(Math.random()-0.5)*(30+struggleAmt*0.8);
+    }
+    const fdt=0.016, FK=110, FD=8;
+    grabFlinchVX+=(-grabFlinchX*FK-grabFlinchVX*FD)*fdt; grabFlinchX+=grabFlinchVX*fdt;
+    grabFlinchVY+=(-grabFlinchY*FK-grabFlinchVY*FD)*fdt; grabFlinchY+=grabFlinchVY*fdt;
+    const slipK=1-Math.min(0.07,Math.abs(grabFlinchX)*0.0018);
     // bbox real escalada pra estourar as bordas; entra crescendo (vem pro vidro)
-    const gw=w*1.80*breathe*(0.62+0.38*appear);
+    const gw=w*2.10*breathe*slipK*(0.62+0.38*appear);
     const gh2=gw*(_grabTrim.h/_grabTrim.w);
-    const cx2=w/2+shX, cy2=h*0.54+shY;
+    const cx2=w/2+shX+grabFlinchX, cy2=h*0.54+shY+grabFlinchY;
     const baseAl=Math.min(1,appear*1.15)*0.97;
     x.save();
     x.globalAlpha=baseAl*(1-blend);
@@ -1379,10 +1402,19 @@
     {const so=document.getElementById('sysOverride');
     if(so) so.style.opacity=grabbedBy?(0.25+0.75*Math.abs(Math.sin(t*0.07))).toFixed(3):'0';}
 
-    // FOCO: blur de base sempre leve, focar reduz quase a zero (na frente de tudo)
-    focusAmt += ((focusing?1:0)-focusAmt)*0.1;
-    const baseBlur = 1.5 - focusAmt*1.35; // 1.5 normal -> 0.15 focado
-    document.getElementById("visionBlur").style.backdropFilter=`blur(${baseBlur.toFixed(2)}px)`;
+    // ===== RESPIRAÇÃO: o vidro embaça na EXPIRAÇÃO (umidade do ar) =====
+    // calma: ciclo de ~4s, embaço quase imperceptível. Dano recente acelera o
+    // fôlego (até ~1.1s/ciclo) e o bafo passa a comprometer a visão de verdade.
+    recentHits*=0.9994; // decai: meia-vida ~20s a 60fps
+    const breathRate=0.25+Math.min(0.75,recentHits*0.12);
+    breathPhase+=breathRate/60;
+    const exhale=Math.max(0,Math.sin(breathPhase*6.2832)); // metade do ciclo = expira
+    const stressF=Math.min(1,recentHits*0.18);
+    const fogA=exhale*exhale*(0.10+stressF*0.45);
+    const bfEl=document.getElementById('breathFog');
+    if(bfEl) bfEl.style.opacity=fogA.toFixed(3);
+    const blurPx=0.9+exhale*(0.5+stressF*1.9);
+    document.getElementById("visionBlur").style.backdropFilter=`blur(${blurPx.toFixed(2)}px)`;
 
     requestAnimationFrame(draw);
   }
@@ -1758,6 +1790,7 @@
             subEl.classList.remove('wallhit'); void subEl.offsetWidth; subEl.classList.add('wallhit');
             // o som do impacto viaja: a criatura ganha uma dica da região do sub
             lastNoiseT=now; lastNoiseX=nav.x; lastNoiseD=nav.depth;
+            recentHits+=1; // respiração acelera um pouco
           }
         }
       }
@@ -1841,6 +1874,7 @@
         if(!sp.hit&&sp.stage<2&&dist<95){
           creatureEntities[id]={...creatureEntities[id],_swipePhase:{...(creatureEntities[id]._swipePhase||sp),hit:true}};
           collisionFlicker=0.6;
+          recentHits+=2;
           wallHitCount+=6; ref.child("hullDamage").set(wallHitCount);
           rollV+=sp.side*45;
           shkVX+=sp.side*55;
@@ -1884,6 +1918,7 @@
           let hu=creatureHuntState[id];
           if(!hu) hu=creatureHuntState[id]={mode:'hunt',lastSeen:{x:nav.x,d:nav.depth},path:null,wpIdx:0,calcT:0,goal:null,goalPos:null,searchR:220};
           const sees=dist<sightR&&lineOfSight(ewx,ewd,nav.x,nav.depth);
+          hu._sees=sees; // o facing do render usa: ela só ENCARA o sub quando o vê
           if(sees){
             hu.mode='hunt'; hu.lastSeen={x:nav.x,d:nav.depth}; hu.searchR=220;
             hu.hintR=650; hu.nextHintT=0; // reencontrou: o cerco reseta
@@ -1903,7 +1938,10 @@
           if(hu.mode==='hunt'){ tgtX=nav.x; tgtD=nav.depth; }
           else if(hu.mode==='last'){
             tgtX=hu.lastSeen.x; tgtD=hu.lastSeen.d;
-            if(Math.hypot(ewx-tgtX,ewd-tgtD)<50){ hu.mode='search'; hu.goal=null; }
+            if(Math.hypot(ewx-tgtX,ewd-tgtD)<50){
+              hu.mode='search'; hu.goal=null;
+              hu.scanUntil=now+1600; // chegou: PARA e olha em volta
+            }
           }
           if(hu.mode==='search'){
             spdMul=0.7;
@@ -1911,16 +1949,20 @@
             // um ponto = posição real + erro de raio hintR. Quanto mais tempo
             // procurando sem achar, menor o hintR: o cerco vai apertando.
             if(!hu.hintR) hu.hintR=650;
-            if(!hu.nextHintT) hu.nextHintT=now+9000;
+            if(!hu.nextHintT) hu.nextHintT=now+3500; // primeira dica vem RÁPIDO
             if(now>=hu.nextHintT){
-              hu.nextHintT=now+9000;
+              hu.nextHintT=now+8000;
               hu.hintR=Math.max(160,hu.hintR-90);
               const ang=Math.random()*6.28, rr=Math.random()*hu.hintR;
               hu.lastSeen={x:nav.x+Math.cos(ang)*rr, d:nav.depth+Math.sin(ang)*rr};
               hu.searchR=Math.max(240,hu.hintR*0.6);
               hu.goal=null; // re-centra a varredura na dica nova
             }
-            if(!hu.goal||Math.hypot(ewx-hu.goal.x,ewd-hu.goal.d)<50){
+            if(hu.goal&&Math.hypot(ewx-hu.goal.x,ewd-hu.goal.d)<50){
+              hu.goal=null;
+              hu.scanUntil=now+1600; // ponto varrido: olha em volta antes do próximo
+            }
+            if(!hu.goal){
               const g=findSearchPoint(hu.lastSeen.x,hu.lastSeen.d,hu.searchR);
               if(g){ hu.goal=g; hu.goalPos=null; }
               hu.searchR=Math.min(800,hu.searchR+120);
@@ -1928,6 +1970,14 @@
             if(hu.goal){ tgtX=hu.goal.x; tgtD=hu.goal.d; }
             else { tgtX=ewx; tgtD=ewd; }
           }
+          // SCAN: parada de "olhar em volta" num ponto de interesse — gira o corpo
+          // devagar procurando; qualquer visão do sub interrompe na hora
+          if(hu.scanUntil&&now<hu.scanUntil&&!sees){
+            hu._scanFace=(hu._scanFace!==undefined?hu._scanFace:(ent._facing||0))+dt*2.2;
+            creatureEntities[id]={...creatureEntities[id],_facing:hu._scanFace};
+            return;
+          }
+          hu._scanFace=undefined;
           // pathfinding dinâmico (recalcula ao alvo mover >60wu ou a cada 600ms)
           const needP=!hu.path||hu.wpIdx>=hu.path.length
             ||(hu.goalPos&&Math.hypot(tgtX-hu.goalPos.x,tgtD-hu.goalPos.d)>60)
@@ -1950,6 +2000,7 @@
           // gatilho de ataque frontal (colisão/agarrar) — só quando VENDO e perto
           if(sees&&dist<110&&nav.mode!=="moonpool"&&now-jumpscareT>jumpscareCD){
             jumpscareT=now; collisionFlicker=1.35;
+            recentHits+=3; // fôlego dispara
             const jf=document.getElementById("jflash");
             jf.style.display="block"; jf.style.transition="none"; jf.style.opacity="1";
             setTimeout(()=>{jf.style.transition="opacity 1.3s ease";jf.style.opacity="0";
@@ -2072,8 +2123,11 @@
       // steerMove: desvia de paredes, nunca trava
       const moved=steerMove(ewx,ewd,vx,vd);
       const mvx=moved.x-ewx, mvd=moved.d-ewd;
-      // chase: aponta sempre para o sub; outros: usa direção real do movimento
-      const newFacing=(beh==="chase"||ent.chasing)
+      // chase: ENCARA o sub só quando o VÊ (sem visão, olhar pro sub denunciava
+      // que a IA sabia onde ele está); sem ver, olha pra onde está indo
+      const huF=creatureHuntState[id];
+      const chaseStare=(beh==="chase"||ent.chasing)&&(!huF||huF._sees!==false);
+      const newFacing=chaseStare
         ? Math.atan2(dx,dd)
         : (Math.hypot(mvx,mvd)>0.01?Math.atan2(mvx,mvd):(ent._facing||0));
       creatureEntities[id]={...creatureEntities[id],wx:moved.x,wd:moved.d,_facing:newFacing};
@@ -2169,21 +2223,14 @@
     else { lightOn=false; lightMode=false; }
     btnLight.classList.toggle("active",lightOn);
     btnLight.textContent=lightOn?"LIGHT: AIM":"LIGHT: OFF";
-    document.getElementById("hintdrag").textContent=lightMode?"move cursor / drag to aim · SPACE focus · CTRL light":"WASD pilot · drag look · SPACE focus · CTRL light";
+    document.getElementById("hintdrag").textContent=lightMode?"move cursor / drag to aim · CTRL light":"WASD pilot · drag look · CTRL light";
   }
   btnLight.addEventListener("click",toggleLight);
 
-  const btnFocus=document.getElementById("btnFocus");
-  function fStart(){focusing=true;btnFocus.classList.add("active");}
-  function fEnd(){focusing=false;btnFocus.classList.remove("active");}
-  btnFocus.addEventListener("mousedown",fStart);
-  btnFocus.addEventListener("mouseup",fEnd);btnFocus.addEventListener("mouseleave",fEnd);
-  btnFocus.addEventListener("touchstart",e=>{e.preventDefault();fStart();},{passive:false});
-  btnFocus.addEventListener("touchend",e=>{e.preventDefault();fEnd();},{passive:false});
-  // ===== teclado: WASD (pilotar), Ctrl (luz AIM), Espaço (foco) =====
+  // (HOLD TO FOCUS removido — o foco agora é a RESPIRAÇÃO; o Espaço fica
+  //  reservado pro futuro mecanismo de braços do submersível)
+  // ===== teclado: WASD (pilotar), Ctrl (luz AIM) =====
   addEventListener("keydown",e=>{
-    // foco
-    if(e.code==="Space" && !e.repeat){ e.preventDefault(); fStart(); return; }
     // ctrl liga/desliga a luz AIM
     if((e.code==="ControlLeft"||e.code==="ControlRight") && !e.repeat){
       e.preventDefault(); toggleLight(); return;
@@ -2195,7 +2242,6 @@
     }
   });
   addEventListener("keyup",e=>{
-    if(e.code==="Space"){ e.preventDefault(); fEnd(); return; }
     keys[e.code]=false;
   });
   // se a janela perde foco, solta todas as teclas (evita "tecla grudada")
@@ -2397,7 +2443,8 @@
         // preserva estado local — AI corre neste cliente, Firebase só sincroniza posição
         creatureEntities[id]=prev?{...ent,_facing:prev._facing,wx:prev.wx,wd:prev.wd,
           _attackPhase:prev._attackPhase,_chargeDir:prev._chargeDir,
-          _chargeTraveled:prev._chargeTraveled,_recoverT:prev._recoverT}:ent;
+          _chargeTraveled:prev._chargeTraveled,_recoverT:prev._recoverT,
+          _swipePhase:prev._swipePhase}:ent;
       }
     });
   });
@@ -2408,64 +2455,4 @@
     if(diveAnim){clearInterval(diveAnim);diveAnim=null;}
     if(splashActive){ splashCv.style.display="none"; splashActive=false; }
     if(nav.mode==="moonpool"){ elMoon.style.display="block"; positionMoon(); }
-    else { elMoon.style.display="none"; }  // submerso ou reeling: breu direto, sem moonpool
-  }
-
-  function updateMoonpoolByMode(prev){
-    if(nav.mode==="moonpool"){
-      elMoon.style.display="block"; positionMoon();
-      // voltando de submersos/reeling: toca a transição (subindo pela superfície)
-      if(prev==="reeling"||prev==="diving"){ animateDive(true); }
-    }
-    else if(nav.mode==="diving"){
-      // descendo a partir da moonpool: toca a transição de furar a água
-      if(prev==="moonpool"||prev==null){ elMoon.style.display="block"; animateDive(false); }
-      else { elMoon.style.display="none"; }
-    }
-    else { // reeling
-      elMoon.style.display="none";
-    }
-  }
-
-  // ===== escuta DM (casco, ameaça, leitura) =====
-  ref.on("value",snap=>{
-    STATE=snap.val()||{};
-    const online=!!STATE.online;
-    document.getElementById("standby").style.display=online?"none":"flex";
-    document.getElementById("sub").classList.toggle("on",online);
-
-    let skin=STATE.skin||"old";
-    let hull;
-    if(skin==="neurostat") hull=STATE.neuCracked?"neurostat_cracked":"neurostat";
-    else hull=STATE.cracked?"old_cracked":"old_intact";
-    setHull(hull);
-
-    // estado textual no HUD: usa nav.mode (pilotagem) + ameaça do DM
-    const modeLabels={moonpool:"IN MOONPOOL",diving:"DESCENDING",reeling:"REELING IN"};
-    const threatLabels={distant:"CONTACT — DISTANT",passing:"MOVEMENT",close:"CONTACT — CLOSE"};
-    const tl = threatLabels[STATE.state];
-    document.getElementById("hudstate").textContent = tl || modeLabels[nav.mode] || "—";
-
-    if(STATE.imgUrl){
-      if(!imgEl||imgEl.src!==STATE.imgUrl){imgReady=false;imgEl=new Image();imgEl.crossOrigin="anonymous";imgEl.onload=()=>imgReady=true;imgEl.src=STATE.imgUrl;}
-    } else {imgEl=null;imgReady=false;}
-
-    const read=(STATE.readout||"").trim();
-    document.getElementById("hudread").innerHTML=read?`<span class="line">${esc(read)}</span>`:"";
-
-    // coral growth: flash preto 2s + red tint persistente
-    const newCoral = !!STATE.coralGrowth;
-    if(newCoral && !coralActive){
-      coralActive = true;
-      const fl = document.getElementById("coralFlash");
-      fl.style.opacity = "1"; fl.style.display = "block";
-      setTimeout(()=>{
-        fl.style.transition = "opacity 0.6s";
-        fl.style.opacity = "0";
-        setTimeout(()=>{ fl.style.display="none"; fl.style.transition=""; }, 650);
-      }, 2000);
-    }
-    if(!newCoral) coralActive = false;
-  });
-  function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-</script></body></html>
+    else { elMoon.style.display="none"; }  // submerso ou reeling: breu direto,
