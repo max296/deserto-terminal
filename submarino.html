@@ -428,6 +428,7 @@
   let lastNoiseT=0,lastNoiseX=0,lastNoiseD=0; // batida na parede: "som" que a criatura ouve
   let subSpeedNow=0; // velocidade real do sub (wu/s) — stealth: parado = discreto
   let reelingSpeed=80;
+  let grabReelSlow=50; // % de redução do guincho com a criatura agarrada (guardião)
   // ===== CORDA (umbilical): simulação de corda ESTICADA em tempo real =====
   // A corda é SEMPRE uma sequência de segmentos retos: âncora (moonpool) →
   // quinas de parede onde ela DOBRA (wrap) → sub. Quando o sub se move e o
@@ -552,10 +553,12 @@
   // ponto de PUXÃO: o mais distante ao longo da corda alcançável em linha reta
   // com FOLGA DE SUBMARINO (26wu) — corta a curva por dentro, nunca prende na quina
   function reelTarget(){
+    // folga 34wu (> hitbox 26): o caminho puxado passa LONGE das quinas
     for(let i=0;i<ropePivots.length;i++){
       const p=ropePivots[i];
-      if(ropeLOS(nav.x,nav.depth,p.x,p.depth,26)) return p;
+      if(ropeLOS(nav.x,nav.depth,p.x,p.depth,34)) return p;
     }
+    // sem linha folgada: mira o pivô mais próximo mesmo (o steering desvia)
     return ropePivots[ropePivots.length-1]||ropeAnchor();
   }
 
@@ -1903,25 +1906,36 @@
       }
     }
     else if(nav.mode==="reeling"){
-      // GIRAR é permitido (só girar — quem puxa é a corda)
+      // GIRAR é permitido (só girar — quem puxa é a corda), MAS NÃO durante o grab
       let rturn=0;
       if(keys["KeyA"]||keys["ArrowLeft"]) rturn-=1;
       if(keys["KeyD"]||keys["ArrowRight"]) rturn+=1;
-      if(rturn){ nav.heading=(nav.heading+rturn*TURN*dt+360)%360; }
-      // puxa pro ponto mais distante da corda alcançável com FOLGA DE SUB —
-      // corta a curva por dentro; a corda fina dobra na quina, o sub não encosta
+      if(rturn&&!grabbedBy){ nav.heading=(nav.heading+rturn*TURN*dt+360)%360; }
+      // puxa pro ponto mais distante da corda alcançável com FOLGA GENEROSA (34wu)
       const rtgt=reelTarget();
       const rdx=rtgt.x-nav.x, rdd=rtgt.depth-nav.depth;
       const rdist=Math.hypot(rdx,rdd);
-      // criatura agarrada: o guincho sofre — 50% da velocidade
-      const rspd=reelingSpeed*(grabbedBy?0.5:1)*dt;
-      if(rdist>4){
+      // criatura agarrada: o guincho sofre — redução configurável pelo guardião
+      const rspd=reelingSpeed*(grabbedBy?Math.max(0,1-grabReelSlow/100):1)*dt;
+      if(rdist>4&&rspd>0.001){
         const R=26;
-        let nx=nav.x+rdx/rdist*rspd, nd=nav.depth+rdd/rdist*rspd;
-        if(isWall(nx,nd)||isWall(nx-R,nd)||isWall(nx+R,nd)||pillarBlocked(nx,nd)){
-          if(!isWall(nav.x,nd)&&!isWall(nav.x-R,nd)&&!isWall(nav.x+R,nd)&&!pillarBlocked(nav.x,nd)) nx=nav.x;
-          else if(!isWall(nx,nav.depth)&&!isWall(nx-R,nav.depth)&&!isWall(nx+R,nav.depth)&&!pillarBlocked(nx,nav.depth)) nd=nav.depth;
-          else { nx=nav.x; nd=nav.depth; }
+        const blockedR=(px,pd)=>isWall(px,pd)||isWall(px-R,pd)||isWall(px+R,pd)
+          ||isWall(px,pd-R)||isWall(px,pd+R)||pillarBlocked(px,pd);
+        const ux=rdx/rdist, ud=rdd/rdist;
+        // STEERING: se o passo direto colide, gira o vetor e contorna a quina
+        // suavemente (em vez de raspar/travar na parede)
+        let nx=nav.x, nd=nav.depth, movedOk=false;
+        for(const a of [0,0.35,-0.35,0.7,-0.7,1.05,-1.05]){
+          const ca=Math.cos(a), sa=Math.sin(a);
+          const tx3=nav.x+(ux*ca-ud*sa)*rspd;
+          const td3=Math.max(1000,nav.depth+(ux*sa+ud*ca)*rspd);
+          if(!blockedR(tx3,td3)){ nx=tx3; nd=td3; movedOk=true; break; }
+        }
+        if(!movedOk){
+          // fallback: deslize por eixo
+          const tx3=nav.x+ux*rspd, td3=nav.depth+ud*rspd;
+          if(!blockedR(nav.x,td3)) nd=td3;
+          else if(!blockedR(tx3,nav.depth)) nx=tx3;
         }
         nav.x=nx; nav.depth=nd;
       }
@@ -2463,6 +2477,11 @@
     }
   });
 
+  // redução do guincho com a criatura agarrada (slider do guardião)
+  ref.child("grabReelSlow").on("value",snap=>{
+    const v=snap.val();
+    if(typeof v==="number"&&v>=0&&v<=100) grabReelSlow=v;
+  });
   // velocidade do recolhimento (configurada pelo guardião)
   ref.child("reelingSpeed").on("value",snap=>{
     const v=snap.val(); if(typeof v==="number"&&v>0) reelingSpeed=v;
