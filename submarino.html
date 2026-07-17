@@ -434,13 +434,16 @@
   // segmento desdobra (o pivô anterior volta a ver o sub), o pivô some (unwrap).
   // Margem fina (6wu — corda, não submarino): sem cantos fantasmas.
   let ropePivots=[], ropeSyncT=0;
+  let ropeState='slack';        // 'slack' = paga/largada no leito · 'taut' = tensionada
+  let slackPath=[], _slackLast=null; // trajeto real percorrido (a corda frouxa deita nele)
   const ROPE_MARGIN=6;
   function ropeAnchor(){ return {x:SPAWN.x, depth:1000}; }
-  function ropeLOS(x1,d1,x2,d2){
+  function ropeLOS(x1,d1,x2,d2,margin){
+    const M=margin||ROPE_MARGIN;
     const dist=Math.hypot(x2-x1,d2-d1);
     if(dist<1) return true;
     const steps=Math.max(2,Math.ceil(dist/(TILE*0.30)));
-    const nx=-(d2-d1)/dist*ROPE_MARGIN, nd=(x2-x1)/dist*ROPE_MARGIN;
+    const nx=-(d2-d1)/dist*M, nd=(x2-x1)/dist*M;
     for(let i=1;i<steps;i++){
       const t=i/steps;
       const cx=x1+(x2-x1)*t, cd=d1+(d2-d1)*t;
@@ -504,12 +507,56 @@
       if(!corner) break;
       ropePivots.push(corner);
     }
-    // sync throttled: guardião desenha o cabo ESTICADO (pivôs + sub)
+  }
+  // sync do estado da corda pro guardião/monitor: {state, pts}
+  function ropeSync(){
     const nw=performance.now();
-    if(nw-ropeSyncT>600){
-      ropeSyncT=nw;
-      ref.child("rope").set(ropePivots.concat([{x:Math.round(nav.x),depth:Math.round(nav.depth)}]));
+    if(nw-ropeSyncT<700) return;
+    ropeSyncT=nw;
+    let pts;
+    if(ropeState==='taut'){
+      pts=ropePivots.concat([{x:Math.round(nav.x),depth:Math.round(nav.depth)}]);
+    } else {
+      // slack: trajeto percorrido, decimado se longo
+      const step=slackPath.length>240?Math.ceil(slackPath.length/240):1;
+      pts=[ropeAnchor()];
+      for(let i=0;i<slackPath.length;i+=step) pts.push(slackPath[i]);
+      pts.push({x:Math.round(nav.x),depth:Math.round(nav.depth)});
     }
+    ref.child("rope").set({state:ropeState,pts});
+  }
+  // corda PAGA: registra o trajeto (a frouxa deita no caminho real percorrido)
+  function slackFeed(){
+    if(!_slackLast){ _slackLast={x:nav.x,depth:nav.depth}; return; }
+    if(Math.hypot(nav.x-_slackLast.x,nav.depth-_slackLast.depth)>30){
+      slackPath.push({x:Math.round(nav.x),depth:Math.round(nav.depth)});
+      _slackLast={x:nav.x,depth:nav.depth};
+      if(slackPath.length>900) slackPath.splice(0,slackPath.length-900);
+    }
+  }
+  // TENSIONAR: o guincho puxa — a frouxa vira esticada. Replay do trajeto real
+  // pela simulação de quinas: os pivôs finais são as quinas onde a corda
+  // tensionada de fato dobra (contorna cantos sem prender).
+  function tautenRope(){
+    ropePivots=[ropeAnchor()];
+    const saveX=nav.x, saveD=nav.depth;
+    for(const p of slackPath){
+      nav.x=p.x; nav.depth=p.depth;
+      ropeUpdate();
+    }
+    nav.x=saveX; nav.depth=saveD;
+    ropeUpdate();
+    ropeState='taut';
+    ropeSyncT=0; ropeSync();
+  }
+  // ponto de PUXÃO: o mais distante ao longo da corda alcançável em linha reta
+  // com FOLGA DE SUBMARINO (26wu) — corta a curva por dentro, nunca prende na quina
+  function reelTarget(){
+    for(let i=0;i<ropePivots.length;i++){
+      const p=ropePivots[i];
+      if(ropeLOS(nav.x,nav.depth,p.x,p.depth,26)) return p;
+    }
+    return ropePivots[ropePivots.length-1]||ropeAnchor();
   }
 
   let heading=0, lightMode=false, lightOn=false;
@@ -1861,9 +1908,9 @@
       if(keys["KeyA"]||keys["ArrowLeft"]) rturn-=1;
       if(keys["KeyD"]||keys["ArrowRight"]) rturn+=1;
       if(rturn){ nav.heading=(nav.heading+rturn*TURN*dt+360)%360; }
-      // a corda esticada dita o caminho: puxa SEMPRE em linha reta pro último
-      // pivô; ao dobrar a quina o unwrap remove o pivô e a reta muda sozinha
-      const rtgt=ropePivots[ropePivots.length-1]||ropeAnchor();
+      // puxa pro ponto mais distante da corda alcançável com FOLGA DE SUB —
+      // corta a curva por dentro; a corda fina dobra na quina, o sub não encosta
+      const rtgt=reelTarget();
       const rdx=rtgt.x-nav.x, rdd=rtgt.depth-nav.depth;
       const rdist=Math.hypot(rdx,rdd);
       // criatura agarrada: o guincho sofre — 50% da velocidade
@@ -2237,8 +2284,9 @@
       });
     }
 
-    // corda esticada: wrap/unwrap contínuo (diving e reeling)
-    if(nav.mode==='diving'||nav.mode==='reeling') ropeUpdate();
+    // corda: FROUXA no diving (paga, deita no trajeto real); ESTICADA no reeling
+    if(nav.mode==='diving'){ slackFeed(); ropeSync(); }
+    else if(nav.mode==='reeling'){ ropeUpdate(); ropeSync(); }
 
     // ===== SUSPENSÃO: trancos de terreno enquanto o veículo se move =====
     // Nada de senoide — impulsos aleatórios numa mola amortecida (bate seco,
@@ -2397,12 +2445,21 @@
       if(nav.mode==="moonpool" && prev && prev!=="moonpool"){
         wallHitCount=0;
         ref.child("hullDamage").set(0);
-        ropePivots=[]; ref.child("rope").set(null);
+        ropePivots=[]; slackPath=[]; _slackLast=null; ropeState='slack';
+        ref.child("rope").set(null);
       }
       if(nav.mode==="diving" && prev==="moonpool"){
-        ropePivots=[ropeAnchor()]; // a corda nasce presa na moonpool
+        ropePivots=[ropeAnchor()]; slackPath=[]; _slackLast=null; ropeState='slack';
       }
-      // (reeling: a corda esticada já existe — nada a preparar)
+      if(nav.mode==="reeling" && prev!=="reeling"){
+        tautenRope(); // o guincho TENSIONA: a corda frouxa estica nas quinas
+      }
+      if(nav.mode==="diving" && prev==="reeling"){
+        // cancelou o recolhimento: a corda re-larga do traçado esticado atual
+        slackPath=ropePivots.slice(1).map(p=>({x:Math.round(p.x),depth:Math.round(p.depth)}));
+        _slackLast={x:nav.x,depth:nav.depth};
+        ropeState='slack'; ropeSyncT=0;
+      }
     }
   });
 
