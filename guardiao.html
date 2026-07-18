@@ -389,14 +389,15 @@
                     <button class="btn edItemT" data-t="gen" style="font-size:9px;padding:5px 7px">▭ GERADOR</button>
                     <button class="btn edItemT" data-t="drill" style="font-size:9px;padding:5px 7px">▼ BROCA</button>
                   </div>
-                  <div style="font-size:9px;color:#8a97a0;line-height:1.5;margin-top:5px">Clique na água = colocar (a frente auto-aponta perpendicular à parede mais próxima). Clique num item = selecionar. Arrastar = mover. Itens entram no SALVAR do mapa (com desfazer).</div>
+                  <div style="font-size:9px;color:#8a97a0;line-height:1.5;margin-top:5px">Clique na água = colocar (a frente auto-aponta perpendicular à parede mais próxima). Clique num item = selecionar; <b>arraste no vazio = seleção múltipla</b>. Arrastar item(ns) = mover. <b>DEL exclui.</b> Itens entram no SALVAR do mapa (com desfazer).</div>
                   <div id="edItemSelBox" style="display:none;border-top:1px solid #223142;margin-top:6px;padding-top:6px">
                     <div id="edItemSelInfo" style="font-size:10px;color:#cdd4d8;margin-bottom:5px"></div>
                     <div style="display:flex;gap:4px;flex-wrap:wrap">
-                      <button class="btn" id="edItemClean" style="font-size:9px;padding:5px 7px">LIMPO/SUJO</button>
+                      <button class="btn" id="edItemCleanOn" style="font-size:9px;padding:5px 7px;color:#7fd4ff">✦ LIMPAR</button>
+                      <button class="btn" id="edItemCleanOff" style="font-size:9px;padding:5px 7px;color:#c9a15a">✕ SUJAR</button>
                       <button class="btn" id="edItemRotL" style="font-size:9px;padding:5px 7px">⟲ 45°</button>
                       <button class="btn" id="edItemRotR" style="font-size:9px;padding:5px 7px">⟳ 45°</button>
-                      <button class="btn" id="edItemDel" style="font-size:9px;padding:5px 7px;color:#d65a5a">EXCLUIR</button>
+                      <button class="btn" id="edItemDel" style="font-size:9px;padding:5px 7px;color:#d65a5a">EXCLUIR (DEL)</button>
                     </div>
                   </div>
                 </div>
@@ -1190,7 +1191,11 @@
     const v=JSON.parse(s);
     mapOps=v.ops; mapPillars=v.pillars; mapSpawn=v.spawn;
     GRID_COLS=v.cols; X_MIN_W=v.xMin; COL_OFFSET=v.off;
-    if(v.items){ mapItems=v.items; itemsDirty=true; if(edItemSel&&!mapItems[edItemSel]) edItemSel=null; }
+    if(v.items){
+      mapItems=v.items; itemsDirty=true;
+      if(edItemSel&&!mapItems[edItemSel]) edItemSel=null;
+      edItemMulti=new Set([...edItemMulti].filter(id=>mapItems[id]));
+    }
     MAP=buildMap(mapOps); edMiniDirty=true;
   }
   function edPushHist(){
@@ -1276,6 +1281,7 @@
       edCtx.fillStyle=col;
       edCtx.beginPath(); edCtx.arc(ix,iy,4,0,6.28); edCtx.fill();
       if(iid===edItemSel){ edCtx.strokeStyle='#fff'; edCtx.beginPath(); edCtx.arc(ix,iy,7,0,6.28); edCtx.stroke(); }
+      else if(edItemMulti.has(iid)){ edCtx.strokeStyle='#ffe066'; edCtx.beginPath(); edCtx.arc(ix,iy,7,0,6.28); edCtx.stroke(); }
       if(edZoom>6){ edCtx.fillStyle=col; edCtx.fillText(m.glyph,ix+7,iy-5); }
     }
     // spawn
@@ -1332,6 +1338,12 @@
       edCtx.fillRect(edPxRectX(hC0,hC1),edPxY(hR0),(hC1-hC0+1)*edZoom,edCorrW*edZoom);
       edCtx.strokeStyle=strokeCol;
       edCtx.strokeRect(edPxX(edCorrA.c)-edZoom/2-2,edPxY(edCorrA.r)+edZoom/2-2,4,4);
+    }
+    if(edDrag&&edDrag.type==='itemsel'){
+      const x0=Math.min(edDrag.a.x,edDrag.b.x), y0=Math.min(edDrag.a.y,edDrag.b.y);
+      edCtx.save(); edCtx.setLineDash([4,3]); edCtx.strokeStyle='#ffe066';
+      edCtx.strokeRect(x0,y0,Math.abs(edDrag.b.x-edDrag.a.x),Math.abs(edDrag.b.y-edDrag.a.y));
+      edCtx.restore();
     }
     if(edDrag&&edDrag.type==='pillar'&&edDrag.moved){
       const d0=Math.min(edDrag.d0,edDrag.d1), d1=Math.max(edDrag.d0,edDrag.d1);
@@ -1457,25 +1469,37 @@
     }
     else if(edTool==='items'){
       const hit=edItemAt(px,py);
-      if(hit){ edItemSel=hit; edItemUI(); edDrag={type:'item',id:hit,moved:false}; return; }
-      const wx=edWorldX(px), wd=edWorldD(py);
-      const r=Math.floor(wd/TILE), c=Math.floor((wx-X_MIN_W)/TILE);
-      if(!MAP[r]||MAP[r][c]!==0){ edWarns=['⚠ item precisa estar na ÁGUA']; edUpdateUI(); return; }
-      const meta=ITEM_META[edItemType]||{};
-      const nw=edNearestWallRot(wx,wd);
-      if(meta.wall&&!nw){ edWarns=['⚠ poste de parede exige parede a até 4 tiles']; edUpdateUI(); return; }
-      let ix=wx, idp=wd;
-      if(meta.wall&&nw){
-        // encosta na face da parede mais próxima
-        const ang=Math.atan2(wx-nw.wall.cx,wd-nw.wall.cd);
-        ix=nw.wall.cx+Math.sin(ang)*(TILE*0.5+8);
-        idp=nw.wall.cd+Math.cos(ang)*(TILE*0.5+8);
+      if(hit){
+        if(!edItemMulti.has(hit)){ edItemMulti.clear(); edItemSel=hit; }
+        const ids=edItemMulti.size?[...edItemMulti]:[hit];
+        const orig={};
+        ids.forEach(id=>{ if(mapItems[id]) orig[id]={x:mapItems[id].x,depth:mapItems[id].depth}; });
+        edDrag={type:'item',ids,orig,swx:edWorldX(px),swd:edWorldD(py),moved:false};
+        edItemUI();
+        return;
       }
-      const nid='it'+Date.now().toString(36)+((Math.random()*46656)|0).toString(36);
-      mapItems[nid]={type:edItemType,x:Math.round(ix),depth:Math.round(idp),rot:nw?nw.rot:0,clean:false};
-      edItemSel=nid; edWarns=[]; itemsDirty=true; edPushHist();
+      // vazio: pode virar CLIQUE (colocar) ou ARRASTO (seleção múltipla) — decide no soltar
+      edDrag={type:'itemsel',a:{x:px,y:py},b:{x:px,y:py}};
     }
   });
+  function edPlaceItem(px,py){
+    const wx=edWorldX(px), wd=edWorldD(py);
+    const r=Math.floor(wd/TILE), c=Math.floor((wx-X_MIN_W)/TILE);
+    if(!MAP[r]||MAP[r][c]!==0){ edWarns=['⚠ item precisa estar na ÁGUA']; edUpdateUI(); return; }
+    const meta=ITEM_META[edItemType]||{};
+    const nw=edNearestWallRot(wx,wd);
+    if(meta.wall&&!nw){ edWarns=['⚠ poste de parede exige parede a até 4 tiles']; edUpdateUI(); return; }
+    let ix=wx, idp=wd;
+    if(meta.wall&&nw){
+      // encosta na face da parede mais próxima
+      const ang=Math.atan2(wx-nw.wall.cx,wd-nw.wall.cd);
+      ix=nw.wall.cx+Math.sin(ang)*(TILE*0.5+8);
+      idp=nw.wall.cd+Math.cos(ang)*(TILE*0.5+8);
+    }
+    const nid='it'+Date.now().toString(36)+((Math.random()*46656)|0).toString(36);
+    mapItems[nid]={type:edItemType,x:Math.round(ix),depth:Math.round(idp),rot:nw?nw.rot:0,clean:false};
+    edItemMulti.clear(); edItemSel=nid; edWarns=[]; itemsDirty=true; edPushHist();
+  }
   edCv.addEventListener('mousemove',e=>{
     edMouse.x=e.offsetX; edMouse.y=e.offsetY;
     if(!edDrag) return;
@@ -1490,8 +1514,14 @@
       edDrag.d1=edWorldD(e.offsetY);
       if(Math.abs(edDrag.d1-edDrag.d0)>TILE*0.75) edDrag.moved=true;
     } else if(edDrag.type==='item'){
-      const it=mapItems[edDrag.id];
-      if(it){ it.x=edWorldX(e.offsetX); it.depth=edWorldD(e.offsetY); edDrag.moved=true; }
+      const dwx=edWorldX(e.offsetX)-edDrag.swx, dwd=edWorldD(e.offsetY)-edDrag.swd;
+      if(Math.abs(dwx)+Math.abs(dwd)>2) edDrag.moved=true;
+      edDrag.ids.forEach(id=>{
+        const it=mapItems[id], o=edDrag.orig[id];
+        if(it&&o){ it.x=o.x+dwx; it.depth=o.depth+dwd; }
+      });
+    } else if(edDrag.type==='itemsel'){
+      edDrag.b={x:e.offsetX,y:e.offsetY};
     }
   });
   edCv.addEventListener('mouseup',()=>{
@@ -1527,13 +1557,30 @@
         if(idx>=0){ mapPillars=mapPillars.filter((_,i)=>i!==idx); edPushHist(); }
       }
     } else if(d.type==='item'){
-      const it=mapItems[d.id];
-      if(it&&d.moved){
+      if(d.moved){
         // mover re-aponta a frente pra parede mais próxima (GIRAR ajusta fino depois)
-        it.x=Math.round(it.x); it.depth=Math.round(it.depth);
-        const nw=edNearestWallRot(it.x,it.depth);
-        if(nw) it.rot=nw.rot;
+        d.ids.forEach(id=>{
+          const it=mapItems[id]; if(!it) return;
+          it.x=Math.round(it.x); it.depth=Math.round(it.depth);
+          const nw=edNearestWallRot(it.x,it.depth);
+          if(nw) it.rot=nw.rot;
+        });
         itemsDirty=true; edPushHist(); edItemUI();
+      }
+    } else if(d.type==='itemsel'){
+      if(Math.abs(d.b.x-d.a.x)<6&&Math.abs(d.b.y-d.a.y)<6){
+        edPlaceItem(d.a.x,d.a.y); // foi um clique: coloca item
+      } else {
+        // marquee: seleciona todos os itens dentro do retângulo (em coords de mundo)
+        const wxs=[edWorldX(d.a.x),edWorldX(d.b.x)], wds=[edWorldD(d.a.y),edWorldD(d.b.y)];
+        const x0=Math.min(wxs[0],wxs[1]), x1=Math.max(wxs[0],wxs[1]);
+        const d0=Math.min(wds[0],wds[1]), d1=Math.max(wds[0],wds[1]);
+        edItemMulti=new Set(Object.entries(mapItems)
+          .filter(([,it])=>it.x>=x0&&it.x<=x1&&it.depth>=d0&&it.depth<=d1)
+          .map(([id])=>id));
+        if(edItemMulti.size===1){ edItemSel=[...edItemMulti][0]; edItemMulti.clear(); }
+        else edItemSel=null;
+        edItemUI();
       }
     }
   });
@@ -1621,6 +1668,8 @@
 
   // ===== ITENS DO MUNDO (postes/geradores/brocas — gravados NA HORA no Firebase) =====
   let mapItems={}, edItemType='lamp', edItemSel=null, itemsDirty=false;
+  let edItemMulti=new Set();
+  function edSelIds(){ return edItemMulti.size?[...edItemMulti]:(edItemSel?[edItemSel]:[]); }
   const ITEM_META={
     lamp:{label:'Poste de luz',color:'#ffcf7a',glyph:'L'},
     walllamp:{label:'Poste de parede',color:'#ffb055',glyph:'W',wall:true},
@@ -1665,27 +1714,52 @@
       b.style.color=on?'#ffcf7a':'var(--ink-dim)'; b.style.borderColor=on?'#ffcf7a':'';
     });
     const sb=document.getElementById('edItemSelBox');
-    const it=edItemSel?mapItems[edItemSel]:null;
-    if(sb) sb.style.display=it?'block':'none';
-    if(it){
-      const m=ITEM_META[it.type]||{label:it.type};
-      const info=document.getElementById('edItemSelInfo');
-      if(info) info.innerHTML=`<b>${m.label}</b> — ${it.clean?'<span style="color:#7fd4ff">LIMPO</span>':'<span style="color:#c9a15a">SUJO</span>'} · rot ${it.rot|0}° · X ${Math.round(it.x)}wu · ${Math.round(it.depth/10)}m`;
+    const ids=edSelIds();
+    if(sb) sb.style.display=ids.length?'block':'none';
+    const info=document.getElementById('edItemSelInfo');
+    if(info){
+      if(ids.length>1){
+        info.innerHTML=`<b>${ids.length} itens selecionados</b> — as ações aplicam em todos`;
+      } else if(ids.length===1&&mapItems[ids[0]]){
+        const it=mapItems[ids[0]];
+        const m=ITEM_META[it.type]||{label:it.type};
+        info.innerHTML=`<b>${m.label}</b> — ${it.clean?'<span style="color:#7fd4ff">LIMPO</span>':'<span style="color:#c9a15a">SUJO</span>'} · rot ${it.rot|0}° · X ${Math.round(it.x)}wu · ${Math.round(it.depth/10)}m`;
+      }
     }
   }
   document.querySelectorAll('.edItemT').forEach(b=>b.addEventListener('click',()=>{edItemType=b.dataset.t;edItemUI();}));
   function edItemTouch(){ itemsDirty=true; edPushHist(); edItemUI(); }
-  document.getElementById('edItemClean').addEventListener('click',()=>{
-    if(edItemSel&&mapItems[edItemSel]){ mapItems[edItemSel].clean=!mapItems[edItemSel].clean; edItemTouch(); }
+  function edItemDelete(){
+    const ids=edSelIds();
+    if(!ids.length) return;
+    ids.forEach(id=>{ delete mapItems[id]; });
+    edItemSel=null; edItemMulti.clear();
+    edItemTouch();
+  }
+  document.getElementById('edItemCleanOn').addEventListener('click',()=>{
+    const ids=edSelIds().filter(id=>mapItems[id]);
+    if(ids.length){ ids.forEach(id=>{ mapItems[id].clean=true; }); edItemTouch(); }
+  });
+  document.getElementById('edItemCleanOff').addEventListener('click',()=>{
+    const ids=edSelIds().filter(id=>mapItems[id]);
+    if(ids.length){ ids.forEach(id=>{ mapItems[id].clean=false; }); edItemTouch(); }
   });
   document.getElementById('edItemRotL').addEventListener('click',()=>{
-    if(edItemSel&&mapItems[edItemSel]){ mapItems[edItemSel].rot=(((mapItems[edItemSel].rot|0)+315)%360); edItemTouch(); }
+    const ids=edSelIds().filter(id=>mapItems[id]);
+    if(ids.length){ ids.forEach(id=>{ mapItems[id].rot=(((mapItems[id].rot|0)+315)%360); }); edItemTouch(); }
   });
   document.getElementById('edItemRotR').addEventListener('click',()=>{
-    if(edItemSel&&mapItems[edItemSel]){ mapItems[edItemSel].rot=(((mapItems[edItemSel].rot|0)+45)%360); edItemTouch(); }
+    const ids=edSelIds().filter(id=>mapItems[id]);
+    if(ids.length){ ids.forEach(id=>{ mapItems[id].rot=(((mapItems[id].rot|0)+45)%360); }); edItemTouch(); }
   });
-  document.getElementById('edItemDel').addEventListener('click',()=>{
-    if(edItemSel){ delete mapItems[edItemSel]; edItemSel=null; edItemTouch(); }
+  document.getElementById('edItemDel').addEventListener('click',edItemDelete);
+  // DEL/Backspace excluem a seleção (fora de campos de texto)
+  window.addEventListener('keydown',e=>{
+    if(!edOpen_||edTool!=='items') return;
+    if(e.key!=='Delete'&&e.key!=='Backspace') return;
+    const ae=document.activeElement;
+    if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT')) return;
+    if(edSelIds().length){ edItemDelete(); e.preventDefault(); }
   });
   document.getElementById('edBrushSz').addEventListener('change',e=>{edBrushSz=+e.target.value;});
   document.getElementById('edCorrW').addEventListener('change',e=>{edCorrW=+e.target.value;});
