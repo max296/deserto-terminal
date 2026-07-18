@@ -209,7 +209,7 @@
       </div>
     </div>
 
-    <div class="hint-drag" id="hintdrag">WASD pilot · drag look · CTRL light</div>
+    <div class="hint-drag" id="hintdrag">WASD pilota · CTRL liga a lanterna</div>
     <div id="sysOverride">■ SYSTEM OVERRIDE</div>
     <div id="ctrls">
       <div class="cbtn" id="btnLight">LIGHT: OFF</div>
@@ -584,17 +584,45 @@
   }
   // ponto de PUXÃO: o mais distante ao longo da corda alcançável em linha reta
   // com FOLGA DE SUBMARINO (26wu) — corta a curva por dentro, nunca prende na quina
+  // WAYPOINT SEGURO: empurra um ponto pra longe das paredes por REPULSÃO
+  // (8 raios; cada parede próxima empurra). Converge pra folga de 34wu em
+  // espaço aberto e pro CENTRO do vão quando o corredor é mais estreito que
+  // a folga (as repulsões opostas se cancelam no meio).
+  function reelSafePoint(px,pd){
+    let cx2=px, cd2=pd;
+    const SAFE=34;
+    for(let it2=0;it2<8;it2++){
+      let vx=0, vd=0, worst=SAFE;
+      for(let k=0;k<8;k++){
+        const ax=Math.sin(k*0.7854), ad=Math.cos(k*0.7854);
+        let hitS=SAFE;
+        for(let s=4;s<=SAFE;s+=5){ if(isWall(cx2+ax*s,cd2+ad*s)){ hitS=s; break; } }
+        if(hitS<SAFE){ const push=SAFE-hitS; vx-=ax*push; vd-=ad*push; if(hitS<worst) worst=hitS; }
+      }
+      if(worst>=SAFE) break;           // folga plena: pronto
+      const vl=Math.hypot(vx,vd);
+      if(vl<0.5) break;                // repulsões canceladas: centro do vão
+      const step=Math.min(6,vl*0.5);
+      const nx2=cx2+vx/vl*step, nd2=cd2+vd/vl*step;
+      if(isWall(nx2,nd2)) break;       // nunca entra em parede
+      cx2=nx2; cd2=nd2;
+    }
+    return {x:cx2,depth:cd2};
+  }
   function reelTarget(){
     // folga 34wu (> hitbox 26): o caminho puxado passa LONGE das quinas.
     // Sem candidato, relaxa a folga em cascata — melhor mirar um pivô DISTANTE
     // com folga apertada (direção diagonal, contorna) do que o colado na quina.
+    // O pivô escolhido vira um WAYPOINT SEGURO: afastado das paredes (ou no
+    // centro do vão se ele for apertado) — o sub não raspa mais nos cantos.
     for(const M of [34,22,14]){
       for(let i=0;i<ropePivots.length;i++){
         const p=ropePivots[i];
-        if(ropeLOS(nav.x,nav.depth,p.x,p.depth,M)) return p;
+        if(ropeLOS(nav.x,nav.depth,p.x,p.depth,M)) return reelSafePoint(p.x,p.depth);
       }
     }
-    return ropePivots[ropePivots.length-1]||ropeAnchor();
+    const lp=ropePivots[ropePivots.length-1]||ropeAnchor();
+    return reelSafePoint(lp.x,lp.depth);
   }
 
   let heading=0, lightMode=false, lightOn=false;
@@ -1463,7 +1491,7 @@
       for(const P of PILLARS){
         const nearD=Math.max(P.top,Math.min(nav.depth,P.bot));
         const ddx=P.x-nav.x, ddd=nearD-nav.depth;
-        if(ddx*ddx+ddd*ddd<(VIS_WALL+100)*(VIS_WALL+100)) darkS.push({wx:P.x,wd:0,rng:90,pw:0.55,seg:{top:P.top,bot:P.bot}});
+        if(ddx*ddx+ddd*ddd<(VIS_WALL+170)*(VIS_WALL+170)) darkS.push({wx:P.x,wd:0,rng:160,pw:0.72,seg:{top:P.top,bot:P.bot}});
       }
       const nDS=darkS.length;
 
@@ -2380,6 +2408,16 @@
               hu.lastSeen={x:nw.x,d:nw.d};
               if(hu.mode!=='last'){ hu.mode='last'; hu.path=null; hu.goalPos=null; hu.goal=null; }
             }
+            // TRILHA QUENTE: colada no sub (<260wu) com ele em MOVIMENTO, ela
+            // ESTIMA a posição continuamente (esteira/turbulência na água) —
+            // segue na cola sem precisar ver, sem pausas
+            if(subMoving&&dist<260&&now-(hu.trailT||0)>250){
+              hu.trailT=now;
+              const nw=nearestWater(nav.x+(Math.random()-0.5)*60,nav.depth+(Math.random()-0.5)*60);
+              hu.lastSeen={x:nw.x,d:nw.d};
+              if(hu.mode!=='last'){ hu.mode='last'; hu.path=null; hu.goalPos=null; hu.goal=null; }
+              hu.scanUntil=0;
+            }
             if(hu.mode==='hunt'){
               hu.mode='last'; hu.path=null; hu.goalPos=null;
             }
@@ -2390,7 +2428,8 @@
             tgtX=hu.lastSeen.x; tgtD=hu.lastSeen.d;
             if(Math.hypot(ewx-tgtX,ewd-tgtD)<50){
               hu.mode='search'; hu.goal=null;
-              hu.scanUntil=now+1600; // chegou: PARA e olha em volta
+              // CEGA não "olha em volta" — segue direto pro próximo ponto por som
+              hu.scanUntil=vMode==='blind'?0:now+1600;
             }
           }
           if(hu.mode==='search'){
@@ -2415,7 +2454,7 @@
             }
             if(hu.goal&&Math.hypot(ewx-hu.goal.x,ewd-hu.goal.d)<50){
               hu.goal=null;
-              hu.scanUntil=now+1600; // ponto varrido: olha em volta antes do próximo
+              hu.scanUntil=vMode==='blind'?0:now+1600; // cega não pausa pra "olhar"
             }
             if(!hu.goal){
               const g=findSearchPoint(hu.lastSeen.x,hu.lastSeen.d,hu.searchR);
@@ -2589,7 +2628,11 @@
       // chase: ENCARA o sub só quando o VÊ (sem visão, olhar pro sub denunciava
       // que a IA sabia onde ele está); sem ver, olha pra onde está indo
       const huF=creatureHuntState[id];
-      const chaseStare=(beh==="chase"||ent.chasing)&&(!huF||huF._sees!==false);
+      // ela ENCARA só quando vê E não está indo embora — afastando-se do sub
+      // (recuo, ponto de busca atrás dela) mostra as COSTAS, como nado real
+      const movL=Math.hypot(mvx,mvd), distL=Math.hypot(dx,dd)||1;
+      const movingAway=movL>0.01&&((mvx*dx+mvd*dd)/(movL*distL))<-0.25;
+      const chaseStare=(beh==="chase"||ent.chasing)&&(!huF||huF._sees!==false)&&!movingAway;
       const newFacing=chaseStare
         ? Math.atan2(dx,dd)
         : (Math.hypot(mvx,mvd)>0.01?Math.atan2(mvx,mvd):(ent._facing||0));
@@ -2691,7 +2734,7 @@
     else { lightOn=false; lightMode=false; }
     btnLight.classList.toggle("active",lightOn);
     btnLight.textContent=lightOn?"LIGHT: AIM":"LIGHT: OFF";
-    document.getElementById("hintdrag").textContent=lightMode?"move cursor / drag to aim · CTRL light":"WASD pilot · drag look · CTRL light";
+    document.getElementById("hintdrag").textContent=lightMode?"mire a lanterna com o cursor · CTRL desliga":"WASD pilota · CTRL liga a lanterna";
   }
   btnLight.addEventListener("click",toggleLight);
 
@@ -2864,6 +2907,32 @@
     g.fillStyle=`rgba(225,240,248,${Math.min(0.6,0.5*sz)*prog})`;
     g.beginPath(); g.arc(ix,iy,3.2*sz*prog,0,6.283); g.fill();
   }
+  // rachadura LONGA e torta entre dois pontos (conecta impactos)
+  function crackLine(g,W,x1,y1,x2,y2,seed,prog){
+    let sd=seed>>>0; const rng=()=>{ sd=(sd*1664525+1013904223)>>>0; return sd/4294967296; };
+    const L=Math.hypot(x2-x1,y2-y1)||1;
+    const segs=Math.max(6,Math.round(L/(W*0.05)));
+    const nx=-(y2-y1)/L, ny=(x2-x1)/L;
+    g.strokeStyle=`rgba(212,230,240,${(0.42+rng()*0.25).toFixed(3)})`;
+    g.lineWidth=1.2;
+    g.beginPath(); g.moveTo(x1,y1);
+    const upto=Math.max(2,Math.floor(segs*prog));
+    for(let s2=1;s2<=upto;s2++){
+      const t2=s2/segs;
+      const off=(rng()-0.5)*W*0.035*Math.sin(t2*Math.PI);
+      g.lineTo(x1+(x2-x1)*t2+nx*off, y1+(y2-y1)*t2+ny*off);
+    }
+    g.stroke();
+    for(let f2=0;f2<Math.floor(3*prog);f2++){
+      const t2=0.2+rng()*0.6;
+      const bx=x1+(x2-x1)*t2, by=y1+(y2-y1)*t2;
+      const ba=Math.atan2(y2-y1,x2-x1)+(rng()<0.5?-1:1)*(0.6+rng()*0.6);
+      g.strokeStyle='rgba(200,220,232,0.35)'; g.lineWidth=0.8;
+      g.beginPath(); g.moveTo(bx,by);
+      g.lineTo(bx+Math.cos(ba)*W*0.05,by+Math.sin(ba)*W*0.05);
+      g.stroke();
+    }
+  }
   function drawGlassCrack(level,prog){
     const cv2=document.getElementById('glassCrackCv');
     if(!cv2) return;
@@ -2874,30 +2943,36 @@
     g.clearRect(0,0,cv2.width,cv2.height);
     const W=cv2.width,H=cv2.height;
     g.lineCap='round';
-    const n=Math.min(level,CRACK_PTS.length);
+    // níveis 1-3: impactos individuais. 4-5: NADA de impacto novo — as
+    // rachaduras existentes se CONECTAM e tomam o visor.
+    const n=Math.min(level,3);
     for(let i=0;i<n;i++){
-      const age=level-i;                 // impacto mais antigo = maior
-      const grown=i===n-1?prog:1;        // só o mais NOVO anima
-      const sz=Math.min(1.35,0.5+age*0.28)*grown;
+      const age=level-i;                          // impacto mais antigo = maior
+      const grown=(i===n-1&&level<=3)?prog:1;     // só o mais NOVO anima
+      const sz=Math.min(1.5,0.5+age*0.24)*grown;
       crackStar(g,W,CRACK_PTS[i].x*W,CRACK_PTS[i].y*H,sz,1337+i*7919,1);
     }
+    if(level>=4){
+      // conecta os três impactos entre si
+      const pairs=level>=5?[[0,1],[1,2],[0,2]]:[[0,1],[1,2]];
+      pairs.forEach(([a,b],pi)=>{
+        crackLine(g,W,CRACK_PTS[a].x*W,CRACK_PTS[a].y*H,CRACK_PTS[b].x*W,CRACK_PTS[b].y*H,4400+pi*997,level===4&&pi===pairs.length-1?prog:1);
+      });
+    }
     if(level>=5){
+      // DESTRUÍDO: as rachaduras se estendem dos impactos até FORA do visor,
+      // estilhaços por toda parte e um véu esbranquiçado no vidro inteiro
       let sd=99991; const rng=()=>{ sd=(sd*1664525+1013904223)>>>0; return sd/4294967296; };
-      for(let i=0;i<7;i++){
-        let px2=rng()*W, py2=-4, ang=1.57+(rng()-0.5)*0.9;
-        if(i%2){ px2=-4; py2=rng()*H; ang=(rng()-0.5)*0.9; }
-        g.strokeStyle=`rgba(215,232,242,${(0.30+rng()*0.22)*prog})`;
-        g.lineWidth=1.1;
-        g.beginPath(); g.moveTo(px2,py2);
-        for(let s2=0;s2<22;s2++){
-          ang+=(rng()-0.5)*0.5;
-          px2+=Math.cos(ang)*(W*0.055); py2+=Math.sin(ang)*(W*0.055);
-          g.lineTo(px2,py2);
-          if(px2<-10||px2>W+10||py2<-10||py2>H+10) break;
+      for(let pi=0;pi<3;pi++){
+        const P=CRACK_PTS[pi];
+        for(let k2=0;k2<2;k2++){
+          const ea=rng()*6.283;
+          crackLine(g,W,P.x*W,P.y*H,P.x*W+Math.cos(ea)*W*1.2,P.y*H+Math.sin(ea)*W*1.2,6100+pi*31+k2*7,prog);
         }
-        g.stroke();
       }
-      for(let i=0;i<26;i++) crackStar(g,W,rng()*W,rng()*H,0.13+rng()*0.12,7000+i*31,prog);
+      for(let i=0;i<20;i++) crackStar(g,W,rng()*W,rng()*H,0.12+rng()*0.10,7000+i*31,prog);
+      g.fillStyle=`rgba(215,232,242,${(0.06*prog).toFixed(3)})`;
+      g.fillRect(0,0,W,H);
     }
   }
   ref.child("glassCrack").on("value",snap=>{
