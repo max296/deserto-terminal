@@ -318,6 +318,37 @@
         fc.drawImage(cv,0,0);
         dfFramesFlip.push(flip);
       });
+      applyBackFrames();
+    };
+  }
+  // sheet dedicado DE COSTAS (4ª linha do asset "Criatura de tras"):
+  // substitui a row 0 (relDeg 180° = vista por trás) do spritesheet principal
+  let _backStrip=null;
+  function applyBackFrames(){
+    if(!_backStrip||!dfFrames.length) return;
+    for(let c=0;c<DF_COLS&&c<_backStrip.length;c++){
+      dfFrames[c]=_backStrip[c];
+      const flip=document.createElement('canvas');
+      flip.width=_backStrip[c].width; flip.height=_backStrip[c].height;
+      const fc=flip.getContext('2d');
+      fc.translate(flip.width,0); fc.scale(-1,1);
+      fc.drawImage(_backStrip[c],0,0);
+      dfFramesFlip[c]=flip;
+    }
+  }
+  {
+    const bimg=new Image();
+    bimg.src='img/creature_back.png';
+    bimg.onload=()=>{
+      const fw=Math.floor(bimg.naturalWidth/DF_COLS), fh=bimg.naturalHeight;
+      _backStrip=[];
+      for(let c=0;c<DF_COLS;c++){
+        const cv=document.createElement('canvas');
+        cv.width=fw; cv.height=fh;
+        cv.getContext('2d').drawImage(bimg,c*fw,0,fw,fh,0,0,fw,fh);
+        _backStrip.push(cv);
+      }
+      applyBackFrames();
     };
   }
 
@@ -1113,7 +1144,9 @@
     const list=[];
     for(const it of worldItemsArr){
       const {tX,tY}=billboardTransform(it.x,it.depth,hdg,invDet,dirX,dirY);
-      if(tY>0.5&&tY<VIS_WALL_*1.1) list.push({it,tX,tY});
+      // alcance ESTENDIDO (2.5×): o core das lâmpadas surge GRADUAL na distância
+      // (o sprite em si se corta sozinho pelo próprio fog bem antes)
+      if(tY>0.5&&tY<VIS_WALL_*2.5) list.push({it,tX,tY});
     }
     list.sort((a,b)=>b.tY-a.tY);
     const depthN2=Math.max(0,Math.min(1,(nav.depth-START_DEPTH)/(MAX_DEPTH-START_DEPTH)));
@@ -1140,24 +1173,44 @@
       const qy=Math.max(yTop,Math.min(bpy,yTop+projH));
       const litRaw=lightOn?Math.max(0,1-Math.hypot(qx-bpx,qy-bpy)/(Math.min(w,h)*0.62)):0;
       const lit=litRaw*Math.max(0,Math.min(1,1-tY/(VIS_WALL_*0.75)));
-      const selfL=def.light?(it.clean?0.88:0.52):0; // lâmpada acesa se auto-ilumina
-      const dk=Math.max(0.10,Math.min(1,Math.max(selfL,amb*0.9+lit*0.8)));
-      let sprd=spr;
-      if(dk<0.985){
-        if(tc.width!==spr.width||tc.height!==spr.height){ tc.width=spr.width; tc.height=spr.height; }
-        else tcx.clearRect(0,0,tc.width,tc.height);
-        tcx.globalCompositeOperation='source-over';
-        tcx.drawImage(spr,0,0);
-        tcx.globalCompositeOperation='source-atop';
-        tcx.fillStyle='rgba(0,0,0,'+(1-dk).toFixed(3)+')';
-        tcx.fillRect(0,0,tc.width,tc.height);
-        sprd=tc;
+      const lampOn=def.light&&!it.off;
+      const selfL=lampOn?(it.clean?0.88:0.52):0; // lâmpada acesa se auto-ilumina
+      if(tY<VIS_WALL_*1.05){ // o sprite em si só dentro do alcance de visão
+        const dk=Math.max(0.10,Math.min(1,Math.max(selfL,amb*0.9+lit*0.8)));
+        let sprd=spr;
+        if(dk<0.985){
+          if(tc.width!==spr.width||tc.height!==spr.height){ tc.width=spr.width; tc.height=spr.height; }
+          else tcx.clearRect(0,0,tc.width,tc.height);
+          tcx.globalCompositeOperation='source-over';
+          tcx.drawImage(spr,0,0);
+          tcx.globalCompositeOperation='source-atop';
+          tcx.fillStyle='rgba(0,0,0,'+(1-dk).toFixed(3)+')';
+          tcx.fillRect(0,0,tc.width,tc.height);
+          sprd=tc;
+        }
+        billboardDraw(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_,screenX,tY,projH,projW,sprd,1,yTop);
+        // MASSA ESCURA pairando sobre a broca (e sombreando a região)
+        if(it.type==='drill'){
+          const colD=Math.max(0,Math.min(COLS_-1,Math.floor(screenX/colW_)));
+          if(zBuf[colD]>VIS_WALL_*1.4||tY<zBuf[colD]+10){
+            const fogM=Math.max(0,Math.min(1,1-tY/(VIS_WALL_*0.95)));
+            if(fogM>0.03){
+              const mr=projW*1.6;
+              const my=yTop-mr*0.35;
+              const g3=x.createRadialGradient(screenX,my,0,screenX,my,mr*1.7);
+              g3.addColorStop(0,`rgba(0,0,0,${(0.62*fogM).toFixed(3)})`);
+              g3.addColorStop(0.55,`rgba(0,0,0,${(0.30*fogM).toFixed(3)})`);
+              g3.addColorStop(1,'transparent');
+              x.fillStyle=g3; x.beginPath(); x.arc(screenX,my,mr*1.7,0,6.28); x.fill();
+            }
+          }
+        }
       }
-      billboardDraw(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_,screenX,tY,projH,projW,sprd,1,yTop);
       // luz do painel: CORE que fura a névoa de longe + CORONA em degradê largo
-      if(def.light){
+      if(lampOn){
         const col=Math.max(0,Math.min(COLS_-1,Math.floor(screenX/colW_)));
-        if(tY<zBuf[col]+10){
+        // parede de escuridão (zbuf "livre") não oclui; rocha de verdade sim
+        if(zBuf[col]>VIS_WALL_*1.4||tY<zBuf[col]+10){
           const hy=yTop+projH*def.headFrac;
           const flick=it.clean?1:(0.72+0.28*Math.sin(t*0.21+(it.x||0)));
           // CORE: farol na escuridão — visível bem além do alcance das paredes
@@ -1392,13 +1445,27 @@
       const liveL=[];
       for(const it of worldItemsArr){
         const defL=ITEM_DEFS[it.type];
-        if(!defL||!defL.light) continue;
+        if(!defL||!defL.light||it.off) continue; // GM pode DESLIGAR a luz do poste
         const rng=it.clean?defL.light.cRange:defL.light.dRange;
         const pw=it.clean?defL.light.cPow:defL.light.dPow;
         const ddx=it.x-nav.x, ddd=it.depth-nav.depth;
         if(ddx*ddx+ddd*ddd<(VIS_WALL+rng)*(VIS_WALL+rng)) liveL.push({wx:it.x,wd:it.depth,rng,pw});
       }
       const nLL=liveL.length;
+      // MASSAS ESCURAS: brocas e pilares projetam sombra no chão em volta
+      // (como se algo pairasse acima deles)
+      const darkS=[];
+      for(const it of worldItemsArr){
+        if(it.type!=='drill') continue;
+        const ddx=it.x-nav.x, ddd=it.depth-nav.depth;
+        if(ddx*ddx+ddd*ddd<(VIS_WALL+130)*(VIS_WALL+130)) darkS.push({wx:it.x,wd:it.depth,rng:120,pw:0.62,seg:null});
+      }
+      for(const P of PILLARS){
+        const nearD=Math.max(P.top,Math.min(nav.depth,P.bot));
+        const ddx=P.x-nav.x, ddd=nearD-nav.depth;
+        if(ddx*ddx+ddd*ddd<(VIS_WALL+100)*(VIS_WALL+100)) darkS.push({wx:P.x,wd:0,rng:90,pw:0.55,seg:{top:P.top,bot:P.bot}});
+      }
+      const nDS=darkS.length;
 
       // ---- CHÃO via floor casting (lodev), SEM teto (canon: o teto foi descartado) ----
       // rowDist = posZ/p em WORLD UNITS (posZ = WALLH/2): o chão encontra a base das
@@ -1457,9 +1524,18 @@
               const d2=lxd*lxd+lyd*lyd;
               if(d2<L.rng*L.rng){ const q=1-Math.sqrt(d2)/L.rng; addL+=L.pw*q*q; }
             }
+            // sombra das massas (brocas/pilares) escurece o chão em volta
+            let dkS=0;
+            for(let di=0;di<nDS;di++){
+              const D=darkS[di];
+              const dyv=D.seg?(flY<D.seg.top?D.seg.top-flY:flY>D.seg.bot?flY-D.seg.bot:0):(flY-D.wd);
+              const dxv=flX-D.wx;
+              const d2=dxv*dxv+dyv*dyv;
+              if(d2<D.rng*D.rng){ const q=1-Math.sqrt(d2)/D.rng; dkS+=D.pw*q; }
+            }
             // a luz da lâmpada FURA parcialmente o fog do observador: a mancha
             // iluminada no chão faz degradê com a distância em vez de sumir
-            const kt=(lvBase+spotI*0.95*fogF)*fogFK+addL*(0.30+0.70*fogFK);
+            const kt=((lvBase+spotI*0.95*fogF)*fogFK+addL*(0.30+0.70*fogFK))*(1-Math.min(0.8,dkS));
             const r=Math.min(255,(tc&255)*kt*fTr+waterR*wMixF)|0;
             const g=Math.min(255,((tc>>>8)&255)*kt*fTg+waterG*wMixF)|0;
             const b=Math.min(255,((tc>>>16)&255)*kt*fTb+waterB*wMixF)|0;
@@ -1517,7 +1593,9 @@
         if(hitKind==="dark") continue;
         const colX=(i+0.5)*colW;
         const sh2=Math.min(h*1.4, WALLH/perp);
-        const y0=h/2 - sh2/2, y1=h/2 + sh2/2;
+        // pilares da petroleira SOBEM 3× a altura da parede (estrutura, não rocha)
+        const pTall=hitKind==="pillar"?3:1;
+        const y0=h/2 - sh2/2 - (pTall-1)*sh2, y1=h/2 + sh2/2;
         const fog=Math.max(0, Math.min(1, 1 - dist/WALL_SIGHT));
         const fogK=fog*Math.sqrt(fog);
         // facho nas paredes: ângulo do raio vs ângulo do cursor (camera space), atenua longe
@@ -1561,7 +1639,13 @@
         }
         const xL=colX-colW/2-0.5, wW=colW+1, hS=y1-y0;
         x.imageSmoothingEnabled=false; // nearest: nitidez PS2 nas tiras
-        x.drawImage(texObj.cnv, texU, 0, 1, TEX_SIZE, xL, y0, wW, hS);
+        if(pTall>1){
+          // textura REPETIDA em segmentos (não esticada) na coluna alta
+          for(let seg2=0;seg2<pTall;seg2++)
+            x.drawImage(texObj.cnv, texU, 0, 1, TEX_SIZE, xL, y1-sh2*(seg2+1), wW, sh2);
+        } else {
+          x.drawImage(texObj.cnv, texU, 0, 1, TEX_SIZE, xL, y0, wW, hS);
+        }
         x.imageSmoothingEnabled=true;
         // escurecimento ambiente: rocha no breu é escura; o facho recupera a cor.
         // pilar recebe luz base maior — concreto claro se destaca da rocha
@@ -1583,6 +1667,14 @@
           x.fillStyle=`rgba(0,0,0,${(0.22*pres).toFixed(2)})`;
           x.fillRect(xL, y0, wW, Math.max(1,sh2*0.05));
           x.fillRect(xL, y1-Math.max(1,sh2*0.05), wW, Math.max(1,sh2*0.05));
+        }
+        // MASSA ESCURA no alto do pilar: algo paira lá em cima, engolindo a estrutura
+        if(pTall>1&&pres>0.05){
+          const gT=x.createLinearGradient(0,y0,0,y0+sh2*1.4);
+          gT.addColorStop(0,`rgba(0,0,0,${(0.85*pres).toFixed(3)})`);
+          gT.addColorStop(0.55,`rgba(0,0,0,${(0.40*pres).toFixed(3)})`);
+          gT.addColorStop(1,'rgba(0,0,0,0)');
+          x.fillStyle=gT; x.fillRect(xL,y0,wW,sh2*1.4);
         }
       }
       // distância da superfície mirada: o feixe engrossa perto, afina e borra longe.
@@ -2676,6 +2768,15 @@
       }
       if(nav.mode==="diving" && prev==="moonpool"){
         ropePivots=[ropeAnchor()]; slackPath=[]; _slackLast=null; ropeState='slack';
+        // ao descer, o sub emerge de frente pros PILARES da plataforma
+        let bp=null,bd=1e18;
+        for(const P of PILLARS){
+          const nd2=Math.max(P.top,Math.min(nav.depth,P.bot));
+          const d2=(P.x-nav.x)*(P.x-nav.x)+(nd2-nav.depth)*(nd2-nav.depth);
+          if(d2<bd){ bd=d2; bp={x:P.x,d:nd2}; }
+        }
+        nav.heading=bp?((Math.atan2(bp.x-nav.x,bp.d-nav.depth)*180/Math.PI+360)%360):180;
+        pushNav();
       }
       if(nav.mode==="reeling" && prev!=="reeling"){
         tautenRope(); // o guincho TENSIONA: a corda frouxa estica nas quinas
@@ -2724,82 +2825,102 @@
     fll.style.animation=`flick ${period.toFixed(2)}s linear infinite`;
   });
 
-  // ===== VIDRO RACHADO (guardião dispara): desenho procedural + animação =====
-  let glassCracked=false, _crackAnim=null;
-  function drawGlassCrack(prog){
+  // ===== VIDRO RACHADO — NÍVEL 0-5 (guardião controla): desenho procedural =====
+  // Progressão coerente: cada nível ADICIONA um impacto (os antigos crescem);
+  // nível 5 = visor inteiro tomado (fissuras de borda a borda + estilhaços).
+  let glassLevel=0, _crackAnim=null;
+  const CRACK_PTS=[{x:0.63,y:0.38},{x:0.27,y:0.60},{x:0.76,y:0.70},{x:0.40,y:0.24},{x:0.52,y:0.52}];
+  function crackStar(g,W,ix,iy,sz,seed,prog){
+    let sd=seed>>>0; const rng=()=>{ sd=(sd*1664525+1013904223)>>>0; return sd/4294967296; };
+    const NR=7+Math.floor(sz*4);
+    for(let i=0;i<NR;i++){
+      const a=(i/NR)*6.283+rng()*0.5;
+      const len=(W*0.10+rng()*W*0.24)*sz*prog;
+      let px2=ix, py2=iy, ang=a;
+      g.strokeStyle=`rgba(210,230,240,${0.45+rng()*0.3})`;
+      g.lineWidth=1.5-Math.min(1,len/W)*0.8;
+      g.beginPath(); g.moveTo(px2,py2);
+      for(let s2=0;s2<5;s2++){
+        ang+=(rng()-0.5)*0.55;
+        px2+=Math.cos(ang)*(len/5); py2+=Math.sin(ang)*(len/5);
+        g.lineTo(px2,py2);
+      }
+      g.stroke();
+      if(rng()<0.7){
+        const bx=ix+Math.cos(a)*len*0.45, by=iy+Math.sin(a)*len*0.45;
+        const ba=a+(rng()<0.5?-1:1)*(0.7+rng()*0.5);
+        g.strokeStyle='rgba(200,220,232,0.4)'; g.lineWidth=0.8;
+        g.beginPath(); g.moveTo(bx,by);
+        g.lineTo(bx+Math.cos(ba)*len*0.28, by+Math.sin(ba)*len*0.28);
+        g.stroke();
+      }
+    }
+    for(let ring=0;ring<3;ring++){
+      const rr=(16+ring*22)*sz*prog*(W/420);
+      const a0=rng()*6.283, arc=1.2+rng()*2.2;
+      g.strokeStyle=`rgba(205,225,238,${Math.max(0.05,0.32-ring*0.07)})`; g.lineWidth=0.9;
+      g.beginPath(); g.arc(ix,iy,rr,a0,a0+arc); g.stroke();
+    }
+    g.fillStyle=`rgba(225,240,248,${Math.min(0.6,0.5*sz)*prog})`;
+    g.beginPath(); g.arc(ix,iy,3.2*sz*prog,0,6.283); g.fill();
+  }
+  function drawGlassCrack(level,prog){
     const cv2=document.getElementById('glassCrackCv');
     if(!cv2) return;
+    if(level<=0){ cv2.style.display='none'; return; }
     cv2.style.display='block';
     cv2.width=Math.max(2,VPW); cv2.height=Math.max(2,VPH);
     const g=cv2.getContext('2d');
     g.clearRect(0,0,cv2.width,cv2.height);
-    const ix=cv2.width*0.62, iy=cv2.height*0.40; // ponto de impacto
-    let sd=1337; const rng=()=>{ sd=(sd*1664525+1013904223)>>>0; return sd/4294967296; };
+    const W=cv2.width,H=cv2.height;
     g.lineCap='round';
-    // raios principais: linhas tortas que crescem com prog
-    const NR=9;
-    for(let i=0;i<NR;i++){
-      const a=(i/NR)*6.283+rng()*0.5;
-      const len=(cv2.width*0.16+rng()*cv2.width*0.30)*prog;
-      let px2=ix, py2=iy, ang=a;
-      g.strokeStyle=`rgba(210,230,240,${0.5+rng()*0.3})`;
-      g.lineWidth=1.4-Math.min(1,len/cv2.width)*0.8;
-      g.beginPath(); g.moveTo(px2,py2);
-      const segs=5;
-      for(let s2=0;s2<segs;s2++){
-        ang+=(rng()-0.5)*0.55;
-        const sl=len/segs;
-        px2+=Math.cos(ang)*sl; py2+=Math.sin(ang)*sl;
-        g.lineTo(px2,py2);
-      }
-      g.stroke();
-      // farpas secundárias
-      if(rng()<0.7){
-        const bx=ix+Math.cos(a)*len*0.45, by=iy+Math.sin(a)*len*0.45;
-        const ba=a+(rng()<0.5?-1:1)*(0.7+rng()*0.5);
-        g.strokeStyle='rgba(200,220,232,0.4)';
-        g.lineWidth=0.8;
-        g.beginPath(); g.moveTo(bx,by);
-        g.lineTo(bx+Math.cos(ba)*len*0.28*prog, by+Math.sin(ba)*len*0.28*prog);
+    const n=Math.min(level,CRACK_PTS.length);
+    for(let i=0;i<n;i++){
+      const age=level-i;                 // impacto mais antigo = maior
+      const grown=i===n-1?prog:1;        // só o mais NOVO anima
+      const sz=Math.min(1.35,0.5+age*0.28)*grown;
+      crackStar(g,W,CRACK_PTS[i].x*W,CRACK_PTS[i].y*H,sz,1337+i*7919,1);
+    }
+    if(level>=5){
+      let sd=99991; const rng=()=>{ sd=(sd*1664525+1013904223)>>>0; return sd/4294967296; };
+      for(let i=0;i<7;i++){
+        let px2=rng()*W, py2=-4, ang=1.57+(rng()-0.5)*0.9;
+        if(i%2){ px2=-4; py2=rng()*H; ang=(rng()-0.5)*0.9; }
+        g.strokeStyle=`rgba(215,232,242,${(0.30+rng()*0.22)*prog})`;
+        g.lineWidth=1.1;
+        g.beginPath(); g.moveTo(px2,py2);
+        for(let s2=0;s2<22;s2++){
+          ang+=(rng()-0.5)*0.5;
+          px2+=Math.cos(ang)*(W*0.055); py2+=Math.sin(ang)*(W*0.055);
+          g.lineTo(px2,py2);
+          if(px2<-10||px2>W+10||py2<-10||py2>H+10) break;
+        }
         g.stroke();
       }
+      for(let i=0;i<26;i++) crackStar(g,W,rng()*W,rng()*H,0.13+rng()*0.12,7000+i*31,prog);
     }
-    // anéis concêntricos parciais (conchoidal)
-    for(let ring=0;ring<3;ring++){
-      const rr=(22+ring*26)*prog*(cv2.width/420);
-      const a0=rng()*6.283, arc=1.2+rng()*2.2;
-      g.strokeStyle=`rgba(205,225,238,${0.35-ring*0.08})`;
-      g.lineWidth=0.9;
-      g.beginPath(); g.arc(ix,iy,rr,a0,a0+arc); g.stroke();
-    }
-    // núcleo esmagado
-    g.fillStyle=`rgba(225,240,248,${0.5*prog})`;
-    g.beginPath(); g.arc(ix,iy,3.2*prog,0,6.283); g.fill();
   }
   ref.child("glassCrack").on("value",snap=>{
-    const v=!!snap.val();
-    if(v&&!glassCracked){
-      glassCracked=true;
-      // impacto: tranco + fôlego + flicker, e a rachadura se PROPAGA em ~0.6s
-      shkVX+=(Math.random()<0.5?-1:1)*70;
-      rollV+=(Math.random()<0.5?-1:1)*30;
-      collisionFlicker=0.8; recentHits+=2.5;
+    const v=snap.val();
+    const lvl=v===true?3:Math.max(0,Math.min(5,v|0)); // compat: bool antigo → nível 3
+    if(lvl===glassLevel){ if(lvl>0) drawGlassCrack(lvl,1); return; }
+    const up=lvl>glassLevel;
+    glassLevel=lvl;
+    if(_crackAnim) cancelAnimationFrame(_crackAnim);
+    if(!lvl){ drawGlassCrack(0,1); return; }
+    if(up){
+      // impacto: tranco + fôlego + flicker, e o estágio novo se PROPAGA em ~0.6s
+      shkVX+=(Math.random()<0.5?-1:1)*(40+lvl*10);
+      rollV+=(Math.random()<0.5?-1:1)*(16+lvl*6);
+      collisionFlicker=0.5+lvl*0.08; recentHits+=1.2+lvl*0.4;
       const t0=performance.now();
-      if(_crackAnim) cancelAnimationFrame(_crackAnim);
       const step=()=>{
         const p=Math.min(1,(performance.now()-t0)/620);
-        drawGlassCrack(0.25+0.75*p*p);
+        drawGlassCrack(glassLevel,0.25+0.75*p*p);
         if(p<1) _crackAnim=requestAnimationFrame(step);
       };
       step();
-    } else if(!v&&glassCracked){
-      glassCracked=false;
-      if(_crackAnim) cancelAnimationFrame(_crackAnim);
-      const cv2=document.getElementById('glassCrackCv');
-      if(cv2){ cv2.style.display='none'; }
-    } else if(v&&glassCracked){
-      drawGlassCrack(1); // já rachado (reload): desenha direto
-    }
+    } else drawGlassCrack(lvl,1);
   });
 
   // troca de texturas ao vivo (guardião): 'img' = PNGs reais, 'proc' = procedurais
