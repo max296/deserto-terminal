@@ -389,7 +389,7 @@
                     <button class="btn edItemT" data-t="gen" style="font-size:9px;padding:5px 7px">▭ GERADOR</button>
                     <button class="btn edItemT" data-t="drill" style="font-size:9px;padding:5px 7px">▼ BROCA</button>
                   </div>
-                  <div style="font-size:9px;color:#8a97a0;line-height:1.5;margin-top:5px">Clique na água = colocar (a frente auto-aponta perpendicular à parede mais próxima). Clique num item = selecionar. Arrastar = mover. Alterações são publicadas NA HORA.</div>
+                  <div style="font-size:9px;color:#8a97a0;line-height:1.5;margin-top:5px">Clique na água = colocar (a frente auto-aponta perpendicular à parede mais próxima). Clique num item = selecionar. Arrastar = mover. Itens entram no SALVAR do mapa (com desfazer).</div>
                   <div id="edItemSelBox" style="display:none;border-top:1px solid #223142;margin-top:6px;padding-top:6px">
                     <div id="edItemSelInfo" style="font-size:10px;color:#cdd4d8;margin-bottom:5px"></div>
                     <div style="display:flex;gap:4px;flex-wrap:wrap">
@@ -1185,11 +1185,12 @@
   const edPxRectX=(c0,c1)=>edPxX(Math.max(c0,c1)+1);
 
   // ---- histórico (undo/redo por snapshot do estado editável inteiro) ----
-  function edSnapshot(){ return JSON.stringify({ops:mapOps,pillars:mapPillars,spawn:mapSpawn,cols:GRID_COLS,xMin:X_MIN_W,off:COL_OFFSET}); }
+  function edSnapshot(){ return JSON.stringify({ops:mapOps,pillars:mapPillars,spawn:mapSpawn,cols:GRID_COLS,xMin:X_MIN_W,off:COL_OFFSET,items:mapItems}); }
   function edRestore(s){
     const v=JSON.parse(s);
     mapOps=v.ops; mapPillars=v.pillars; mapSpawn=v.spawn;
     GRID_COLS=v.cols; X_MIN_W=v.xMin; COL_OFFSET=v.off;
+    if(v.items){ mapItems=v.items; itemsDirty=true; if(edItemSel&&!mapItems[edItemSel]) edItemSel=null; }
     MAP=buildMap(mapOps); edMiniDirty=true;
   }
   function edPushHist(){
@@ -1470,9 +1471,9 @@
         ix=nw.wall.cx+Math.sin(ang)*(TILE*0.5+8);
         idp=nw.wall.cd+Math.cos(ang)*(TILE*0.5+8);
       }
-      const nref=subRef.child('items').push();
-      nref.set({type:edItemType,x:Math.round(ix),depth:Math.round(idp),rot:nw?nw.rot:0,clean:false});
-      edItemSel=nref.key; edWarns=[]; edUpdateUI();
+      const nid='it'+Date.now().toString(36)+((Math.random()*46656)|0).toString(36);
+      mapItems[nid]={type:edItemType,x:Math.round(ix),depth:Math.round(idp),rot:nw?nw.rot:0,clean:false};
+      edItemSel=nid; edWarns=[]; itemsDirty=true; edPushHist();
     }
   });
   edCv.addEventListener('mousemove',e=>{
@@ -1529,11 +1530,10 @@
       const it=mapItems[d.id];
       if(it&&d.moved){
         // mover re-aponta a frente pra parede mais próxima (GIRAR ajusta fino depois)
+        it.x=Math.round(it.x); it.depth=Math.round(it.depth);
         const nw=edNearestWallRot(it.x,it.depth);
-        subRef.child('items/'+d.id).update({
-          x:Math.round(it.x), depth:Math.round(it.depth),
-          ...(nw?{rot:nw.rot}:{})
-        });
+        if(nw) it.rot=nw.rot;
+        itemsDirty=true; edPushHist(); edItemUI();
       }
     }
   });
@@ -1575,6 +1575,8 @@
   function edSave(){
     edValidate();
     subRef.child('worldMap').set(edPayload());
+    subRef.child('items').set(mapItems);
+    itemsDirty=false;
     mapDirty=false; edUpdateUI();
   }
 
@@ -1618,7 +1620,7 @@
   document.getElementById('edToolItem').addEventListener('click',()=>{edTool='items';edMode2='paint';edUpdateUI();});
 
   // ===== ITENS DO MUNDO (postes/geradores/brocas — gravados NA HORA no Firebase) =====
-  let mapItems={}, edItemType='lamp', edItemSel=null;
+  let mapItems={}, edItemType='lamp', edItemSel=null, itemsDirty=false;
   const ITEM_META={
     lamp:{label:'Poste de luz',color:'#ffcf7a',glyph:'L'},
     walllamp:{label:'Poste de parede',color:'#ffb055',glyph:'W',wall:true},
@@ -1626,6 +1628,7 @@
     drill:{label:'Broca',color:'#9fb4c4',glyph:'B'}
   };
   subRef.child('items').on('value',s=>{
+    if(itemsDirty) return; // edições locais não salvas têm prioridade
     mapItems=s.val()||{};
     if(edItemSel&&!mapItems[edItemSel]) edItemSel=null;
     edItemUI();
@@ -1671,17 +1674,18 @@
     }
   }
   document.querySelectorAll('.edItemT').forEach(b=>b.addEventListener('click',()=>{edItemType=b.dataset.t;edItemUI();}));
+  function edItemTouch(){ itemsDirty=true; edPushHist(); edItemUI(); }
   document.getElementById('edItemClean').addEventListener('click',()=>{
-    if(edItemSel&&mapItems[edItemSel]) subRef.child('items/'+edItemSel+'/clean').set(!mapItems[edItemSel].clean);
+    if(edItemSel&&mapItems[edItemSel]){ mapItems[edItemSel].clean=!mapItems[edItemSel].clean; edItemTouch(); }
   });
   document.getElementById('edItemRotL').addEventListener('click',()=>{
-    if(edItemSel&&mapItems[edItemSel]) subRef.child('items/'+edItemSel+'/rot').set((((mapItems[edItemSel].rot|0)+315)%360));
+    if(edItemSel&&mapItems[edItemSel]){ mapItems[edItemSel].rot=(((mapItems[edItemSel].rot|0)+315)%360); edItemTouch(); }
   });
   document.getElementById('edItemRotR').addEventListener('click',()=>{
-    if(edItemSel&&mapItems[edItemSel]) subRef.child('items/'+edItemSel+'/rot').set((((mapItems[edItemSel].rot|0)+45)%360));
+    if(edItemSel&&mapItems[edItemSel]){ mapItems[edItemSel].rot=(((mapItems[edItemSel].rot|0)+45)%360); edItemTouch(); }
   });
   document.getElementById('edItemDel').addEventListener('click',()=>{
-    if(edItemSel){ subRef.child('items/'+edItemSel).set(null); edItemSel=null; edItemUI(); }
+    if(edItemSel){ delete mapItems[edItemSel]; edItemSel=null; edItemTouch(); }
   });
   document.getElementById('edBrushSz').addEventListener('change',e=>{edBrushSz=+e.target.value;});
   document.getElementById('edCorrW').addEventListener('change',e=>{edCorrW=+e.target.value;});
@@ -2300,7 +2304,7 @@
 
   document.getElementById('dreNewDoc').addEventListener('click',()=>{
     const id='doc'+Date.now().toString(36);
-    dreRef.child('docs/'+id).set({code:'D-000',title:'NOVO DOCUMENTO',section:'files',lock:'open',level:1,order:50,body:''});
+    dreRef.child('docs/'+id).set({code:'D-000',title:'NOVO DOCUMENTO',section:'files',lock:'open',level:1,order:50,hidden:true,body:''});
     dreSelId=id;
   });
 
