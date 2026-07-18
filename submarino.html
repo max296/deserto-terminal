@@ -747,8 +747,8 @@
     const tY=dirX_*rx + dirY_*rd;
     return {tX, tY, rx, rd};
   }
-  function billboardDraw(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_, screenX, tY, projH, projW, fCanvas, alpha=1){
-    const y0=h/2-projH/2;
+  function billboardDraw(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_, screenX, tY, projH, projW, fCanvas, alpha=1, yTopO=null){
+    const y0=yTopO!==null?yTopO:h/2-projH/2;
     const x0=screenX-projW/2, x1=screenX+projW/2;
     if(x1<0||x0>w) return;
     const fog=Math.max(0,Math.min(1,1-tY/(VIS_WALL_*0.9)));
@@ -1046,6 +1046,110 @@
     return arr[h%arr.length];
   }
 
+  // ===== ITENS DO MUNDO (postes, geradores, brocas — colocados pelo Guardião) =====
+  // Registry EXTENSÍVEL: item novo = célula em ITEM_CELLS (medida na sheet) +
+  // entrada em ITEM_DEFS (altura, colisão, luz, regra de ângulo). Nada mais.
+  const ITEM_CELLS={
+    lamp_wall:[110,70,129,322], lamp_diag:[403,70,112,322],
+    lamp_front:[741,70,88,321], lamp_side:[1006,84,143,306],
+    gen_a:[56,463,228,159], gen_b:[651,443,232,180],
+    drill_a:[105,677,97,324], drill_b:[720,675,77,318]
+  };
+  const ITEM_DEFS={
+    lamp:    { hFrac:0.85, colR:8,  kind:'lamp3', light:{cRange:170,cPow:0.95,dRange:75,dPow:0.30}, headFrac:0.10 },
+    walllamp:{ hFrac:0.78, colR:6,  kind:'wall1', light:{cRange:150,cPow:0.85,dRange:68,dPow:0.26}, headFrac:0.14 },
+    gen:     { hFrac:0.40, colR:14, kind:'two', cells:['gen_a','gen_b'] },
+    drill:   { hFrac:0.82, colR:9,  kind:'two', cells:['drill_a','drill_b'] }
+  };
+  const ITEM_SPR={dirty:{},clean:{}}, ITEM_SPR_F={dirty:{},clean:{}};
+  ['dirty','clean'].forEach(st=>{
+    const im=new Image();
+    im.onload=()=>{
+      for(const [nm,[sx,sy,sw,sh]] of Object.entries(ITEM_CELLS)){
+        const c=document.createElement('canvas'); c.width=sw; c.height=sh;
+        c.getContext('2d').drawImage(im,sx,sy,sw,sh,0,0,sw,sh);
+        ITEM_SPR[st][nm]=c;
+        const f=document.createElement('canvas'); f.width=sw; f.height=sh;
+        const fc=f.getContext('2d'); fc.translate(sw,0); fc.scale(-1,1); fc.drawImage(c,0,0);
+        ITEM_SPR_F[st][nm]=f;
+      }
+    };
+    im.src='img/items_'+st+'.png';
+  });
+  let worldItems={}, worldItemsArr=[];
+  function itemBlocked(px,pd){
+    for(let i=0;i<worldItemsArr.length;i++){
+      const it=worldItemsArr[i], def=ITEM_DEFS[it.type];
+      if(!def) continue;
+      const R=def.colR+9, dx=px-it.x, dd=pd-it.depth;
+      if(dx*dx+dd*dd<R*R) return true;
+    }
+    return false;
+  }
+  // Doom rotation dos itens: sem sprite de costas (canon: jogadores não veem por trás)
+  function itemCellFor(it,def){
+    const viewAngle=Math.atan2(nav.x-it.x, nav.depth-it.depth)*180/Math.PI;
+    const rel=(((viewAngle-(it.rot||0))%360)+360)%360;
+    if(def.kind==='wall1') return {nm:'lamp_wall',flip:rel>180};
+    if(def.kind==='two'){
+      const oct=Math.round(rel/90)%4;
+      return {nm:def.cells[oct%2],flip:oct===3};
+    }
+    const oct=Math.round(rel/45)%8;
+    const nm=['lamp_front','lamp_diag','lamp_side','lamp_diag','lamp_front','lamp_diag','lamp_side','lamp_diag'][oct];
+    return {nm,flip:oct>=5};
+  }
+  function drawItemSprites(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_){
+    if(!worldItemsArr.length||!ITEM_SPR.dirty.lamp_front) return;
+    const hdg=nav.heading*Math.PI/180;
+    const dirX=Math.sin(hdg), dirY=Math.cos(hdg);
+    const invDet=1.0/Math.tan(Math.PI*78/360);
+    const list=[];
+    for(const it of worldItemsArr){
+      const {tX,tY}=billboardTransform(it.x,it.depth,hdg,invDet,dirX,dirY);
+      if(tY>0.5&&tY<VIS_WALL_*1.1) list.push({it,tX,tY});
+    }
+    list.sort((a,b)=>b.tY-a.tY);
+    const depthN2=Math.max(0,Math.min(1,(nav.depth-START_DEPTH)/(MAX_DEPTH-START_DEPTH)));
+    const amb=Math.max(0.06,1-depthN2*0.8);
+    for(const {it,tX,tY} of list){
+      const def=ITEM_DEFS[it.type]; if(!def) continue;
+      const st=it.clean?'clean':'dirty';
+      const {nm,flip}=itemCellFor(it,def);
+      const spr=(flip?ITEM_SPR_F:ITEM_SPR)[st][nm]; if(!spr) continue;
+      const screenX=w/2*(1+tX/tY);
+      const wallPx=WALLH_/tY;
+      const projH=wallPx*def.hFrac;
+      const projW=projH*(spr.width/spr.height);
+      if(screenX+projW/2<0||screenX-projW/2>w) continue;
+      const yBase=h/2+wallPx/2;            // assenta na base da parede (chão)
+      const yTop=yBase-projH;
+      const lit=lightOn?Math.max(0,1-Math.hypot(screenX-beamX*w,(yTop+projH*0.5)-beamY*h)/(Math.min(w,h)*0.62)):0;
+      let alpha=Math.min(1,amb*0.62+lit*0.55);
+      if(def.light) alpha=Math.max(alpha,it.clean?0.78:0.40); // lâmpada acesa se auto-ilumina
+      billboardDraw(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_,screenX,tY,projH,projW,spr,alpha,yTop);
+      // halo do painel de luz (occlusion pelo zbuffer, como a bioluminescência)
+      if(def.light){
+        const col=Math.max(0,Math.min(COLS_-1,Math.floor(screenX/colW_)));
+        if(tY<zBuf[col]+10){
+          const hy=yTop+projH*def.headFrac;
+          const flick=it.clean?1:(0.72+0.28*Math.sin(t*0.21+(it.x||0)));
+          const fog=Math.max(0,Math.min(1,1-tY/(VIS_WALL_*0.95)));
+          const a0=(it.clean?0.5:0.16)*flick*(0.35+0.65*fog);
+          if(a0>0.02){
+            const rad=Math.max(6,projH*0.34);
+            const g=x.createRadialGradient(screenX,hy,0,screenX,hy,rad);
+            if(it.clean){ g.addColorStop(0,`rgba(210,235,255,${a0.toFixed(3)})`); g.addColorStop(0.4,`rgba(120,180,230,${(a0*0.4).toFixed(3)})`); }
+            else { g.addColorStop(0,`rgba(230,190,110,${a0.toFixed(3)})`); g.addColorStop(0.4,`rgba(160,120,50,${(a0*0.35).toFixed(3)})`); }
+            g.addColorStop(1,'transparent');
+            x.save(); x.globalCompositeOperation='screen'; x.fillStyle=g;
+            x.beginPath(); x.arc(screenX,hy,rad,0,6.28); x.fill(); x.restore();
+          }
+        }
+      }
+    }
+  }
+
   let grabStartT=0;
   // flinch do STRUGGLE: surtos de luta sacodem a criatura agarrada na tela
   let grabFlinchX=0,grabFlinchY=0,grabFlinchVX=0,grabFlinchVY=0,nextFlinchT=0;
@@ -1242,6 +1346,17 @@
       // alcance de visão em wu: paredes E chão dissolvem na cor da água nesta distância
       const VIS_WALL = Math.max(180, 320 - depthN*140);
       const WALL_SIGHT = VIS_WALL*0.9;
+      // lâmpadas colocadas pelo GM iluminam o mundo DE VERDADE: coleta as ativas
+      const liveL=[];
+      for(const it of worldItemsArr){
+        const defL=ITEM_DEFS[it.type];
+        if(!defL||!defL.light) continue;
+        const rng=it.clean?defL.light.cRange:defL.light.dRange;
+        const pw=it.clean?defL.light.cPow:defL.light.dPow;
+        const ddx=it.x-nav.x, ddd=it.depth-nav.depth;
+        if(ddx*ddx+ddd*ddd<(VIS_WALL+rng)*(VIS_WALL+rng)) liveL.push({wx:it.x,wd:it.depth,rng,pw});
+      }
+      const nLL=liveL.length;
 
       // ---- CHÃO via floor casting (lodev), SEM teto (canon: o teto foi descartado) ----
       // rowDist = posZ/p em WORLD UNITS (posZ = WALLH/2): o chão encontra a base das
@@ -1294,7 +1409,13 @@
             }
             const tc=fpx[((tyy&TEX_MASK)<<TEX_SHIFT)|(txx&TEX_MASK)];
             const spotI=lightOn?Math.max(0,1-Math.hypot(sx-bxw,y-byh)/spotR_):0;
-            const kt=(lvBase+spotI*0.95*fogF)*fogFK;
+            let addL=0;
+            for(let li=0;li<nLL;li++){
+              const L=liveL[li], lxd=flX-L.wx, lyd=flY-L.wd;
+              const d2=lxd*lxd+lyd*lyd;
+              if(d2<L.rng*L.rng){ const q=1-Math.sqrt(d2)/L.rng; addL+=L.pw*q*q; }
+            }
+            const kt=(lvBase+spotI*0.95*fogF+addL)*fogFK;
             const r=Math.min(255,(tc&255)*kt*fTr+waterR*wMixF)|0;
             const g=Math.min(255,((tc>>>8)&255)*kt*fTg+waterG*wMixF)|0;
             const b=Math.min(255,((tc>>>16)&255)*kt*fTb+waterB*wMixF)|0;
@@ -1359,6 +1480,12 @@
         const litH=lightOn?Math.max(0,Math.min(1,(Math.PI/5-angDiffH)/(Math.PI/5-Math.PI/14))):0;
         const litV=lightOn?Math.max(0,1-Math.abs(beamY-0.5)*2.5):0;
         const lit=litH*litV*fog;
+        let addW=0;
+        for(let li=0;li<nLL;li++){
+          const L=liveL[li], lxd=rx-L.wx, lyd=rd-L.wd;
+          const d2=lxd*lxd+lyd*lyd;
+          if(d2<L.rng*L.rng){ const q=1-Math.sqrt(d2)/L.rng; addW+=L.pw*q*q; }
+        }
         const sideShade=hitSide<0?0.84:1.0;
         // ---- TIRA DE TEXTURA ----
         // U = (rx+rd): coordenada DIAGONAL do mundo — nunca constante em nenhuma face.
@@ -1393,7 +1520,7 @@
         // escurecimento ambiente: rocha no breu é escura; o facho recupera a cor.
         // pilar recebe luz base maior — concreto claro se destaca da rocha
         const ambBase=hitKind==="pillar"?(0.46+ambLight*0.58):(0.24+ambLight*0.60);
-        const ambF=Math.max(0,Math.min(1,ambBase*sideShade+lit*0.72));
+        const ambF=Math.max(0,Math.min(1,ambBase*sideShade+lit*0.72+addW*0.85));
         if(ambF<0.995){ x.fillStyle=`rgba(0,0,0,${(1-ambF).toFixed(3)})`; x.fillRect(xL,y0,wW,hS); }
         // fog: dissolve na cor da água pela DISTÂNCIA (única fonte de fade)
         const pres=fogK;
@@ -1420,8 +1547,9 @@
         const tgt=Math.sqrt(Math.max(0,Math.min(1,1-dAim/(WALL_SIGHT*0.55))));
         aimNearSm+=(tgt-aimNearSm)*0.15;
       }
-      // sprites billboard no mundo (depth test pelo zbuffer)
+      // sprites billboard no mundo (depth test pelo zbuffer) — itens são cenário, vão antes
       if(mode==="diving"||mode==="reeling"){
+        drawItemSprites(w,h,zBuffer,COLS,colW,WALLH,VIS_WALL);
         drawFishSprites(w,h,zBuffer,COLS,colW,WALLH,VIS_WALL);
         drawCreatureSprites(w,h,zBuffer,COLS,colW,WALLH,VIS_WALL);
       }
@@ -1826,9 +1954,9 @@
               let nx=nav.x+gdx/gdist*spd;
               let nd=Math.max(MIN_DIVE_DEPTH,Math.min(MAX_DEPTH,nav.depth+gdd/gdist*spd));
               const R=26;
-              if(isWall(nx,nd)||isWall(nx-R,nd)||isWall(nx+R,nd)||pillarBlocked(nx,nd)){
-                if(!isWall(nav.x,nd)&&!isWall(nav.x-R,nd)&&!isWall(nav.x+R,nd)&&!pillarBlocked(nav.x,nd)) nx=nav.x;
-                else if(!isWall(nx,nav.depth)&&!isWall(nx-R,nav.depth)&&!isWall(nx+R,nav.depth)&&!pillarBlocked(nx,nav.depth)) nd=nav.depth;
+              if(isWall(nx,nd)||isWall(nx-R,nd)||isWall(nx+R,nd)||pillarBlocked(nx,nd)||itemBlocked(nx,nd)){
+                if(!isWall(nav.x,nd)&&!isWall(nav.x-R,nd)&&!isWall(nav.x+R,nd)&&!pillarBlocked(nav.x,nd)&&!itemBlocked(nav.x,nd)) nx=nav.x;
+                else if(!isWall(nx,nav.depth)&&!isWall(nx-R,nav.depth)&&!isWall(nx+R,nav.depth)&&!pillarBlocked(nx,nav.depth)&&!itemBlocked(nx,nav.depth)) nd=nav.depth;
                 else {nx=nav.x;nd=nav.depth;}
               }
               nav.x=nx; nav.depth=nd; pushNav();
@@ -1873,9 +2001,9 @@
             }
           }
           // pilares (sobrepostos ao grid) — hitbox com raio próprio
-          if(pillarBlocked(nx, nd)){
-            if(!pillarBlocked(nav.x, nd)){ nx=nav.x; hitWall=true; }
-            else if(!pillarBlocked(nx, nav.depth)){ nd=nav.depth; hitWall=true; }
+          if(pillarBlocked(nx, nd)||itemBlocked(nx, nd)){
+            if(!pillarBlocked(nav.x, nd)&&!itemBlocked(nav.x, nd)){ nx=nav.x; hitWall=true; }
+            else if(!pillarBlocked(nx, nav.depth)&&!itemBlocked(nx, nav.depth)){ nd=nav.depth; hitWall=true; }
             else { nx=nav.x; nd=nav.depth; hitWall=true; }
           }
           if(isStationBackWall(nd) && !isStationBackWall(nav.depth)){
@@ -1920,7 +2048,7 @@
       if(rdist>4&&rspd>0.001){
         const R=26;
         const blockedR=(px,pd)=>isWall(px,pd)||isWall(px-R,pd)||isWall(px+R,pd)
-          ||isWall(px,pd-R)||isWall(px,pd+R)||pillarBlocked(px,pd);
+          ||isWall(px,pd-R)||isWall(px,pd+R)||pillarBlocked(px,pd)||itemBlocked(px,pd);
         const ux=rdx/rdist, ud=rdd/rdist;
         // STEERING: se o passo direto colide, gira o vetor e contorna a quina
         // suavemente (em vez de raspar/travar na parede)
@@ -2606,6 +2734,12 @@
     // noPillars distingue "GM removeu todos" de "campo ausente" (RTDB some com [] vazio)
     PILLARS=v.noPillars?[]:(Array.isArray(v.pillars)?v.pillars:DEFAULT_PILLARS.slice());
     if(v.spawn&&typeof v.spawn.depth==='number') SPAWN=v.spawn;
+  });
+  // itens do mundo (postes/geradores/brocas): render, luz e colisão leem worldItemsArr
+  ref.child("items").on("value",snap=>{
+    worldItems=snap.val()||{};
+    worldItemsArr=Object.entries(worldItems).map(([id,v])=>({id,...v}))
+      .filter(it=>it&&typeof it.x==='number'&&typeof it.depth==='number');
   });
   // grab: criatura agarrou o sub (guardião controla)
   ref.child("grabbedBy").on("value",snap=>{
