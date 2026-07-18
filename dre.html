@@ -1034,10 +1034,11 @@
     scheduleBrownout();
   }
   function powerOff(){
-    state='off'; booted=false;
+    state='off'; booted=false; brownoutActive=false;
     macStop(); stopAudio(); closeMedia();
     if(bootTimer) clearTimeout(bootTimer);
     if(brownTimer) clearTimeout(brownTimer);
+    $('vgaWrap').classList.remove('collapse','reviving');
     $('room').classList.add('dark');
     $('screenHost').classList.add('dead');
     $('vga').classList.add('dead');
@@ -1057,6 +1058,8 @@
       $('room').classList.add('dark');
       $('glow').classList.add('off'); $('bezelGlow').classList.add('off');
       setTimeout(()=>{
+        // energia CORTADA pelo GM durante o colapso: fica morto — nada de reviver
+        if(state==='off'){ w.classList.remove('collapse'); brownoutActive=false; return; }
         $('vga').classList.remove('dead');
         $('room').classList.remove('dark');
         $('glow').classList.remove('off'); $('bezelGlow').classList.remove('off');
