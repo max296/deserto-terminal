@@ -438,6 +438,7 @@
   let ropeState='slack';        // 'slack' = paga/largada no leito · 'taut' = tensionada
   let slackPath=[], _slackLast=null; // trajeto real percorrido (a corda frouxa deita nele)
   const ROPE_MARGIN=6;
+  let _reelStuckT=0,_reelBest=1e9,_reelSteerBias=1; // anti-prisão do puxão
   function ropeAnchor(){ return {x:SPAWN.x, depth:1000}; }
   function ropeLOS(x1,d1,x2,d2,margin){
     const M=margin||ROPE_MARGIN;
@@ -553,12 +554,15 @@
   // ponto de PUXÃO: o mais distante ao longo da corda alcançável em linha reta
   // com FOLGA DE SUBMARINO (26wu) — corta a curva por dentro, nunca prende na quina
   function reelTarget(){
-    // folga 34wu (> hitbox 26): o caminho puxado passa LONGE das quinas
-    for(let i=0;i<ropePivots.length;i++){
-      const p=ropePivots[i];
-      if(ropeLOS(nav.x,nav.depth,p.x,p.depth,34)) return p;
+    // folga 34wu (> hitbox 26): o caminho puxado passa LONGE das quinas.
+    // Sem candidato, relaxa a folga em cascata — melhor mirar um pivô DISTANTE
+    // com folga apertada (direção diagonal, contorna) do que o colado na quina.
+    for(const M of [34,22,14]){
+      for(let i=0;i<ropePivots.length;i++){
+        const p=ropePivots[i];
+        if(ropeLOS(nav.x,nav.depth,p.x,p.depth,M)) return p;
+      }
     }
-    // sem linha folgada: mira o pivô mais próximo mesmo (o steering desvia)
     return ropePivots[ropePivots.length-1]||ropeAnchor();
   }
 
@@ -1056,10 +1060,10 @@
     drill_a:[105,677,97,324], drill_b:[720,675,77,318]
   };
   const ITEM_DEFS={
-    lamp:    { hFrac:0.85, colR:8,  kind:'lamp3', light:{cRange:260,cPow:1.25,dRange:110,dPow:0.42}, headFrac:0.10 },
-    walllamp:{ hFrac:0.78, colR:6,  kind:'wall1', light:{cRange:230,cPow:1.10,dRange:95,dPow:0.36}, headFrac:0.14 },
+    lamp:    { hFrac:0.85, colR:8,  kind:'lamp3', light:{cRange:300,cPow:1.8,dRange:120,dPow:0.55}, headFrac:0.10 },
+    walllamp:{ hFrac:0.78, colR:6,  kind:'wall1', light:{cRange:270,cPow:1.6,dRange:105,dPow:0.48}, headFrac:0.14 },
     gen:     { hFrac:0.40, colR:14, kind:'two', cells:['gen_a','gen_b'] },
-    drill:   { hFrac:1.30, colR:14, kind:'two', cells:['drill_a','drill_b'] }
+    drill:   { hFrac:2.0,  colR:14, kind:'two', cells:['drill_a','drill_b'] }
   };
   const ITEM_SPR={dirty:{},clean:{}}, ITEM_SPR_F={dirty:{},clean:{}};
   ['dirty','clean'].forEach(st=>{
@@ -1097,7 +1101,9 @@
     }
     const oct=Math.round(rel/45)%8;
     const nm=['lamp_front','lamp_diag','lamp_side','lamp_diag','lamp_front','lamp_diag','lamp_side','lamp_diag'][oct];
-    return {nm,flip:oct>=1&&oct<=3}; // o sprite diagonal aponta pro lado OPOSTO do assumido
+    // diagonal e lado foram DESENHADOS em convenções opostas: cada um tem sua tabela
+    const FLIPS=[false,true,false,true,false,false,true,false];
+    return {nm,flip:FLIPS[oct]};
   }
   function drawItemSprites(w,h,zBuf,COLS_,colW_,WALLH_,VIS_WALL_){
     if(!worldItemsArr.length||!ITEM_SPR.dirty.lamp_front) return;
@@ -1127,7 +1133,13 @@
       if(screenX+projW/2<0||screenX-projW/2>w) continue;
       const yBase=h/2+wallPx/2;            // assenta na base da parede (chão)
       const yTop=yBase-projH;
-      const lit=lightOn?Math.max(0,1-Math.hypot(screenX-beamX*w,(yTop+projH*0.5)-beamY*h)/(Math.min(w,h)*0.62)):0;
+      // lanterna: distância ao ponto MAIS PRÓXIMO do retângulo do sprite (itens
+      // baixos como o gerador ficam longe do centro da tela — o clamp acerta)
+      const bpx=beamX*w, bpy=beamY*h;
+      const qx=Math.max(screenX-projW/2,Math.min(bpx,screenX+projW/2));
+      const qy=Math.max(yTop,Math.min(bpy,yTop+projH));
+      const litRaw=lightOn?Math.max(0,1-Math.hypot(qx-bpx,qy-bpy)/(Math.min(w,h)*0.62)):0;
+      const lit=litRaw*Math.max(0,Math.min(1,1-tY/(VIS_WALL_*0.75)));
       const selfL=def.light?(it.clean?0.88:0.52):0; // lâmpada acesa se auto-ilumina
       const dk=Math.max(0.10,Math.min(1,Math.max(selfL,amb*0.9+lit*0.8)));
       let sprd=spr;
@@ -1162,10 +1174,11 @@
             x.beginPath(); x.arc(screenX,hy,coreR*3,0,6.28); x.fill(); x.restore();
           }
           // CORONA: luz espalhada na água banha a região em volta em degradê
-          const fogC=Math.max(0,Math.min(1,1-tY/(VIS_WALL_*1.05)));
-          const corA=(it.clean?0.34:0.10)*flick*fogC;
+          // (fade estendido: encolhe suave conforme se afasta, não corta)
+          const fogC=Math.max(0,Math.min(1,1-tY/(VIS_WALL_*1.55)));
+          const corA=(it.clean?0.45:0.13)*flick*fogC;
           if(corA>0.015){
-            const corR=Math.max(14,projH*(it.clean?1.9:1.0));
+            const corR=Math.max(14,projH*(it.clean?2.4:1.2));
             const wCol=it.clean?'150,200,245':'190,150,70';
             const g2=x.createRadialGradient(screenX,hy,0,screenX,hy,corR);
             g2.addColorStop(0,`rgba(${wCol},${corA.toFixed(3)})`);
@@ -1444,7 +1457,9 @@
               const d2=lxd*lxd+lyd*lyd;
               if(d2<L.rng*L.rng){ const q=1-Math.sqrt(d2)/L.rng; addL+=L.pw*q*q; }
             }
-            const kt=(lvBase+spotI*0.95*fogF+addL)*fogFK;
+            // a luz da lâmpada FURA parcialmente o fog do observador: a mancha
+            // iluminada no chão faz degradê com a distância em vez de sumir
+            const kt=(lvBase+spotI*0.95*fogF)*fogFK+addL*(0.30+0.70*fogFK);
             const r=Math.min(255,(tc&255)*kt*fTr+waterR*wMixF)|0;
             const g=Math.min(255,((tc>>>8)&255)*kt*fTg+waterG*wMixF)|0;
             const b=Math.min(255,((tc>>>16)&255)*kt*fTb+waterB*wMixF)|0;
@@ -1551,10 +1566,11 @@
         // escurecimento ambiente: rocha no breu é escura; o facho recupera a cor.
         // pilar recebe luz base maior — concreto claro se destaca da rocha
         const ambBase=hitKind==="pillar"?(0.46+ambLight*0.58):(0.24+ambLight*0.60);
-        const ambF=Math.max(0,Math.min(1,ambBase*sideShade+lit*0.72+addW*1.05));
+        const ambF=Math.max(0,Math.min(1,ambBase*sideShade+lit*0.72+addW*1.15));
         if(ambF<0.995){ x.fillStyle=`rgba(0,0,0,${(1-ambF).toFixed(3)})`; x.fillRect(xL,y0,wW,hS); }
-        // fog: dissolve na cor da água pela DISTÂNCIA (única fonte de fade)
-        const pres=fogK;
+        // fog: dissolve na cor da água pela DISTÂNCIA — mas parede banhada por
+        // lâmpada RESISTE ao fog (a região iluminada é visível de mais longe)
+        const pres=Math.min(1,fogK+addW*0.35);
         if(pres<0.995){ x.fillStyle=`rgba(${waterR|0},${waterG|0},${waterB|0},${(1-pres).toFixed(3)})`; x.fillRect(xL,y0,wW,hS); }
         // brilho do facho por cima (luz espalhada na água em frente à rocha)
         if(lit>0.05){
@@ -2081,14 +2097,31 @@
         const blockedR=(px,pd)=>isWall(px,pd)||isWall(px-R,pd)||isWall(px+R,pd)
           ||isWall(px,pd-R)||isWall(px,pd+R)||pillarBlocked(px,pd)||itemBlocked(px,pd);
         const ux=rdx/rdist, ud=rdd/rdist;
-        // STEERING: se o passo direto colide, gira o vetor e contorna a quina
-        // suavemente (em vez de raspar/travar na parede)
+        // STEERING: se o passo direto colide, gira o vetor e contorna a quina.
+        // Vai até ±90°: com alvo quase VERTICAL e parede horizontal no caminho
+        // (caso norte/sul), o único passo livre é o deslize lateral puro.
+        // Preso mesmo assim (alvo atrás da parede)? MODO DESESPERO: o leque
+        // abre até ±150° COM PERSISTÊNCIA DE LADO (bias) — o sub compromete
+        // com um lado do contorno (U-turn) em vez de quicar entre os dois.
         let nx=nav.x, nd=nav.depth, movedOk=false;
-        for(const a of [0,0.35,-0.35,0.7,-0.7,1.05,-1.05]){
+        const MAGS=[0.35,0.7,1.05,1.35,1.57,1.83,2.09,2.35,2.62];
+        let fan;
+        if(_reelStuckT>0.25){
+          fan=[0];
+          for(const m of MAGS) fan.push(_reelSteerBias*m);
+          for(const m of MAGS) fan.push(-_reelSteerBias*m);
+        } else {
+          fan=[0,0.35,-0.35,0.7,-0.7,1.05,-1.05,1.35,-1.35,1.57,-1.57];
+        }
+        for(const a of fan){
           const ca=Math.cos(a), sa=Math.sin(a);
           const tx3=nav.x+(ux*ca-ud*sa)*rspd;
           const td3=Math.max(1000,nav.depth+(ux*sa+ud*ca)*rspd);
-          if(!blockedR(tx3,td3)){ nx=tx3; nd=td3; movedOk=true; break; }
+          if(!blockedR(tx3,td3)){
+            nx=tx3; nd=td3; movedOk=true;
+            if(_reelStuckT>0.25&&a!==0) _reelSteerBias=a>0?1:-1;
+            break;
+          }
         }
         if(!movedOk){
           // fallback: deslize por eixo
@@ -2097,6 +2130,26 @@
           else if(!blockedR(tx3,nav.depth)) nx=tx3;
         }
         nav.x=nx; nav.depth=nd;
+        // ANTI-PRISÃO: pivô encravado numa quina que a hitbox não alcança e o
+        // unwrap não solta → o sub OSCILA raspando sem se aproximar de verdade
+        // (a oscilação nunca bate o MÍNIMO HISTÓRICO de distância). Nesse caso
+        // a corda ESCORREGA ao redor da quina: o pivô DESLIZA em direção ao sub
+        // (preserva o caminho, só relaxa a dobra) até destravar. Nunca prende.
+        const newDist=Math.hypot(rtgt.x-nav.x,rtgt.depth-nav.depth);
+        if(newDist<_reelBest-2.5){ _reelBest=newDist; _reelStuckT=0; }
+        else _reelStuckT+=dt;
+        if(_reelStuckT>0.55&&ropePivots.length>1){
+          const lp=ropePivots[ropePivots.length-1];
+          const dl=Math.hypot(nav.x-lp.x,nav.depth-lp.depth);
+          if(dl<10) ropePivots.pop();
+          else { lp.x+=(nav.x-lp.x)/dl*12; lp.depth+=(nav.depth-lp.depth)/dl*12; }
+          _reelStuckT=0; _reelBest=1e9;
+        }
+      }
+      else if(rdist<=4&&ropePivots.length>1){
+        // chegou na quina: ela cumpriu o papel — o puxão passa pro pivô anterior
+        ropePivots.pop();
+        _reelStuckT=0; _reelBest=1e9;
       }
       pushNav();
       // só resta a âncora e chegou à profundidade do spawn: emerge
