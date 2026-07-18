@@ -2022,8 +2022,13 @@
         </div>
         <div><div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px">DATABANK DE ORIGEM</div>
           <input id="dreF-bank" value="${escapeHtml(d.bank||'')}" placeholder="DB-EXT-4" style="${inp};width:104px"></div>
-        ${(secOfG(d)==='audio'||secOfG(d)==='media')?`<div style="flex:1;min-width:230px"><div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px">URL DO ARQUIVO (ex.: audio/rolo76.mp3, img/foto.jpg, video.mp4 — vazio = "não digitalizado")</div>
-          <input id="dreF-url" value="${escapeHtml(d.url||'')}" style="${inp};width:100%"></div>`:''}
+        ${(secOfG(d)==='audio'||secOfG(d)==='media')?`<div style="flex:1;min-width:260px"><div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px">ARQUIVO — URL (repo ou web) OU ANEXO EMBUTIDO — vazio = "não digitalizado"</div>
+          <input id="dreF-url" value="${escapeHtml(d.url||'')}" style="${inp};width:100%">
+          <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+            <button class="btn" id="dreF-attach" style="font-size:9px">⤒ ANEXAR ARQUIVO DO PC (embute no banco — sem repo)</button>
+            <input type="file" id="dreF-file" accept="audio/*,image/*,video/*" style="display:none">
+            <span id="dreF-fstat" style="font-size:9px;color:var(--ink-dim)">${String(d.url||'').startsWith('data:')?'embutido no banco (~'+Math.round(String(d.url).length*0.75/1024)+'KB)':''}</span>
+          </div></div>`:''}
         <button class="btn" id="dreF-hide" style="font-size:10px;color:${d.hidden?'var(--warn)':'var(--ink-dim)'};border-color:${d.hidden?'var(--warn)':'var(--line)'}">${d.hidden?'OCULTO — REVELAR (transfere no terminal)':'VISÍVEL — OCULTAR'}</button>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">
@@ -2062,6 +2067,24 @@
     document.getElementById('dreF-hide').addEventListener('click',()=>{
       dreRef.child('docs/'+dreSelId+'/hidden').set(!dreDocs[dreSelId].hidden);
     });
+    const fBtn=document.getElementById('dreF-attach');
+    if(fBtn){
+      const fInp=document.getElementById('dreF-file'), fStat=document.getElementById('dreF-fstat');
+      fBtn.addEventListener('click',()=>fInp.click());
+      fInp.addEventListener('change',()=>{
+        const f=fInp.files[0]; if(!f) return;
+        const mb=f.size/1048576;
+        if(f.size>8*1024*1024){ fStat.textContent='GRANDE DEMAIS ('+mb.toFixed(1)+'MB) — teto ~8MB. Comprime ou usa URL/repo.'; fStat.style.color='var(--danger)'; return; }
+        if(f.size>2.5*1024*1024&&!confirm(mb.toFixed(1)+'MB embutidos no banco pesam o carregamento do terminal toda sessão. Continuar?')) return;
+        const r=new FileReader();
+        r.onload=()=>{
+          document.getElementById('dreF-url').value=r.result;
+          fStat.style.color='var(--live)';
+          fStat.textContent='anexado: '+f.name+' ('+Math.round(f.size/1024)+'KB) — clique SALVAR pra gravar';
+        };
+        r.readAsDataURL(f);
+      });
+    }
     document.getElementById('dreF-save').addEventListener('click',()=>{
       const g=id=>document.getElementById(id);
       const doc={
