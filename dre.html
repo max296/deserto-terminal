@@ -14,7 +14,12 @@
   #room::after{content:'';position:absolute;inset:0;z-index:6;pointer-events:none;
     background:radial-gradient(ellipse 75% 70% at 50% 44%, transparent 40%, rgba(0,0,0,.55) 78%, rgba(0,0,0,.85) 100%)}
   #tableWrap{position:absolute;left:-6%;right:-6%;bottom:0;height:42%;overflow:hidden;
-    filter:brightness(.55) saturate(.6)}
+    filter:brightness(.55) saturate(.6);transition:filter .7s}
+  /* PC desligado: a única luz da sala morre — sobra silhueta */
+  #room.dark #tableWrap{filter:brightness(.13) saturate(.35)}
+  #room.dark #crtImg{filter:brightness(.30) contrast(1.02)
+    drop-shadow(0 22px 30px rgba(0,0,0,.9)) drop-shadow(0 5px 9px rgba(0,0,0,.8))}
+  #room.dark #dust{opacity:.05}
   #tableWrap img{position:absolute;left:0;bottom:0;width:100%;height:170%;object-fit:cover;
     object-position:bottom}
   /* a luz que a tela joga na sala + o REFLEXO no tampo da mesa */
@@ -33,7 +38,8 @@
     background:radial-gradient(ellipse 50% 50% at 50% 50%, rgba(0,0,0,.85), rgba(0,0,0,.45) 55%, transparent 78%)}
   #crtImg{display:block;width:100%;height:100%;pointer-events:none;position:relative;z-index:4;
     filter:brightness(.78) contrast(1.05)
-      drop-shadow(0 22px 30px rgba(0,0,0,.85)) drop-shadow(0 5px 9px rgba(0,0,0,.75))}
+      drop-shadow(0 22px 30px rgba(0,0,0,.85)) drop-shadow(0 5px 9px rgba(0,0,0,.75));
+    transition:filter .7s}
   /* a própria tela ilumina o bezel ao redor (posicionado via JS) */
   #bezelGlow{position:absolute;z-index:6;pointer-events:none;mix-blend-mode:screen;
     background:radial-gradient(ellipse 50% 50% at 50% 50%, rgba(120,145,190,.44), rgba(82,100,135,.17) 55%, transparent 78%);
@@ -125,7 +131,7 @@
 </style>
 </head>
 <body>
-<div id="room">
+<div id="room" class="dark">
   <div id="tableWrap"><img src="img/dre_table.jpg" alt=""></div>
   <div id="glow" class="off"></div>
   <div id="rig">
@@ -800,53 +806,72 @@
   }
   function closeMedia(){ const mb=$('mediaBox'); mediaVid=null; mediaEl=null; mediaZoom=1; mediaPanX=0; mediaPanY=0; mb.style.display='none'; mb.innerHTML=''; }
 
-  // ===== TRANSFERÊNCIA ENTRANTE (GM revelou um registro → chega de um databank) =====
+  // ===== TRANSFERÊNCIA ENTRANTE (GM revelou registros → um "disco" entra no leitor) =====
+  // Registros revelados juntos e com o MESMO databank chegam como UM volume,
+  // com uma barra de progresso pra cada registro.
   function processDl(){
     if(dlBusy||!dlQueue.length||brownoutActive) return;
     if(state!=='menu'&&state!=='index') return; // não interrompe leitura em andamento
-    const d=dlQueue.shift(); dlBusy=true;
+    const bank=dlQueue[0].bank||'';
+    let batch=dlQueue.filter(d=>(d.bank||'')===bank);
+    dlQueue=dlQueue.filter(d=>(d.bank||'')!==bank);
+    if(batch.length>10){ dlQueue=batch.slice(10).concat(dlQueue); batch=batch.slice(0,10); }
+    dlBusy=true;
     const back=state; // pra onde voltar
     state='download';
-    runDlAnim(d,()=>{
+    runDlAnim(batch,()=>{
       dlBusy=false;
       state=back; revealNext=true; render();
     });
   }
   setInterval(processDl,1700);
-  function runDlAnim(d,done){
-    const bank=String(d.bank||'DB-EXT-'+(((d.code||'?').charCodeAt(0))%7+2)).toUpperCase();
-    $('tuiHead').textContent='TRANSFERÊNCIA ENTRANTE — ENLACE DE DADOS';
+  function runDlAnim(list,done){
+    const bank=String(list[0].bank||'DB-EXT-'+(((list[0].code||'?').charCodeAt(0))%7+2)).toUpperCase();
+    $('tuiHead').textContent='LEITOR EXTERNO — VOLUME DETECTADO';
     $('tuiFoot').textContent='AGUARDE — NÃO DESLIGUE O TERMINAL';
-    const lines=['<span class="nvbar">▼ TRANSFERÊNCIA ENTRANTE</span>','',
-      `<span class="gy">ORIGEM: DATABANK ${esc(bank)}</span>`,
-      'ESTABELECENDO ENLACE <span class="blink">▉</span>'];
+    const nm=d=>`[${esc(d.code||'?')}] ${esc(dispTitle(d)).slice(0,24)}`;
+    const lines=['<span class="nvbar">▼ DISCO NO LEITOR — TRANSFERÊNCIA ENTRANTE</span>','',
+      `<span class="gy">VOLUME: DATABANK ${esc(bank)} — ${list.length} REGISTRO${list.length>1?'S':''}</span>`,
+      'MONTANDO VOLUME <span class="blink">▉</span>'];
     const paint=()=>{ $('tuiBody').innerHTML=lines.join('\n'); };
     paint();
+    const barRow=[];
     setTimeout(()=>{
       if(state!=='download'){ done(); return; }
-      lines[3]='ESTABELECENDO ENLACE ......... OK';
-      lines.push(`RECEBENDO: [${esc(d.code||'?')}] ${esc(dispTitle(d)).slice(0,32)}`,'','');
-      const blocks=5+Math.floor(Math.random()*5);
-      let bi=0;
-      const tick=()=>{
+      lines[3]='MONTANDO VOLUME .......... OK';
+      lines.push('');
+      list.forEach((d,i)=>{
+        barRow[i]=lines.length;
+        lines.push(`${nm(d).padEnd(34)} <span class="gy">${'░'.repeat(16)} AGUARDA</span>`);
+      });
+      lines.push('');
+      paint();
+      let idx=0;
+      const startItem=()=>{
         if(state!=='download'){ done(); return; }
-        bi++;
-        if(Math.random()<0.5) macSeekNoise(3);
-        const fill=Math.round(bi/blocks*24);
-        lines[lines.length-1]=`BLOCO ${bi}/${blocks}  <span class="wt">${'▓'.repeat(fill)}${'░'.repeat(24-fill)}</span> ${String(Math.round(bi/blocks*100)).padStart(3)}%`;
-        if(bi>=blocks){
-          lines.push('','VERIFICANDO PARIDADE ......... OK',
-            `<span class="gy">ARQUIVADO EM: ${SECTIONS[secOf(d)]}</span>`);
+        if(idx>=list.length){
+          lines.push('VERIFICANDO PARIDADE ...... OK',
+            '<span class="gy">VOLUME ARQUIVADO — PODE EJETAR O DISCO</span>');
           paint();
-          setTimeout(done,1500);
+          setTimeout(done,1600);
           return;
         }
-        if(Math.random()<0.20) lines.splice(lines.length-1,0,`<span class="gy">  BLOCO ${bi} REENVIADO — ERRO DE PARIDADE</span>`);
-        paint();
-        setTimeout(tick,380+Math.random()*680);
+        const d=list[idx], row=barRow[idx];
+        const blocks=4+Math.floor(Math.random()*4);
+        let bi=0;
+        const tick=()=>{
+          if(state!=='download'){ done(); return; }
+          bi++;
+          if(Math.random()<0.4) macSeekNoise(2);
+          const fill=Math.round(bi/blocks*16);
+          lines[row]=`${nm(d).padEnd(34)} <span class="wt">${'▓'.repeat(fill)}${'░'.repeat(16-fill)}</span> ${String(Math.round(bi/blocks*100)).padStart(3)}%`;
+          paint();
+          if(bi>=blocks){ idx++; setTimeout(startItem,240); return; }
+          setTimeout(tick,300+Math.random()*520);
+        };
+        tick();
       };
-      paint();
-      setTimeout(tick,420);
+      setTimeout(startItem,420);
     },700+Math.random()*800);
   }
   function tryPassword(){
@@ -903,7 +928,7 @@
       else if(e.key==='ArrowLeft'){ if(mediaVid) tapeSeek(mediaVid,-5); else {mediaPanX+=PAN; updateMediaXf();} e.preventDefault(); }
       else if(e.key==='ArrowUp'){ if(mediaVid) tapeRate(mediaVid,1); else {mediaPanY+=PAN; updateMediaXf();} e.preventDefault(); }
       else if(e.key==='ArrowDown'){ if(mediaVid) tapeRate(mediaVid,-1); else {mediaPanY-=PAN; updateMediaXf();} e.preventDefault(); }
-      else if(e.key==='+'||e.key==='='){ mediaZoom=Math.min(6,mediaZoom*1.4); updateMediaXf(); e.preventDefault(); }
+      else if(e.key==='+'||e.key==='='){ mediaZoom=Math.min(2.7,mediaZoom*1.4); updateMediaXf(); e.preventDefault(); }
       else if(e.key==='-'||e.key==='_'){ mediaZoom=Math.max(1,mediaZoom/1.4); updateMediaXf(); e.preventDefault(); }
       else if(/^[wasd]$/i.test(e.key)){
         const k=e.key.toLowerCase();
@@ -959,6 +984,7 @@
   ];
   function powerOn(){
     if(state!=='off') return;
+    $('room').classList.remove('dark');
     $('screenHost').classList.remove('dead');
     $('vga').classList.remove('dead');
     $('glow').classList.remove('off'); $('bezelGlow').classList.remove('off');
@@ -1012,6 +1038,7 @@
     macStop(); stopAudio(); closeMedia();
     if(bootTimer) clearTimeout(bootTimer);
     if(brownTimer) clearTimeout(brownTimer);
+    $('room').classList.add('dark');
     $('screenHost').classList.add('dead');
     $('vga').classList.add('dead');
     $('glow').classList.add('off'); $('bezelGlow').classList.add('off');
@@ -1027,9 +1054,11 @@
     w.classList.add('collapse');
     setTimeout(()=>{
       $('vga').classList.add('dead');
+      $('room').classList.add('dark');
       $('glow').classList.add('off'); $('bezelGlow').classList.add('off');
       setTimeout(()=>{
         $('vga').classList.remove('dead');
+        $('room').classList.remove('dark');
         $('glow').classList.remove('off'); $('bezelGlow').classList.remove('off');
         w.classList.remove('collapse');
         w.classList.add('reviving');
