@@ -93,7 +93,8 @@
   #mediaBox{position:absolute;left:16px;right:104px;top:32px;bottom:30px;z-index:10;display:none;
     background:#000;border:1px solid #2a3050;align-items:center;justify-content:center;overflow:hidden}
   #mediaBox img,#mediaBox video{max-width:100%;max-height:100%;
-    filter:grayscale(.88) contrast(1.14) brightness(.85);image-rendering:pixelated}
+    filter:grayscale(.88) contrast(1.14) brightness(.85);image-rendering:pixelated;
+    transition:transform .13s ease-out}
 
   /* ===== CRT overlays ===== */
   #vgaScan{position:absolute;inset:0;z-index:30;pointer-events:none;
@@ -488,6 +489,7 @@
   function enterSection(k){
     curSection=k; selIdx=0; listTop=0;
     state='loading';
+    macSeekNoise(5);
     $('tuiHead').textContent='DRE//OS v3.2';
     $('tuiBody').innerHTML=`\n<span class="gy">LENDO DIRETÓRIO: ${SECTIONS[k]} <span class="blink">▉</span></span>`;
     $('tuiFoot').textContent='AGUARDE';
@@ -500,6 +502,7 @@
     curDoc=d;
     // o disco é VELHO: toda abertura passa por uma leitura demorada de setor
     state='loading';
+    macSeekNoise(7);
     const secHex=(0x2000+Math.floor(Math.random()*0xDFFF)).toString(16).toUpperCase();
     $('tuiHead').textContent=`[${d.code||'?'}]`;
     $('tuiBody').innerHTML=`\n<span class="gy">LENDO SETOR 0x${secHex} <span class="blink">▉</span></span>`;
@@ -598,6 +601,80 @@
     try{ return /^https?:/i.test(u)&&new URL(u,location.href).origin!==location.origin; }
     catch(e){ return false; }
   }
+
+  // ===== SOM FÍSICO DA MÁQUINA (bem baixo: hum de fonte, ventoinha, disco) =====
+  let macHum=null, _macNoise=null;
+  function macNoiseBuf(){
+    if(_macNoise) return _macNoise;
+    _macNoise=AC.createBuffer(1,AC.sampleRate*2,AC.sampleRate);
+    const d=_macNoise.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+    return _macNoise;
+  }
+  function macStart(){
+    if(!speakerChain()||macHum) return;
+    if(AC.state==='suspended') AC.resume().catch(()=>{});
+    const g=AC.createGain(); g.gain.value=0;
+    const o1=AC.createOscillator(); o1.type='triangle'; o1.frequency.value=60;
+    const g1=AC.createGain(); g1.gain.value=0.006; o1.connect(g1); g1.connect(g);
+    const o2=AC.createOscillator(); o2.type='sine'; o2.frequency.value=120;
+    const g2=AC.createGain(); g2.gain.value=0.003; o2.connect(g2); g2.connect(g);
+    const fan=AC.createBufferSource(); fan.buffer=macNoiseBuf(); fan.loop=true;
+    const flp=AC.createBiquadFilter(); flp.type='lowpass'; flp.frequency.value=260;
+    const fg=AC.createGain(); fg.gain.value=0.05;
+    fan.connect(flp); flp.connect(fg); fg.connect(g);
+    g.connect(AC.destination);
+    o1.start(); o2.start(); fan.start();
+    g.gain.linearRampToValueAtTime(0.5,AC.currentTime+1.4); // liga num fade (fonte energizando)
+    macHum={g,o1,o2,fan};
+  }
+  function macStop(){
+    if(!macHum) return;
+    const m=macHum; macHum=null;
+    try{
+      m.g.gain.cancelScheduledValues(AC.currentTime);
+      m.g.gain.setValueAtTime(m.g.gain.value,AC.currentTime);
+      m.g.gain.linearRampToValueAtTime(0,AC.currentTime+0.22);
+      setTimeout(()=>{ try{m.o1.stop();m.o2.stop();m.fan.stop();}catch(e){} },400);
+    }catch(e){}
+  }
+  // disco duro fazendo seek: rajada de cliques abafados
+  function macSeekNoise(n){
+    if(!speakerChain()) return;
+    if(AC.state==='suspended') AC.resume().catch(()=>{});
+    n=n||(4+Math.random()*7|0);
+    let t=AC.currentTime+0.03;
+    for(let i=0;i<n;i++){
+      const src=AC.createBufferSource(); src.buffer=macNoiseBuf();
+      src.playbackRate.value=0.9+Math.random()*0.4;
+      const bp=AC.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=700+Math.random()*900; bp.Q.value=2.2;
+      const g=AC.createGain();
+      g.gain.setValueAtTime(0,t);
+      g.gain.linearRampToValueAtTime(0.012+Math.random()*0.008,t+0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+0.03);
+      src.connect(bp); bp.connect(g); g.connect(AC.destination);
+      src.start(t,Math.random()*1.5,0.05); src.stop(t+0.06);
+      t+=0.035+Math.random()*0.075;
+    }
+  }
+  // bip de POST (PC speaker)
+  function macBeep(){
+    if(!speakerChain()) return;
+    const o=AC.createOscillator(); o.type='square'; o.frequency.value=880;
+    const g=AC.createGain();
+    g.gain.setValueAtTime(0.012,AC.currentTime);
+    g.gain.setValueAtTime(0.012,AC.currentTime+0.10);
+    g.gain.linearRampToValueAtTime(0,AC.currentTime+0.13);
+    o.connect(g); g.connect(AC.destination);
+    o.start(); o.stop(AC.currentTime+0.15);
+  }
+  // navegador só libera áudio após gesto — o primeiro toque destrava a máquina
+  function macWake(){
+    if(AC&&AC.state==='suspended') AC.resume().catch(()=>{});
+    if(state!=='off'&&!brownoutActive&&!macHum) macStart();
+  }
+  addEventListener('keydown',macWake,{passive:true});
+  addEventListener('click',macWake,{passive:true});
   setInterval(()=>{
     if(!hissGain) return;
     const playing=(audioEl&&!audioEl.paused&&!audioEl.ended)||(mediaVid&&!mediaVid.paused&&!mediaVid.ended);
@@ -672,17 +749,32 @@
   setInterval(()=>{ if(state==='audio'&&audioEl) renderAudio(false); },500);
 
   // ===== FOTOS / VÍDEOS =====
-  let mediaVid=null;
+  let mediaVid=null, mediaEl=null, mediaZoom=1, mediaPanX=0, mediaPanY=0;
   function openMedia(d){
     curDoc=d; state='media';
+    mediaZoom=1; mediaPanX=0; mediaPanY=0;
     paintMedia(d);
+  }
+  // lupa por teclado: scale + translate clampado pra imagem nunca descolar da moldura
+  function updateMediaXf(){
+    if(!mediaEl) return;
+    const lim=50*(mediaZoom-1)/mediaZoom;
+    mediaPanX=Math.max(-lim,Math.min(lim,mediaPanX));
+    mediaPanY=Math.max(-lim,Math.min(lim,mediaPanY));
+    mediaEl.style.transform=`scale(${mediaZoom.toFixed(3)}) translate(${mediaPanX.toFixed(1)}%,${mediaPanY.toFixed(1)}%)`;
+    mediaFoot();
+  }
+  function mediaFoot(){
+    const z=mediaZoom>1.01?`  LUPA ${mediaZoom.toFixed(1)}×`:'';
+    $('tuiFoot').textContent=(mediaVid?'←→ FITA  ↑↓ MOTOR  ESPAÇO  ':'←→↑↓/WASD MOVER  ')+
+      (mediaVid?'+/− LUPA  WASD MOVER':'+/− LUPA')+z+'  ESC VOLTAR';
   }
   function paintMedia(d){
     const mb=$('mediaBox');
     const isVid=/\.(mp4|webm|mov|ogv)(\?|$)/i.test(d.url||'')||/^data:video/i.test(d.url||'')||d.mediaType==='video';
     $('tuiHead').textContent=`[${d.code}] ${isVid?'REGISTRO DE VÍDEO':'FOTOGRAMA DIGITALIZADO'} — ${dispTitle(d).slice(0,28)}`;
     if(!d.url){
-      mediaVid=null; mb.style.display='none'; mb.innerHTML='';
+      mediaVid=null; mediaEl=null; mb.style.display='none'; mb.innerHTML='';
       $('tuiBody').innerHTML='\n<span class="rd">NEGATIVO NÃO DIGITALIZADO</span>\n\n'+
         '<span class="gy">O registro consta no inventário, mas a\ndigitalização não foi localizada no banco\nde dados. Consultar o arquivo físico.</span>';
       $('tuiFoot').textContent='ESC VOLTAR';
@@ -693,20 +785,20 @@
       mb.innerHTML=isVid?`<video src="${esc(d.url)}"${xo?' crossorigin="anonymous"':''} autoplay loop></video>`
                         :`<img src="${esc(d.url)}" alt="">`;
       mediaVid=mb.querySelector('video');
+      mediaEl=mb.querySelector('video,img');
       if(mediaVid){
         tapePitch(mediaVid);
         if(xo) mediaVid.onerror=()=>{ // host sem CORS: recria direto, sem o filtro
           mb.innerHTML=`<video src="${esc(d.url)}" autoplay loop></video>`;
-          mediaVid=mb.querySelector('video'); tapePitch(mediaVid);
+          mediaVid=mb.querySelector('video'); mediaEl=mediaVid; tapePitch(mediaVid);
+          updateMediaXf();
         };
         routeSpeaker(mediaVid); // o som do vídeo sai do MESMO alto-falante velho
-        $('tuiFoot').textContent='←→ REBOBINAR/AVANÇAR  ↑↓ MOTOR  ESPAÇO PAUSA  ESC VOLTAR';
-      } else {
-        $('tuiFoot').textContent=(dispTitle(d)).slice(0,48)+'   ESC VOLTAR';
       }
+      updateMediaXf();
     }
   }
-  function closeMedia(){ const mb=$('mediaBox'); mediaVid=null; mb.style.display='none'; mb.innerHTML=''; }
+  function closeMedia(){ const mb=$('mediaBox'); mediaVid=null; mediaEl=null; mediaZoom=1; mediaPanX=0; mediaPanY=0; mb.style.display='none'; mb.innerHTML=''; }
 
   // ===== TRANSFERÊNCIA ENTRANTE (GM revelou um registro → chega de um databank) =====
   function processDl(){
@@ -739,6 +831,7 @@
       const tick=()=>{
         if(state!=='download'){ done(); return; }
         bi++;
+        if(Math.random()<0.5) macSeekNoise(3);
         const fill=Math.round(bi/blocks*24);
         lines[lines.length-1]=`BLOCO ${bi}/${blocks}  <span class="wt">${'▓'.repeat(fill)}${'░'.repeat(24-fill)}</span> ${String(Math.round(bi/blocks*100)).padStart(3)}%`;
         if(bi>=blocks){
@@ -759,6 +852,7 @@
   function tryPassword(){
     const d=curDoc;
     // verificação LENTA (máquina de 30 anos consultando o disco)
+    macSeekNoise(5);
     $('tuiBody').innerHTML=`\n<span class="gy">VERIFICANDO CREDENCIAL <span class="blink">▉</span></span>`;
     setTimeout(()=>{
       if(state!=='password') return;
@@ -799,14 +893,24 @@
       else if(e.key==='Escape'){ stopAudio(); state='index'; revealNext=true; render(); }
     }
     else if(state==='media'){
+      const PAN=8;
       if(e.key===' '&&mediaVid){
         if(mediaVid.paused) mediaVid.play().catch(()=>{}); else mediaVid.pause();
         e.preventDefault();
       }
-      else if(e.key==='ArrowRight'){ tapeSeek(mediaVid,5); e.preventDefault(); }
-      else if(e.key==='ArrowLeft'){ tapeSeek(mediaVid,-5); e.preventDefault(); }
-      else if(e.key==='ArrowUp'){ tapeRate(mediaVid,1); e.preventDefault(); }
-      else if(e.key==='ArrowDown'){ tapeRate(mediaVid,-1); e.preventDefault(); }
+      // vídeo: setas são o transporte da fita; foto: setas movem a lupa
+      else if(e.key==='ArrowRight'){ if(mediaVid) tapeSeek(mediaVid,5); else {mediaPanX-=PAN; updateMediaXf();} e.preventDefault(); }
+      else if(e.key==='ArrowLeft'){ if(mediaVid) tapeSeek(mediaVid,-5); else {mediaPanX+=PAN; updateMediaXf();} e.preventDefault(); }
+      else if(e.key==='ArrowUp'){ if(mediaVid) tapeRate(mediaVid,1); else {mediaPanY+=PAN; updateMediaXf();} e.preventDefault(); }
+      else if(e.key==='ArrowDown'){ if(mediaVid) tapeRate(mediaVid,-1); else {mediaPanY-=PAN; updateMediaXf();} e.preventDefault(); }
+      else if(e.key==='+'||e.key==='='){ mediaZoom=Math.min(6,mediaZoom*1.4); updateMediaXf(); e.preventDefault(); }
+      else if(e.key==='-'||e.key==='_'){ mediaZoom=Math.max(1,mediaZoom/1.4); updateMediaXf(); e.preventDefault(); }
+      else if(/^[wasd]$/i.test(e.key)){
+        const k=e.key.toLowerCase();
+        if(k==='a') mediaPanX+=PAN; else if(k==='d') mediaPanX-=PAN;
+        else if(k==='w') mediaPanY+=PAN; else mediaPanY-=PAN;
+        updateMediaXf(); e.preventDefault();
+      }
       else if(e.key==='Escape'){ closeMedia(); state='index'; revealNext=true; render(); }
     }
     else if(state==='doc'){
@@ -859,6 +963,7 @@
     $('vga').classList.remove('dead');
     $('glow').classList.remove('off'); $('bezelGlow').classList.remove('off');
     state='boot'; booted=false;
+    macStart(); macSeekNoise(9);
     const b=$('bootScr');
     b.style.display='block'; b.textContent='';
     const failAt=Math.random()<0.35?(3+Math.floor(Math.random()*4)):-1; // 35%: morre no meio
@@ -869,6 +974,7 @@
         const el=performance.now()-t0-offset;
         while(step<script.length&&script[step][0]<=el){
           b.textContent+=script[step][1]+'\n';
+          if(Math.random()<0.4) macSeekNoise(3);
           if(failAt===step){
             // morre no meio do POST: colapsa e religa sozinho
             b.textContent+='\n*** FALHA DE ALIMENTAÇÃO ***';
@@ -890,6 +996,7 @@
   }
   function finishBoot(){
     booted=true;
+    macBeep();
     $('bootScr').style.display='none';
     state='menu'; menuIdx=0; selIdx=0; listTop=0;
     revealNext=true;
@@ -902,7 +1009,7 @@
   }
   function powerOff(){
     state='off'; booted=false;
-    stopAudio(); closeMedia();
+    macStop(); stopAudio(); closeMedia();
     if(bootTimer) clearTimeout(bootTimer);
     if(brownTimer) clearTimeout(brownTimer);
     $('screenHost').classList.add('dead');
@@ -915,6 +1022,7 @@
   function doCollapse(after){
     const w=$('vgaWrap');
     brownoutActive=true;
+    macStop(); // a fonte cai junto com a imagem
     w.classList.remove('reviving');
     w.classList.add('collapse');
     setTimeout(()=>{
@@ -925,6 +1033,7 @@
         $('glow').classList.remove('off'); $('bezelGlow').classList.remove('off');
         w.classList.remove('collapse');
         w.classList.add('reviving');
+        macStart(); macSeekNoise(6);
         setTimeout(()=>{ w.classList.remove('reviving'); brownoutActive=false; if(after) after(); },520);
       },1100+Math.random()*1600);
     },360);
