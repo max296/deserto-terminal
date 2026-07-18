@@ -501,6 +501,7 @@
         </span>
       </div>
       <div class="hint">Clique num documento para editar. Trava define o que o terminal exige; "censurar" esconde o título no índice dos jogadores.</div>
+      <div style="font-size:10px;color:var(--ink-dim);margin-bottom:6px;line-height:1.6">OCULTAR tira o registro do índice dos jogadores. REVELAR faz ele <i>chegar</i> no terminal com uma transferência animada do databank de origem. Seção, databank e URL (áudio/foto/vídeo) ficam no formulário do registro.</div>
       <div id="dreDocList" style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px"></div>
       <div id="dreDocForm" style="display:none;border-top:1px solid var(--line);padding-top:14px"></div>
     </div>
@@ -1962,20 +1963,38 @@
 
   const LOCK_LABELS={open:'ABERTO',password:'SENHA',card:'CARTÃO',sealed:'SELADO'};
   const LOCK_COLORS={open:'var(--live)',password:'var(--warn)',card:'#c86dd8',sealed:'var(--danger)'};
+  const SEC_ORDER_G=['audio','files','notes','media'];
+  const SEC_NAMES={audio:'REGISTROS DE ÁUDIO',files:'ARQUIVOS',notes:'NOTAS PESSOAIS E ADENDOS',media:'FOTOS / VÍDEOS'};
+  const SEC_LABELS={audio:'ÁUDIO',files:'ARQUIVO',notes:'NOTA',media:'FOTO/VÍDEO'};
+  const secOfG=d=>SEC_ORDER_G.includes(d.section)?d.section:'files';
 
   function dreRenderList(){
     const el=document.getElementById('dreDocList'); if(!el) return;
     const arr=Object.entries(dreDocs).map(([id,d])=>({id,...d}))
       .sort((a,b)=>(a.order??999)-(b.order??999)||String(a.code).localeCompare(String(b.code)));
     if(!arr.length){ el.innerHTML='<div style="font-size:11px;color:var(--ink-dim)">arquivo vazio — use SEMEAR PADRÃO</div>'; return; }
-    el.innerHTML=arr.map(d=>`
-      <div class="dre-doc-row" data-id="${d.id}" style="display:flex;gap:10px;align-items:center;padding:6px 10px;background:var(--panel2);border:1px solid ${d.id===dreSelId?'var(--live-dim)':'var(--line)'};border-radius:4px;cursor:pointer;font-size:11px">
+    let html='';
+    for(const sec of SEC_ORDER_G){
+      const items=arr.filter(d=>secOfG(d)===sec);
+      if(!items.length) continue;
+      html+=`<div style="font-size:9px;letter-spacing:.16em;color:var(--ink-dim);margin:8px 0 2px">${SEC_NAMES[sec]}</div>`;
+      html+=items.map(d=>`
+      <div class="dre-doc-row" data-id="${d.id}" style="display:flex;gap:10px;align-items:center;padding:6px 10px;background:var(--panel2);border:1px solid ${d.id===dreSelId?'var(--live-dim)':'var(--line)'};border-radius:4px;cursor:pointer;font-size:11px;opacity:${d.hidden?'.5':'1'}">
         <span style="color:var(--ink);min-width:64px">[${escapeHtml(d.code||'?')}]</span>
         <span style="flex:1;color:${d.censor?'var(--ink-dim)':'var(--ink)'}">${escapeHtml(d.title||'(sem título)')}${d.censor?' <span style="font-size:9px">(censurado no índice)</span>':''}</span>
         <span style="font-size:9px;letter-spacing:.1em;color:${LOCK_COLORS[d.lock]||'var(--ink-dim)'}">${LOCK_LABELS[d.lock]||'ABERTO'}${d.lock==='card'?' N'+(d.cardLevel||1):''}</span>
+        <button class="btn dre-hide-btn" data-id="${d.id}" style="font-size:9px;padding:2px 8px;color:${d.hidden?'var(--warn)':'var(--ink-dim)'};border-color:${d.hidden?'var(--warn)':'var(--line)'}">${d.hidden?'REVELAR ▼':'OCULTAR'}</button>
       </div>`).join('');
+    }
+    el.innerHTML=html;
   }
   document.getElementById('dreDocList').addEventListener('click',e=>{
+    const hb=e.target.closest('.dre-hide-btn');
+    if(hb){
+      const d=dreDocs[hb.dataset.id];
+      if(d) dreRef.child('docs/'+hb.dataset.id+'/hidden').set(!d.hidden);
+      return;
+    }
     const row=e.target.closest('.dre-doc-row');
     if(row){ dreSelId=row.dataset.id; dreRenderList(); dreRenderForm(); }
   });
@@ -1994,6 +2013,19 @@
           <input id="dreF-title" value="${escapeHtml(d.title||'')}" style="${inp};width:100%"></div>
         <div><div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px">ORDEM</div>
           <input id="dreF-order" type="number" value="${d.order??10}" style="${inp};width:64px"></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">
+        <div>
+          <div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px">SEÇÃO</div>
+          <div style="display:flex;gap:4px">
+            ${SEC_ORDER_G.map(k=>`<button class="btn dreF-sec" data-s="${k}" style="font-size:9px${secOfG(d)===k?';color:var(--live);border-color:var(--live-dim)':''}">${SEC_LABELS[k]}</button>`).join('')}
+          </div>
+        </div>
+        <div><div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px">DATABANK DE ORIGEM</div>
+          <input id="dreF-bank" value="${escapeHtml(d.bank||'')}" placeholder="DB-EXT-4" style="${inp};width:104px"></div>
+        ${(secOfG(d)==='audio'||secOfG(d)==='media')?`<div style="flex:1;min-width:230px"><div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px">URL DO ARQUIVO (ex.: audio/rolo76.mp3, img/foto.jpg, video.mp4 — vazio = "não digitalizado")</div>
+          <input id="dreF-url" value="${escapeHtml(d.url||'')}" style="${inp};width:100%"></div>`:''}
+        <button class="btn" id="dreF-hide" style="font-size:10px;color:${d.hidden?'var(--warn)':'var(--ink-dim)'};border-color:${d.hidden?'var(--warn)':'var(--line)'}">${d.hidden?'OCULTO — REVELAR (transfere no terminal)':'VISÍVEL — OCULTAR'}</button>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">
         <div>
@@ -2025,6 +2057,13 @@
       dreDocs[dreSelId]={...dreDocs[dreSelId],lock:b.dataset.l};
       dreRenderForm(); dreRenderList();
     }));
+    el.querySelectorAll('.dreF-sec').forEach(b=>b.addEventListener('click',()=>{
+      dreDocs[dreSelId]={...dreDocs[dreSelId],section:b.dataset.s};
+      dreRenderForm(); dreRenderList();
+    }));
+    document.getElementById('dreF-hide').addEventListener('click',()=>{
+      dreRef.child('docs/'+dreSelId+'/hidden').set(!dreDocs[dreSelId].hidden);
+    });
     document.getElementById('dreF-save').addEventListener('click',()=>{
       const g=id=>document.getElementById(id);
       const doc={
@@ -2037,6 +2076,10 @@
         titleCensored:g('dreF-titlec').value.trim(),
         pass:g('dreF-pass')?g('dreF-pass').value.trim():(dreDocs[dreSelId].pass||''),
         cardLevel:g('dreF-cardlvl')?Math.max(1,Math.min(5,parseInt(g('dreF-cardlvl').value)||1)):(dreDocs[dreSelId].cardLevel||1),
+        section:secOfG(dreDocs[dreSelId]),
+        bank:g('dreF-bank')?g('dreF-bank').value.trim():(dreDocs[dreSelId].bank||''),
+        url:g('dreF-url')?g('dreF-url').value.trim():(dreDocs[dreSelId].url||''),
+        hidden:!!dreDocs[dreSelId].hidden,
         body:g('dreF-body').value
       };
       dreRef.child('docs/'+dreSelId).set(doc);
@@ -2054,7 +2097,7 @@
 
   document.getElementById('dreNewDoc').addEventListener('click',()=>{
     const id='doc'+Date.now().toString(36);
-    dreRef.child('docs/'+id).set({code:'D-000',title:'NOVO DOCUMENTO',lock:'open',level:1,order:50,body:''});
+    dreRef.child('docs/'+id).set({code:'D-000',title:'NOVO DOCUMENTO',section:'files',lock:'open',level:1,order:50,body:''});
     dreSelId=id;
   });
   document.getElementById('dreResetUnlocks').addEventListener('click',()=>{
@@ -2224,7 +2267,34 @@
     ].join('\n')},
     s10:{code:'X-004',title:'REGISTRO SELADO X-004',censor:true,titleCensored:'█-███ — ████████████████',lock:'sealed',level:5,order:30,body:[
       'ESTE REGISTRO ESTÁ SELADO POR ORDEM DA COORDENAÇÃO GERAL.','A EXISTÊNCIA DESTE REGISTRO É, EM SI, INFORMAÇÃO CLASSIFICADA.'
-    ].join('\n')}
+    ].join('\n')},
+    a01:{code:'A-113-R1',title:'HIDROFONE — ROLO 76 (CÓPIA DE TRABALHO)',section:'audio',lock:'card',cardLevel:2,level:3,order:35,bank:'DB-C4',url:'',body:
+      'Cópia de trabalho do rolo 76, caixa C-04. Captação noturna, hidrofone sul, 14/02. A etiqueta original traz a anotação "ELA ENSAIA" em tinta vermelha.'},
+    n01:{code:'D-N12',title:'BILHETE ENCONTRADO NO ARMÁRIO 6',section:'notes',lock:'open',level:1,order:40,bank:'DB-C2',body:[
+      '[transcrição de bilhete manuscrito, papel de bloco, sem data]','',
+      'Se você está lendo isto é porque abriram meu armário, o que significa que eu não voltei do turno.',
+      'Não deixem o Ferraz mergulhar sozinho. Ele fala que o fundo "chama menos" quando está acompanhado. Ele fala isso RINDO, mas ele fala toda vez.',
+      'A chave pequena é do cadeado da caixa embaixo do beliche. O que está dentro é da minha filha. O endereço está na tampa.',
+      'Não era pra ser assim.','— R.'
+    ].join('\n')},
+    n02:{code:'D-N15',title:'PÁGINAS SOLTAS — DIÁRIO DE TÉCNICO',section:'notes',lock:'password',pass:'VIGIA',level:2,order:41,bank:'DB-C2',body:[
+      '[três páginas arrancadas de caderno pautado, mesma caligrafia, encontradas dobradas atrás do painel do compressor]','',
+      '// pág. 1','Terceira semana. O Almeida do turno da noite pediu transferência de alojamento. O dele fica com a parede voltada pro mar. Ele não explicou e ninguém pediu explicação. Isso que me assustou.','',
+      '// pág. 2','A moça da Seção C me parou no refeitório e perguntou se eu "ouvia melhor de um ouvido ou dos dois". Anotou a resposta numa prancheta. Quando pedi pra ver, ela agradeceu e foi embora.','',
+      '// pág. 3','Hoje entendi o que me incomoda no som das bombas. Não é o ruído.',
+      'É que tem uma pausa. Toda noite, 3 da manhã, mais ou menos um minuto. As bombas não param — o SOM que para de chegar.',
+      'Alguma coisa no caminho entre elas e mim fica... ocupada.'
+    ].join('\n')},
+    n03:{code:'D-019-A',title:'ADENDO AO RELATÓRIO DE INCIDENTE 14/03',section:'notes',hidden:true,lock:'open',level:2,order:42,bank:'DB-MED-2',body:[
+      'ADENDO AO RELATÓRIO DE INCIDENTE — 14/03','ANEXADO POR ORDEM DA SEÇÃO MÉDICA','',
+      'O mergulhador de plantão recebeu alta da observação em 21/03.','Retornou às funções em 24/03.',
+      'Solicitou, por escrito, turnos exclusivamente diurnos. Deferido.',
+      'Solicitou, por escrito, que o alojamento fosse trocado por um "sem parede molhada". A expressão não foi esclarecida. Deferido assim mesmo.',
+      'Em 30/03 foi encontrado no mesmo alojamento de origem, sentado de frente para a mesma parede.',
+      'Quando perguntado, respondeu: "aqui eu escuto melhor quando ela erra."','',
+      'Acompanhamento transferido para o programa de escuta. Ver A-141.'
+    ].join('\n')},
+    m01:{code:'F-022',title:'FOTOGRAMA — MOONPOOL, AUTOR DESCONHECIDO',section:'media',lock:'open',level:2,order:45,bank:'DB-C2',url:'',body:''}
   };
   document.getElementById('dreSeed').addEventListener('click',()=>{
     if(!confirm('Semear os documentos padrão? (mescla com os existentes — não apaga nada)')) return;
