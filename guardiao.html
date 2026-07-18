@@ -378,8 +378,28 @@
                 <div style="display:flex;gap:5px">
                   <button class="btn" id="edToolPillar" style="flex:1;font-size:10px;padding:7px" title="arraste vertical pra criar; clique curto num pilar remove">▮ PILAR</button>
                   <button class="btn" id="edToolSpawn" style="flex:1;font-size:10px;padding:7px" title="clique num tile de água pra mover o spawn">◎ SPAWN</button>
+                  <button class="btn" id="edToolItem" style="flex:1;font-size:10px;padding:7px" title="colocar/selecionar itens do mundo">◈ ITENS</button>
                 </div>
                 <div style="font-size:9px;color:#8a97a0;line-height:1.5">PILAR: <b>arraste na vertical</b> cria; clique curto sobre um pilar remove.<br>SPAWN: clique posiciona (só em água).</div>
+                <div id="edItemBox" style="display:none;border:1px solid #223142;border-radius:4px;padding:7px;background:#0b1016">
+                  <div style="font-size:9px;color:#8a97a0;letter-spacing:.12em;margin-bottom:5px">TIPO A COLOCAR</div>
+                  <div style="display:flex;gap:4px;flex-wrap:wrap">
+                    <button class="btn edItemT" data-t="lamp" style="font-size:9px;padding:5px 7px">💡 POSTE</button>
+                    <button class="btn edItemT" data-t="walllamp" style="font-size:9px;padding:5px 7px">⌐ P.PAREDE</button>
+                    <button class="btn edItemT" data-t="gen" style="font-size:9px;padding:5px 7px">▭ GERADOR</button>
+                    <button class="btn edItemT" data-t="drill" style="font-size:9px;padding:5px 7px">▼ BROCA</button>
+                  </div>
+                  <div style="font-size:9px;color:#8a97a0;line-height:1.5;margin-top:5px">Clique na água = colocar (a frente auto-aponta perpendicular à parede mais próxima). Clique num item = selecionar. Arrastar = mover. Alterações são publicadas NA HORA.</div>
+                  <div id="edItemSelBox" style="display:none;border-top:1px solid #223142;margin-top:6px;padding-top:6px">
+                    <div id="edItemSelInfo" style="font-size:10px;color:#cdd4d8;margin-bottom:5px"></div>
+                    <div style="display:flex;gap:4px;flex-wrap:wrap">
+                      <button class="btn" id="edItemClean" style="font-size:9px;padding:5px 7px">LIMPO/SUJO</button>
+                      <button class="btn" id="edItemRotL" style="font-size:9px;padding:5px 7px">⟲ 45°</button>
+                      <button class="btn" id="edItemRotR" style="font-size:9px;padding:5px 7px">⟳ 45°</button>
+                      <button class="btn" id="edItemDel" style="font-size:9px;padding:5px 7px;color:#d65a5a">EXCLUIR</button>
+                    </div>
+                  </div>
+                </div>
 
                 <div style="font-size:9px;color:#8a97a0;letter-spacing:.12em;margin-top:6px;border-top:1px solid #223142;padding-top:8px">EXPANDIR GRID (largura)</div>
                 <div style="display:flex;gap:5px">
@@ -409,6 +429,7 @@
                   <span style="display:inline-block;width:11px;height:11px;background:#1d3018;vertical-align:-1px"></span> caverna (parede c/ textura própria)<br>
                   <span style="display:inline-block;width:11px;height:11px;background:rgba(150,170,200,.55);vertical-align:-1px"></span> pilar da petroleira<br>
                   <span style="color:#33ff88">◎</span> spawn do submarino<br>
+                  <span style="color:#ffcf7a">●</span> item limpo · <span style="color:#8a7040">●</span> item sujo (tick = pra onde a frente aponta)<br>
                   <span style="color:#4c8fc8">●</span> submarino (ao vivo)<br>
                   <span style="color:#ff4400">●</span> criatura · <span style="color:#44aacc">●</span> peixe<br>
                   <span style="color:#ff5050">╌╌</span> linha do coral (600m)<br>
@@ -984,6 +1005,16 @@
       mctx.stroke(); mctx.setLineDash([]); mctx.restore();
     }
 
+    // Itens do mundo (postes/geradores/brocas)
+    if(typeof mapItems==='object') Object.values(mapItems||{}).forEach(it=>{
+      if(!it||typeof it.x!=='number') return;
+      const {px,py}=worldToMapPx(it.x,it.depth);
+      if(py<-8||py>M_H+8) return;
+      const meta=(typeof ITEM_META!=='undefined'&&ITEM_META[it.type])||{color:'#ccc'};
+      mctx.fillStyle=it.clean?meta.color:'#8a7040';
+      mctx.fillRect(px-2,py-2,4,4);
+    });
+
     // Peixes
     Object.entries(entities).forEach(([id,ent])=>{
       if(!ent||ent.mode!=='fish') return;
@@ -1231,6 +1262,21 @@
       edCtx.fillStyle='rgba(150,170,200,.45)'; edCtx.fillRect(px0,py0,pw2,py1-py0);
       edCtx.strokeStyle='rgba(180,200,230,.7)'; edCtx.strokeRect(px0,py0,pw2,py1-py0);
     }
+    // itens do mundo (dot + tick de direção; espelho X respeitado)
+    for(const [iid,it] of Object.entries(mapItems)){
+      const m=ITEM_META[it.type]||{color:'#ccc',glyph:'?'};
+      const ix=edPxX((it.x-X_MIN_W)/TILE), iy=edPxY(it.depth/TILE);
+      if(ix<-20||ix>W+20||iy<-20||iy>H+20) continue;
+      const col=it.clean?m.color:'#8a7040';
+      const a=(it.rot||0)*Math.PI/180;
+      edCtx.strokeStyle=col; edCtx.lineWidth=1.5;
+      edCtx.beginPath(); edCtx.moveTo(ix,iy); edCtx.lineTo(ix-Math.sin(a)*9,iy+Math.cos(a)*9); edCtx.stroke();
+      edCtx.lineWidth=1;
+      edCtx.fillStyle=col;
+      edCtx.beginPath(); edCtx.arc(ix,iy,4,0,6.28); edCtx.fill();
+      if(iid===edItemSel){ edCtx.strokeStyle='#fff'; edCtx.beginPath(); edCtx.arc(ix,iy,7,0,6.28); edCtx.stroke(); }
+      if(edZoom>6){ edCtx.fillStyle=col; edCtx.fillText(m.glyph,ix+7,iy-5); }
+    }
     // spawn
     {const sx=edPxX((mapSpawn.x-X_MIN_W)/TILE), sy=edPxY(mapSpawn.depth/TILE);
      edCtx.strokeStyle='#33ff88'; edCtx.lineWidth=1.5;
@@ -1408,6 +1454,26 @@
       if(MAP[r]&&MAP[r][c]===0){ mapSpawn={x:Math.round(wx),depth:Math.round(wd)}; edPushHist(); }
       else { edWarns=['⚠ SPAWN precisa estar na ÁGUA']; edUpdateUI(); }
     }
+    else if(edTool==='items'){
+      const hit=edItemAt(px,py);
+      if(hit){ edItemSel=hit; edItemUI(); edDrag={type:'item',id:hit,moved:false}; return; }
+      const wx=edWorldX(px), wd=edWorldD(py);
+      const r=Math.floor(wd/TILE), c=Math.floor((wx-X_MIN_W)/TILE);
+      if(!MAP[r]||MAP[r][c]!==0){ edWarns=['⚠ item precisa estar na ÁGUA']; edUpdateUI(); return; }
+      const meta=ITEM_META[edItemType]||{};
+      const nw=edNearestWallRot(wx,wd);
+      if(meta.wall&&!nw){ edWarns=['⚠ poste de parede exige parede a até 4 tiles']; edUpdateUI(); return; }
+      let ix=wx, idp=wd;
+      if(meta.wall&&nw){
+        // encosta na face da parede mais próxima
+        const ang=Math.atan2(wx-nw.wall.cx,wd-nw.wall.cd);
+        ix=nw.wall.cx+Math.sin(ang)*(TILE*0.5+8);
+        idp=nw.wall.cd+Math.cos(ang)*(TILE*0.5+8);
+      }
+      const nref=subRef.child('items').push();
+      nref.set({type:edItemType,x:Math.round(ix),depth:Math.round(idp),rot:nw?nw.rot:0,clean:false});
+      edItemSel=nref.key; edWarns=[]; edUpdateUI();
+    }
   });
   edCv.addEventListener('mousemove',e=>{
     edMouse.x=e.offsetX; edMouse.y=e.offsetY;
@@ -1422,6 +1488,9 @@
     } else if(edDrag.type==='pillar'){
       edDrag.d1=edWorldD(e.offsetY);
       if(Math.abs(edDrag.d1-edDrag.d0)>TILE*0.75) edDrag.moved=true;
+    } else if(edDrag.type==='item'){
+      const it=mapItems[edDrag.id];
+      if(it){ it.x=edWorldX(e.offsetX); it.depth=edWorldD(e.offsetY); edDrag.moved=true; }
     }
   });
   edCv.addEventListener('mouseup',()=>{
@@ -1455,6 +1524,16 @@
         // desenhar um pilar perto de outro não deleta mais o vizinho
         const idx=mapPillars.findIndex(P=>Math.abs(d.wx-P.x)<=P.r&&d.d0>=P.top&&d.d0<=P.bot);
         if(idx>=0){ mapPillars=mapPillars.filter((_,i)=>i!==idx); edPushHist(); }
+      }
+    } else if(d.type==='item'){
+      const it=mapItems[d.id];
+      if(it&&d.moved){
+        // mover re-aponta a frente pra parede mais próxima (GIRAR ajusta fino depois)
+        const nw=edNearestWallRot(it.x,it.depth);
+        subRef.child('items/'+d.id).update({
+          x:Math.round(it.x), depth:Math.round(it.depth),
+          ...(nw?{rot:nw.rot}:{})
+        });
       }
     }
   });
@@ -1512,6 +1591,8 @@
     on('edToolCorr',edTool==='corridor','#88ffdd');
     on('edToolPillar',edTool==='pillar','#aabbcc');
     on('edToolSpawn',edTool==='spawn','#33ff88');
+    on('edToolItem',edTool==='items','#ffcf7a');
+    if(typeof edItemUI==='function') edItemUI();
     const dims=document.getElementById('edDims');
     if(dims) dims.textContent=`${GRID_COLS}×${GRID_ROWS} tiles · ${GRID_COLS*4}×${GRID_ROWS*4}m · X ${X_MIN_W}..${X_MIN_W+GRID_COLS*TILE}wu`;
     const sb=document.getElementById('edSaveB');
@@ -1534,6 +1615,74 @@
   document.getElementById('edToolCorr').addEventListener('click',()=>{edTool='corridor';edMode2='paint';edUpdateUI();});
   document.getElementById('edToolPillar').addEventListener('click',()=>{edTool='pillar';edMode2='paint';edUpdateUI();});
   document.getElementById('edToolSpawn').addEventListener('click',()=>{edTool='spawn';edMode2='paint';edUpdateUI();});
+  document.getElementById('edToolItem').addEventListener('click',()=>{edTool='items';edMode2='paint';edUpdateUI();});
+
+  // ===== ITENS DO MUNDO (postes/geradores/brocas — gravados NA HORA no Firebase) =====
+  let mapItems={}, edItemType='lamp', edItemSel=null;
+  const ITEM_META={
+    lamp:{label:'Poste de luz',color:'#ffcf7a',glyph:'L'},
+    walllamp:{label:'Poste de parede',color:'#ffb055',glyph:'W',wall:true},
+    gen:{label:'Gerador',color:'#b090e0',glyph:'G'},
+    drill:{label:'Broca',color:'#9fb4c4',glyph:'B'}
+  };
+  subRef.child('items').on('value',s=>{
+    mapItems=s.val()||{};
+    if(edItemSel&&!mapItems[edItemSel]) edItemSel=null;
+    edItemUI();
+  });
+  // parede mais próxima (até 4 tiles): rot padrão = normal apontando pra água
+  function edNearestWallRot(wx,wd){
+    const r0=Math.floor(wd/TILE), c0=Math.floor((wx-X_MIN_W)/TILE);
+    let best=null,bd=1e9;
+    for(let dr=-4;dr<=4;dr++)for(let dc=-4;dc<=4;dc++){
+      const r=r0+dr,c=c0+dc;
+      if(r<0||r>=GRID_ROWS||c<0||c>=GRID_COLS) continue;
+      if(!MAP[r]||MAP[r][c]===0) continue;
+      const cx=X_MIN_W+(c+0.5)*TILE, cd=(r+0.5)*TILE;
+      const d=(cx-wx)*(cx-wx)+(cd-wd)*(cd-wd);
+      if(d<bd){bd=d;best={cx,cd};}
+    }
+    if(!best) return null;
+    return {rot:((Math.round(Math.atan2(wx-best.cx,wd-best.cd)*180/Math.PI)%360)+360)%360, wall:best};
+  }
+  function edItemAt(px,py){
+    let best=null,bd=12*12;
+    for(const [id,it] of Object.entries(mapItems)){
+      const ix=edPxX((it.x-X_MIN_W)/TILE), iy=edPxY(it.depth/TILE);
+      const d=(ix-px)*(ix-px)+(iy-py)*(iy-py);
+      if(d<bd){bd=d;best=id;}
+    }
+    return best;
+  }
+  function edItemUI(){
+    const box=document.getElementById('edItemBox');
+    if(box) box.style.display=edTool==='items'?'block':'none';
+    document.querySelectorAll('.edItemT').forEach(b=>{
+      const on=b.dataset.t===edItemType;
+      b.style.color=on?'#ffcf7a':'var(--ink-dim)'; b.style.borderColor=on?'#ffcf7a':'';
+    });
+    const sb=document.getElementById('edItemSelBox');
+    const it=edItemSel?mapItems[edItemSel]:null;
+    if(sb) sb.style.display=it?'block':'none';
+    if(it){
+      const m=ITEM_META[it.type]||{label:it.type};
+      const info=document.getElementById('edItemSelInfo');
+      if(info) info.innerHTML=`<b>${m.label}</b> — ${it.clean?'<span style="color:#7fd4ff">LIMPO</span>':'<span style="color:#c9a15a">SUJO</span>'} · rot ${it.rot|0}° · X ${Math.round(it.x)}wu · ${Math.round(it.depth/10)}m`;
+    }
+  }
+  document.querySelectorAll('.edItemT').forEach(b=>b.addEventListener('click',()=>{edItemType=b.dataset.t;edItemUI();}));
+  document.getElementById('edItemClean').addEventListener('click',()=>{
+    if(edItemSel&&mapItems[edItemSel]) subRef.child('items/'+edItemSel+'/clean').set(!mapItems[edItemSel].clean);
+  });
+  document.getElementById('edItemRotL').addEventListener('click',()=>{
+    if(edItemSel&&mapItems[edItemSel]) subRef.child('items/'+edItemSel+'/rot').set((((mapItems[edItemSel].rot|0)+315)%360));
+  });
+  document.getElementById('edItemRotR').addEventListener('click',()=>{
+    if(edItemSel&&mapItems[edItemSel]) subRef.child('items/'+edItemSel+'/rot').set((((mapItems[edItemSel].rot|0)+45)%360));
+  });
+  document.getElementById('edItemDel').addEventListener('click',()=>{
+    if(edItemSel){ subRef.child('items/'+edItemSel).set(null); edItemSel=null; edItemUI(); }
+  });
   document.getElementById('edBrushSz').addEventListener('change',e=>{edBrushSz=+e.target.value;});
   document.getElementById('edCorrW').addEventListener('change',e=>{edCorrW=+e.target.value;});
   document.getElementById('edExpandL').addEventListener('click',()=>edExpand('left'));
