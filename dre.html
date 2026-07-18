@@ -20,9 +20,9 @@
   /* a luz que a tela joga na sala + o REFLEXO no tampo da mesa */
   #glow{position:absolute;inset:0;pointer-events:none;z-index:3;
     background:
-      radial-gradient(ellipse 50% 44% at 50% 40%, rgba(85,110,170,.26), rgba(45,60,105,.12) 55%, transparent 78%),
-      radial-gradient(ellipse 38% 16% at 50% 76%, rgba(110,145,205,.24), rgba(70,95,150,.08) 60%, transparent 80%),
-      linear-gradient(180deg, transparent 55%, rgba(70,95,150,.06) 70%, transparent 92%);
+      radial-gradient(ellipse 50% 44% at 50% 40%, rgba(125,140,110,.24), rgba(70,80,60,.11) 55%, transparent 78%),
+      radial-gradient(ellipse 38% 16% at 50% 76%, rgba(150,165,130,.22), rgba(95,105,80,.08) 60%, transparent 80%),
+      linear-gradient(180deg, transparent 55%, rgba(95,105,80,.06) 70%, transparent 92%);
     transition:opacity .3s}
   #glow.off{opacity:.04}
 
@@ -36,7 +36,7 @@
       drop-shadow(0 22px 30px rgba(0,0,0,.85)) drop-shadow(0 5px 9px rgba(0,0,0,.75))}
   /* a própria tela ilumina o bezel ao redor (posicionado via JS) */
   #bezelGlow{position:absolute;z-index:6;pointer-events:none;mix-blend-mode:screen;
-    background:radial-gradient(ellipse 50% 50% at 50% 50%, rgba(105,140,205,.46), rgba(75,100,160,.18) 55%, transparent 78%);
+    background:radial-gradient(ellipse 50% 50% at 50% 50%, rgba(150,165,125,.42), rgba(100,110,85,.16) 55%, transparent 78%);
     transition:opacity .3s}
   #bezelGlow.off{opacity:.05}
   /* poeira/idade por cima do chassi */
@@ -47,12 +47,12 @@
       radial-gradient(ellipse 18% 8% at 85% 30%, rgba(140,135,120,.16), transparent 70%)}
 
   /* ===== A TELA (posicionada sobre o furo detectado) ===== */
-  #screenHost{position:absolute;z-index:3;background:#03040a;overflow:hidden;
+  #screenHost{position:absolute;z-index:3;background:#040504;overflow:hidden;
     border-radius:6% / 7%;
     box-shadow:inset 0 0 34px rgba(0,0,0,.9), inset 0 0 8px rgba(0,0,0,.9)}
   #vga{position:absolute;left:0;top:0;width:640px;height:480px;transform-origin:0 0;
-    background:#05060c;color:#c8cfd9;font-size:14px;line-height:18px;
-    text-shadow:0 0 4px rgba(150,170,210,.35)}
+    background:#060706;color:#c6cbbd;font-size:14px;line-height:18px;
+    text-shadow:0 0 4px rgba(175,195,155,.30)}
 
   /* estados de energia */
   #vga.dead{visibility:hidden}
@@ -68,9 +68,9 @@
   #tuiFoot{position:absolute;left:0;right:0;bottom:0;height:22px;padding:2px 10px;
     background:#10152a;color:#6d7690;font-size:12px;letter-spacing:.04em;white-space:pre;overflow:hidden}
 
-  .nv{color:#8fa2d8}
-  .gy{color:#6d7690}
-  .wt{color:#e6eaf2}
+  .nv{color:#a9b2a0}
+  .gy{color:#767d70}
+  .wt{color:#e9ebe0}
   .rd{color:#c04838}
   .rdbar{background:#571414;color:#e8d8d4;padding:0 4px}
   .nvbar{background:#1a2450;color:#dfe4ee;padding:0 4px}
@@ -83,11 +83,17 @@
   /* globo wireframe — SEMPRE visível (o índice não invade este canto) */
   #globeCv{position:absolute;right:10px;top:32px;z-index:8;opacity:.9}
   #dreName{position:absolute;right:12px;top:118px;z-index:8;text-align:right;
-    font-size:11px;color:#aab6d8;letter-spacing:.1em;transition:opacity 2.5s}
+    font-size:11px;color:#b7bdab;letter-spacing:.1em;transition:opacity 2.5s}
 
   /* boot */
-  #bootScr{position:absolute;inset:0;background:#04050a;color:#b8c0ce;z-index:20;
+  #bootScr{position:absolute;inset:0;background:#050604;color:#b6bbac;z-index:20;
     padding:20px 22px;font-size:14px;line-height:19px;white-space:pre-wrap;display:none}
+
+  /* visualizador de fotos/vídeos (as scanlines do CRT ficam POR CIMA) */
+  #mediaBox{position:absolute;left:16px;right:104px;top:32px;bottom:30px;z-index:10;display:none;
+    background:#000;border:1px solid #2a3050;align-items:center;justify-content:center;overflow:hidden}
+  #mediaBox img,#mediaBox video{max-width:100%;max-height:100%;
+    filter:grayscale(.88) contrast(1.14) brightness(.85);image-rendering:pixelated}
 
   /* ===== CRT overlays ===== */
   #vgaScan{position:absolute;inset:0;z-index:30;pointer-events:none;
@@ -96,7 +102,7 @@
     background:radial-gradient(ellipse 100% 96% at 50% 50%, transparent 58%, rgba(0,0,0,.5) 97%)}
   #vgaNoise{position:absolute;inset:0;width:100%;height:100%;z-index:29;pointer-events:none;
     opacity:.07;image-rendering:pixelated}
-  #vgaFlick{position:absolute;inset:0;z-index:32;pointer-events:none;background:#cfe0ff;
+  #vgaFlick{position:absolute;inset:0;z-index:32;pointer-events:none;background:#dde6cf;
     opacity:0;animation:vflick 7.1s steps(1) infinite}
   @keyframes vflick{
     0%{opacity:0}11%{opacity:.02}11.5%{opacity:0}37%{opacity:0}38%{opacity:.035}38.4%{opacity:0}
@@ -130,6 +136,7 @@
           <div id="tuiFoot"></div>
           <canvas id="globeCv" width="84" height="84"></canvas>
           <div id="dreName">DRE//</div>
+          <div id="mediaBox"></div>
           <div id="bootScr"></div>
           <canvas id="vgaNoise" width="96" height="72"></canvas>
           <div id="vgaScan"></div>
@@ -258,8 +265,21 @@
   // ===== ESTADO DO TERMINAL =====
   let power=true, stability=65, cardLevel=0;
   let docs={}, docsArr=[], unlocked={};
-  let state='off';           // off | boot | index | doc | password | card | denied
-  let selIdx=0, listTop=0;
+  let state='off';           // off | boot | menu | index | doc | password | card | denied | audio | media | download | loading
+  let selIdx=0, listTop=0, menuIdx=0;
+  // seções do arquivo (menu principal)
+  const SEC_ORDER=['audio','files','notes','media'];
+  const SECTIONS={
+    audio:'REGISTROS DE ÁUDIO',
+    files:'ARQUIVOS',
+    notes:'NOTAS PESSOAIS E ADENDOS',
+    media:'FOTOS / VÍDEOS'
+  };
+  let curSection='files';
+  function secOf(d){ return SEC_ORDER.includes(d.section)?d.section:'files'; }
+  function curList(){ return docsArr.filter(d=>secOf(d)===curSection&&!d.hidden); }
+  // transferências entrantes (GM revela um registro → ele "chega" de um databank)
+  let firstDocs=true, prevVis={}, dlQueue=[], dlBusy=false;
   let curDoc=null, docPage=0, docLines=[];
   let passBuf='', passMsg='';
   let cardMsg='AGUARDANDO LEITOR EXTERNO', cardTimer=null, cardReqT=0;
@@ -275,7 +295,7 @@
     gctx.clearRect(0,0,84,84);
     const R=33, CX=42, CY=42, tilt=-0.34, rot=tms*0.00045;
     const ct=Math.cos(tilt), st=Math.sin(tilt);
-    gctx.strokeStyle='rgba(205,213,230,.8)'; gctx.lineWidth=1;
+    gctx.strokeStyle='rgba(205,210,195,.8)'; gctx.lineWidth=1;
     const proj=(lat,lon)=>{
       const x=Math.cos(lat)*Math.cos(lon+rot), y=Math.sin(lat), z=Math.cos(lat)*Math.sin(lon+rot);
       return {x:CX+R*x, y:CY-R*(y*ct - z*st)};
@@ -370,25 +390,43 @@
   }
   function render(){
     const head=$('tuiHead'), body=$('tuiBody'), foot=$('tuiFoot');
-    if(state==='index'){
+    if(state==='menu'){
       head.textContent='DRE//OS v3.2 — ARQUIVO CENTRAL          TERMINAL 07';
       const rows=[];
-      rows.push('<span class="gy">ÍNDICE DE DOCUMENTOS — SELO DE ARQUIVO ATIVO</span>');
+      rows.push('<span class="gy">SELECIONE A SEÇÃO DO ARQUIVO</span>');
+      rows.push('<span class="gy">'+('─'.repeat(58))+'</span>');
+      rows.push('');
+      SEC_ORDER.forEach((k,i)=>{
+        const n=docsArr.filter(d=>secOf(d)===k&&!d.hidden).length;
+        const sel=i===menuIdx;
+        rows.push(`<span class="item ${sel?'sel':''}" data-m="${i}">${sel?'&gt; ':'  '}${i+1}. ${SECTIONS[k].padEnd(28)}<span class="gy">${String(n).padStart(3)} REG.</span></span>`);
+        rows.push('');
+      });
+      rows.push('<span class="gy">'+('─'.repeat(58))+'</span>');
+      rows.push('<span class="gy">SELO DE ARQUIVO ATIVO — TODO ACESSO É REGISTRADO</span>');
+      body.innerHTML=reveal(rows,40);
+      foot.textContent='↑↓ NAVEGAR   ENTER ABRIR   1-4 DIRETO            DRE//RESTRITO';
+    }
+    else if(state==='index'){
+      const L=curList();
+      head.textContent='DRE//OS v3.2 — '+SECTIONS[curSection];
+      const rows=[];
+      rows.push('<span class="gy">'+SECTIONS[curSection]+' — SELO DE ARQUIVO ATIVO</span>');
       rows.push('<span class="gy">'+('─'.repeat(58))+'</span>');
       const VIS=17;
       if(selIdx<listTop) listTop=selIdx;
       if(selIdx>=listTop+VIS) listTop=selIdx-VIS+1;
-      for(let i=listTop;i<Math.min(docsArr.length,listTop+VIS);i++){
-        const d=docsArr[i];
+      for(let i=listTop;i<Math.min(L.length,listTop+VIS);i++){
+        const d=L[i];
         const sel=i===selIdx;
         const code='['+esc(d.code||'?')+']';
         const t=esc(dispTitle(d)).slice(0,44);
         rows.push(`<span class="item ${sel?'sel':''}" data-i="${i}">${sel?'&gt; ':'  '}${code.padEnd(9)} ${t}</span>`);
       }
-      if(!docsArr.length) rows.push('<span class="gy">  (arquivo vazio — selo rompido?)</span>');
-      if(docsArr.length>VIS) rows.push(`<span class="gy">  … ${docsArr.length} registros — ↑↓ navega</span>`);
+      if(!L.length) rows.push('<span class="gy">  (nenhum registro indexado nesta seção)</span>');
+      if(L.length>VIS) rows.push(`<span class="gy">  … ${L.length} registros — ↑↓ navega</span>`);
       body.innerHTML=reveal(rows,34);
-      foot.textContent='↑↓ NAVEGAR   ENTER ABRIR                          DRE//RESTRITO';
+      foot.textContent='↑↓ NAVEGAR   ENTER ABRIR   ESC SEÇÕES            DRE//RESTRITO';
     }
     else if(state==='doc'){
       const d=curDoc;
@@ -433,18 +471,32 @@
         `<span class="gy">Este incidente foi registrado.\nO oficial de selo da estação será notificado.</span>`;
       foot.textContent='ESC VOLTAR';
     }
+    else if(state==='audio'){ renderAudio(false); }
+    else if(state==='media'&&curDoc){ paintMedia(curDoc); }
   }
   setInterval(()=>{ if(state==='card') render(); },240); // spinner
 
   // clique nos itens
   $('tuiBody').addEventListener('click',e=>{
     const it=e.target.closest('.item');
-    if(it&&state==='index'){ selIdx=parseInt(it.dataset.i)||0; openSel(); }
+    if(!it) return;
+    if(state==='menu'&&it.dataset.m!==undefined){ menuIdx=parseInt(it.dataset.m)||0; enterSection(SEC_ORDER[menuIdx]); }
+    else if(state==='index'){ selIdx=parseInt(it.dataset.i)||0; openSel(); }
   });
+
+  // ===== SEÇÕES =====
+  function enterSection(k){
+    curSection=k; selIdx=0; listTop=0;
+    state='loading';
+    $('tuiHead').textContent='DRE//OS v3.2';
+    $('tuiBody').innerHTML=`\n<span class="gy">LENDO DIRETÓRIO: ${SECTIONS[k]} <span class="blink">▉</span></span>`;
+    $('tuiFoot').textContent='AGUARDE';
+    setTimeout(()=>{ if(state!=='loading') return; state='index'; revealNext=true; render(); },380+Math.random()*520);
+  }
 
   // ===== ABERTURA DE DOCUMENTOS =====
   function openSel(){
-    const d=docsArr[selIdx]; if(!d) return;
+    const d=curList()[selIdx]; if(!d) return;
     curDoc=d;
     // o disco é VELHO: toda abertura passa por uma leitura demorada de setor
     state='loading';
@@ -495,10 +547,121 @@
     setTimeout(()=>{ if(state==='card'){ state='index'; dreRef.child('cardRequest').set(null); render(); } },2200);
   }
   function openViewer(d){
+    const sec=secOf(d);
+    if(sec==='audio'){ openAudio(d); return; }
+    if(sec==='media'){ openMedia(d); return; }
     curDoc=d; docPage=0;
     docLines=wrapText(d.body||'(registro corrompido)',58);
     revealNext=true;
     state='doc'; render();
+  }
+
+  // ===== LEITOR DE FITA (áudio) =====
+  let audioEl=null;
+  function stopAudio(){ if(audioEl){ try{audioEl.pause();}catch(e){} audioEl=null; } }
+  function fmtT(s){ s=Math.max(0,Math.floor(s||0)); return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); }
+  function openAudio(d){
+    curDoc=d; stopAudio();
+    if(d.url){ audioEl=new Audio(d.url); audioEl.play().catch(()=>{}); }
+    state='audio'; revealNext=true;
+    renderAudio(true);
+  }
+  function renderAudio(rev){
+    const d=curDoc; if(!d) return;
+    $('tuiHead').textContent=`[${d.code}] REGISTRO DE ÁUDIO`;
+    const rows=['<span class="nvbar">LEITOR DE FITA MAGNÉTICA — BAIA 2</span>','',
+      `<span class="wt">${esc(dispTitle(d))}</span>`,''];
+    if(!d.url){
+      rows.push('<span class="rd">FITA NÃO DIGITALIZADA</span>','',
+        '<span class="gy">O rolo consta no inventário físico, mas a</span>',
+        '<span class="gy">transferência para o banco de dados nunca</span>',
+        '<span class="gy">foi concluída. Consultar o arquivo físico.</span>');
+      $('tuiFoot').textContent='ESC VOLTAR';
+    } else {
+      const cur=audioEl?audioEl.currentTime:0;
+      const dur=(audioEl&&isFinite(audioEl.duration))?audioEl.duration:0;
+      const fill=Math.round((dur>0?cur/dur:0)*30);
+      const playing=audioEl&&!audioEl.paused&&!audioEl.ended;
+      rows.push((playing?'► REPRODUZINDO':'▮▮ PAUSADO')+`   ${fmtT(cur)} / ${dur?fmtT(dur):'--:--'}`,'',
+        `<span class="wt">[${'█'.repeat(fill)}${'·'.repeat(30-fill)}]</span>`,'');
+      if(d.body) rows.push('<span class="gy">'+esc(wrapText(d.body,52).join('\n'))+'</span>');
+      $('tuiFoot').textContent='ESPAÇO REPRODUZIR/PAUSAR   ESC PARAR E VOLTAR';
+    }
+    $('tuiBody').innerHTML=rev?reveal(rows,40):rows.join('\n');
+  }
+  setInterval(()=>{ if(state==='audio'&&audioEl) renderAudio(false); },500);
+
+  // ===== FOTOS / VÍDEOS =====
+  function openMedia(d){
+    curDoc=d; state='media';
+    paintMedia(d);
+  }
+  function paintMedia(d){
+    const mb=$('mediaBox');
+    const isVid=/\.(mp4|webm|mov|ogv)(\?|$)/i.test(d.url||'')||d.mediaType==='video';
+    $('tuiHead').textContent=`[${d.code}] ${isVid?'REGISTRO DE VÍDEO':'FOTOGRAMA DIGITALIZADO'}`;
+    if(!d.url){
+      mb.style.display='none'; mb.innerHTML='';
+      $('tuiBody').innerHTML='\n<span class="rd">NEGATIVO NÃO DIGITALIZADO</span>\n\n'+
+        '<span class="gy">O registro consta no inventário, mas a\ndigitalização não foi localizada no banco\nde dados. Consultar o arquivo físico.</span>';
+      $('tuiFoot').textContent='ESC VOLTAR';
+    } else {
+      $('tuiBody').innerHTML='';
+      mb.style.display='flex';
+      mb.innerHTML=isVid?`<video src="${esc(d.url)}" autoplay loop></video>`
+                        :`<img src="${esc(d.url)}" alt="">`;
+      $('tuiFoot').textContent=(dispTitle(d)).slice(0,48)+'   ESC VOLTAR';
+    }
+  }
+  function closeMedia(){ const mb=$('mediaBox'); mb.style.display='none'; mb.innerHTML=''; }
+
+  // ===== TRANSFERÊNCIA ENTRANTE (GM revelou um registro → chega de um databank) =====
+  function processDl(){
+    if(dlBusy||!dlQueue.length||brownoutActive) return;
+    if(state!=='menu'&&state!=='index') return; // não interrompe leitura em andamento
+    const d=dlQueue.shift(); dlBusy=true;
+    const back=state; // pra onde voltar
+    state='download';
+    runDlAnim(d,()=>{
+      dlBusy=false;
+      state=back; revealNext=true; render();
+    });
+  }
+  setInterval(processDl,1700);
+  function runDlAnim(d,done){
+    const bank=String(d.bank||'DB-EXT-'+(((d.code||'?').charCodeAt(0))%7+2)).toUpperCase();
+    $('tuiHead').textContent='TRANSFERÊNCIA ENTRANTE — ENLACE DE DADOS';
+    $('tuiFoot').textContent='AGUARDE — NÃO DESLIGUE O TERMINAL';
+    const lines=['<span class="nvbar">▼ TRANSFERÊNCIA ENTRANTE</span>','',
+      `<span class="gy">ORIGEM: DATABANK ${esc(bank)}</span>`,
+      'ESTABELECENDO ENLACE <span class="blink">▉</span>'];
+    const paint=()=>{ $('tuiBody').innerHTML=lines.join('\n'); };
+    paint();
+    setTimeout(()=>{
+      if(state!=='download'){ done(); return; }
+      lines[3]='ESTABELECENDO ENLACE ......... OK';
+      lines.push(`RECEBENDO: [${esc(d.code||'?')}] ${esc(dispTitle(d)).slice(0,32)}`,'','');
+      const blocks=5+Math.floor(Math.random()*5);
+      let bi=0;
+      const tick=()=>{
+        if(state!=='download'){ done(); return; }
+        bi++;
+        const fill=Math.round(bi/blocks*24);
+        lines[lines.length-1]=`BLOCO ${bi}/${blocks}  <span class="wt">${'▓'.repeat(fill)}${'░'.repeat(24-fill)}</span> ${String(Math.round(bi/blocks*100)).padStart(3)}%`;
+        if(bi>=blocks){
+          lines.push('','VERIFICANDO PARIDADE ......... OK',
+            `<span class="gy">ARQUIVADO EM: ${SECTIONS[secOf(d)]}</span>`);
+          paint();
+          setTimeout(done,1500);
+          return;
+        }
+        if(Math.random()<0.20) lines.splice(lines.length-1,0,`<span class="gy">  BLOCO ${bi} REENVIADO — ERRO DE PARIDADE</span>`);
+        paint();
+        setTimeout(tick,380+Math.random()*680);
+      };
+      paint();
+      setTimeout(tick,420);
+    },700+Math.random()*800);
   }
   function tryPassword(){
     const d=curDoc;
@@ -520,11 +683,28 @@
 
   // ===== TECLADO =====
   addEventListener('keydown',e=>{
-    if(state==='off'||state==='boot'||brownoutActive) return;
-    if(state==='index'){
-      if(e.key==='ArrowDown'){ selIdx=Math.min(docsArr.length-1,selIdx+1); render(); }
+    if(state==='off'||state==='boot'||state==='download'||brownoutActive) return;
+    if(state==='menu'){
+      if(e.key==='ArrowDown'){ menuIdx=Math.min(SEC_ORDER.length-1,menuIdx+1); render(); }
+      else if(e.key==='ArrowUp'){ menuIdx=Math.max(0,menuIdx-1); render(); }
+      else if(e.key==='Enter'){ enterSection(SEC_ORDER[menuIdx]); }
+      else if(/^[1-4]$/.test(e.key)){ menuIdx=+e.key-1; enterSection(SEC_ORDER[menuIdx]); }
+    }
+    else if(state==='index'){
+      if(e.key==='ArrowDown'){ selIdx=Math.min(curList().length-1,selIdx+1); render(); }
       else if(e.key==='ArrowUp'){ selIdx=Math.max(0,selIdx-1); render(); }
       else if(e.key==='Enter'){ openSel(); }
+      else if(e.key==='Escape'){ menuIdx=SEC_ORDER.indexOf(curSection); state='menu'; revealNext=true; render(); }
+    }
+    else if(state==='audio'){
+      if(e.key===' '){
+        if(audioEl){ if(audioEl.paused) audioEl.play().catch(()=>{}); else audioEl.pause(); renderAudio(false); }
+        e.preventDefault();
+      }
+      else if(e.key==='Escape'){ stopAudio(); state='index'; revealNext=true; render(); }
+    }
+    else if(state==='media'){
+      if(e.key==='Escape'){ closeMedia(); state='index'; revealNext=true; render(); }
     }
     else if(state==='doc'){
       if(e.key==='ArrowRight'||e.key==='PageDown'){ docPage++; render(); }
@@ -608,7 +788,8 @@
   function finishBoot(){
     booted=true;
     $('bootScr').style.display='none';
-    state='index'; selIdx=0; listTop=0;
+    state='menu'; menuIdx=0; selIdx=0; listTop=0;
+    revealNext=true;
     render();
     // o NOME aparece no boot e depois some — o globo fica
     const nm=$('dreName');
@@ -618,6 +799,7 @@
   }
   function powerOff(){
     state='off'; booted=false;
+    stopAudio(); closeMedia();
     if(bootTimer) clearTimeout(bootTimer);
     if(brownTimer) clearTimeout(brownTimer);
     $('screenHost').classList.add('dead');
@@ -690,8 +872,13 @@
     docs=s.val()||{};
     docsArr=Object.entries(docs).map(([id,d])=>({id,...d}))
       .sort((a,b)=>(a.order??999)-(b.order??999)||String(a.code).localeCompare(String(b.code)));
-    selIdx=Math.min(selIdx,Math.max(0,docsArr.length-1));
-    if(state==='index') render();
+    // chegadas: registro que era oculto (ou não existia) e agora está visível → transferência
+    const vis={};
+    docsArr.forEach(d=>{ if(!d.hidden) vis[d.id]=d; });
+    if(!firstDocs){ for(const id in vis){ if(!(id in prevVis)) dlQueue.push(vis[id]); } }
+    prevVis=vis; firstDocs=false;
+    selIdx=Math.min(selIdx,Math.max(0,curList().length-1));
+    if(state==='index'||state==='menu') render();
   });
   dreRef.child('unlocked').on('value',s=>{ unlocked=s.val()||{}; });
   dreRef.child('cardResponse').on('value',s=>{
