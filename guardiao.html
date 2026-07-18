@@ -463,9 +463,46 @@
 
   <!-- TAB: DRE -->
   <div id="tab-dre" class="tabpanel">
-    <div class="card" style="opacity:.4;pointer-events:none">
-      <div class="hd"><div class="name dim">ARQUIVO DRE // <b>não inicializado</b></div></div>
-      <div class="hint">Terminal DRE não inicializado. Em desenvolvimento.</div>
+    <div class="card">
+      <div class="hd">
+        <div class="name dim">TERMINAL DRE // <b>arquivo central</b></div>
+        <span id="dreReqBadge" style="font-size:10px;letter-spacing:.12em;color:var(--warn);display:none">● LEITOR AGUARDANDO</span>
+      </div>
+      <div class="hint">O computador esquecido da seção DRE. Jogadores abrem <code>.../dre.html</code>. Energia precária é ferramenta de cena.</div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">
+        <div style="min-width:200px">
+          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:6px">ENERGIA</div>
+          <button class="btn" id="drePowerBtn" style="width:100%">⏻ LIGADO</button>
+        </div>
+        <div style="min-width:230px;flex:1">
+          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:6px">ESTABILIDADE <span id="dreStabVal" style="color:var(--ink)">65</span>%</div>
+          <input type="range" id="dreStabSlider" min="0" max="100" value="65" style="width:100%">
+          <div style="font-size:9px;color:var(--ink-dim)">baixa = o terminal cai mais vezes (estado preservado). 100 = nunca cai.</div>
+        </div>
+        <div style="min-width:170px">
+          <div style="font-size:10px;letter-spacing:.16em;color:var(--ink-dim);margin-bottom:6px">CARTÃO DOS JOGADORES</div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input type="number" id="dreCardLvl" min="0" max="5" value="0" style="width:64px;background:var(--bg);border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:13px;padding:4px 6px;border-radius:3px">
+            <span style="font-size:9px;color:var(--ink-dim);line-height:1.5">0 = sem cartão (leitor pergunta a você).<br>N = leitor decide sozinho por nível.</span>
+          </div>
+        </div>
+      </div>
+      <div class="sub-hd" style="margin-top:16px">LEITOR EXTERNO DE CARTÃO</div>
+      <div id="dreReaderBox" style="font-size:12px;color:var(--ink-dim)">sem leituras pendentes</div>
+    </div>
+
+    <div class="card">
+      <div class="hd">
+        <div class="name dim">DOCUMENTOS // <b>arquivamento</b></div>
+        <span style="display:flex;gap:8px">
+          <button class="btn" id="dreNewDoc" style="font-size:10px">+ NOVO</button>
+          <button class="btn" id="dreSeed" style="font-size:10px">SEMEAR PADRÃO</button>
+          <button class="btn" id="dreResetUnlocks" style="font-size:10px;color:var(--warn)">RESETAR LIBERAÇÕES</button>
+        </span>
+      </div>
+      <div class="hint">Clique num documento para editar. Trava define o que o terminal exige; "censurar" esconde o título no índice dos jogadores.</div>
+      <div id="dreDocList" style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px"></div>
+      <div id="dreDocForm" style="display:none;border-top:1px solid var(--line);padding-top:14px"></div>
     </div>
   </div>
 
@@ -1918,6 +1955,281 @@
   });
 
   function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+
+  // ============ TERMINAL DRE — controle do arquivo ============
+  const dreRef=sessionRef.child('dre');
+  let dreDocs={}, dreSelId=null, drePower=true;
+
+  const LOCK_LABELS={open:'ABERTO',password:'SENHA',card:'CARTÃO',sealed:'SELADO'};
+  const LOCK_COLORS={open:'var(--live)',password:'var(--warn)',card:'#c86dd8',sealed:'var(--danger)'};
+
+  function dreRenderList(){
+    const el=document.getElementById('dreDocList'); if(!el) return;
+    const arr=Object.entries(dreDocs).map(([id,d])=>({id,...d}))
+      .sort((a,b)=>(a.order??999)-(b.order??999)||String(a.code).localeCompare(String(b.code)));
+    if(!arr.length){ el.innerHTML='<div style="font-size:11px;color:var(--ink-dim)">arquivo vazio — use SEMEAR PADRÃO</div>'; return; }
+    el.innerHTML=arr.map(d=>`
+      <div class="dre-doc-row" data-id="${d.id}" style="display:flex;gap:10px;align-items:center;padding:6px 10px;background:var(--panel2);border:1px solid ${d.id===dreSelId?'var(--live-dim)':'var(--line)'};border-radius:4px;cursor:pointer;font-size:11px">
+        <span style="color:var(--ink);min-width:64px">[${escapeHtml(d.code||'?')}]</span>
+        <span style="flex:1;color:${d.censor?'var(--ink-dim)':'var(--ink)'}">${escapeHtml(d.title||'(sem título)')}${d.censor?' <span style="font-size:9px">(censurado no índice)</span>':''}</span>
+        <span style="font-size:9px;letter-spacing:.1em;color:${LOCK_COLORS[d.lock]||'var(--ink-dim)'}">${LOCK_LABELS[d.lock]||'ABERTO'}${d.lock==='card'?' N'+(d.cardLevel||1):''}</span>
+      </div>`).join('');
+  }
+  document.getElementById('dreDocList').addEventListener('click',e=>{
+    const row=e.target.closest('.dre-doc-row');
+    if(row){ dreSelId=row.dataset.id; dreRenderList(); dreRenderForm(); }
+  });
+
+  function dreRenderForm(){
+    const el=document.getElementById('dreDocForm'); if(!el) return;
+    const d=dreSelId?dreDocs[dreSelId]:null;
+    if(!d){ el.style.display='none'; return; }
+    el.style.display='block';
+    const inp='background:var(--bg);border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:12px;padding:5px 7px;border-radius:3px';
+    el.innerHTML=`
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+        <div><div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px">CÓDIGO</div>
+          <input id="dreF-code" value="${escapeHtml(d.code||'')}" style="${inp};width:90px"></div>
+        <div style="flex:1;min-width:220px"><div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px">TÍTULO</div>
+          <input id="dreF-title" value="${escapeHtml(d.title||'')}" style="${inp};width:100%"></div>
+        <div><div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px">ORDEM</div>
+          <input id="dreF-order" type="number" value="${d.order??10}" style="${inp};width:64px"></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">
+        <div>
+          <div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px">TRAVA</div>
+          <div style="display:flex;gap:4px">
+            ${['open','password','card','sealed'].map(k=>`<button class="btn dreF-lock" data-l="${k}" style="font-size:9px${d.lock===k?';color:'+LOCK_COLORS[k]+';border-color:'+LOCK_COLORS[k]:''}">${LOCK_LABELS[k]}</button>`).join('')}
+          </div>
+        </div>
+        ${d.lock==='password'?`<div><div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px">SENHA</div>
+          <input id="dreF-pass" value="${escapeHtml(d.pass||'')}" style="${inp};width:130px"></div>`:''}
+        ${d.lock==='card'?`<div><div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px">NÍVEL DO CARTÃO</div>
+          <input id="dreF-cardlvl" type="number" min="1" max="5" value="${d.cardLevel||1}" style="${inp};width:60px"></div>`:''}
+        <div><div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px">NÍVEL EXIBIDO</div>
+          <input id="dreF-level" type="number" min="1" max="5" value="${d.level||1}" style="${inp};width:60px"></div>
+        <label style="display:flex;gap:6px;align-items:center;font-size:11px;color:var(--ink-dim);cursor:pointer">
+          <input type="checkbox" id="dreF-censor" ${d.censor?'checked':''}> censurar título no índice
+        </label>
+        <div style="flex:1;min-width:180px"><div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px">TÍTULO CENSURADO (opcional — vazio = blocos automáticos)</div>
+          <input id="dreF-titlec" value="${escapeHtml(d.titleCensored||'')}" style="${inp};width:100%"></div>
+      </div>
+      <div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px">CORPO DO DOCUMENTO</div>
+      <textarea id="dreF-body" style="${inp};width:100%;min-height:170px;resize:vertical;line-height:1.6">${escapeHtml(d.body||'')}</textarea>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn" id="dreF-save" style="color:var(--live);border-color:var(--live-dim)">SALVAR</button>
+        <button class="btn" id="dreF-relock" style="font-size:10px">RE-TRANCAR (limpa liberação deste doc)</button>
+        <button class="btn" id="dreF-del" style="color:var(--danger);margin-left:auto">EXCLUIR</button>
+      </div>`;
+    el.querySelectorAll('.dreF-lock').forEach(b=>b.addEventListener('click',()=>{
+      dreDocs[dreSelId]={...dreDocs[dreSelId],lock:b.dataset.l};
+      dreRenderForm(); dreRenderList();
+    }));
+    document.getElementById('dreF-save').addEventListener('click',()=>{
+      const g=id=>document.getElementById(id);
+      const doc={
+        code:g('dreF-code').value.trim()||'D-000',
+        title:g('dreF-title').value.trim(),
+        order:parseInt(g('dreF-order').value)||10,
+        lock:dreDocs[dreSelId].lock||'open',
+        level:Math.max(1,Math.min(5,parseInt(g('dreF-level').value)||1)),
+        censor:g('dreF-censor').checked,
+        titleCensored:g('dreF-titlec').value.trim(),
+        pass:g('dreF-pass')?g('dreF-pass').value.trim():(dreDocs[dreSelId].pass||''),
+        cardLevel:g('dreF-cardlvl')?Math.max(1,Math.min(5,parseInt(g('dreF-cardlvl').value)||1)):(dreDocs[dreSelId].cardLevel||1),
+        body:g('dreF-body').value
+      };
+      dreRef.child('docs/'+dreSelId).set(doc);
+    });
+    document.getElementById('dreF-relock').addEventListener('click',()=>{
+      dreRef.child('unlocked/'+dreSelId).set(null);
+    });
+    document.getElementById('dreF-del').addEventListener('click',()=>{
+      if(!confirm('Excluir este documento?')) return;
+      dreRef.child('docs/'+dreSelId).set(null);
+      dreRef.child('unlocked/'+dreSelId).set(null);
+      dreSelId=null; dreRenderForm();
+    });
+  }
+
+  document.getElementById('dreNewDoc').addEventListener('click',()=>{
+    const id='doc'+Date.now().toString(36);
+    dreRef.child('docs/'+id).set({code:'D-000',title:'NOVO DOCUMENTO',lock:'open',level:1,order:50,body:''});
+    dreSelId=id;
+  });
+  document.getElementById('dreResetUnlocks').addEventListener('click',()=>{
+    if(confirm('Resetar TODAS as liberações (senhas/cartões já abertos voltam a trancar)?'))
+      dreRef.child('unlocked').set(null);
+  });
+
+  // energia / estabilidade / cartão
+  document.getElementById('drePowerBtn').addEventListener('click',()=>{
+    dreRef.child('power').set(!drePower);
+  });
+  dreRef.child('power').on('value',s=>{
+    drePower=(s.val()===null||s.val()===undefined)?true:!!s.val();
+    const b=document.getElementById('drePowerBtn');
+    if(b){ b.textContent=drePower?'⏻ LIGADO (clique pra CORTAR)':'⏻ DESLIGADO (clique pra LIGAR)';
+           b.style.color=drePower?'var(--live)':'var(--danger)';
+           b.style.borderColor=drePower?'var(--live-dim)':'var(--danger)'; }
+  });
+  let _dreStabT=0;
+  document.getElementById('dreStabSlider').addEventListener('input',e=>{
+    const v=parseInt(e.target.value)||0;
+    document.getElementById('dreStabVal').textContent=v;
+    const nw=Date.now();
+    if(nw-_dreStabT>150){ _dreStabT=nw; dreRef.child('stability').set(v); }
+  });
+  document.getElementById('dreStabSlider').addEventListener('change',e=>{
+    dreRef.child('stability').set(parseInt(e.target.value)||0);
+  });
+  dreRef.child('stability').on('value',s=>{
+    const v=s.val();
+    if(typeof v==='number'){
+      const sl=document.getElementById('dreStabSlider');
+      if(sl&&document.activeElement!==sl) sl.value=v;
+      document.getElementById('dreStabVal').textContent=v;
+    }
+  });
+  document.getElementById('dreCardLvl').addEventListener('change',e=>{
+    dreRef.child('cardLevel').set(Math.max(0,Math.min(5,parseInt(e.target.value)||0)));
+  });
+  dreRef.child('cardLevel').on('value',s=>{
+    const v=s.val();
+    if(typeof v==='number'){
+      const inp=document.getElementById('dreCardLvl');
+      if(inp&&document.activeElement!==inp) inp.value=v;
+    }
+  });
+
+  // leitor externo: pedido pendente → aprovar/negar
+  dreRef.child('cardRequest').on('value',s=>{
+    const v=s.val();
+    const box=document.getElementById('dreReaderBox');
+    const badge=document.getElementById('dreReqBadge');
+    if(!box) return;
+    if(v&&v.docId){
+      badge.style.display='inline';
+      box.innerHTML=`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span style="color:var(--warn)">Documento <b>[${escapeHtml(v.code||v.docId)}]</b> aguarda cartão nível ${v.level||1} no leitor.</span>
+        <button class="btn" id="dreApprove" style="color:var(--live);border-color:var(--live-dim)">✓ CARTÃO PASSA</button>
+        <button class="btn" id="dreDenyBtn" style="color:var(--danger)">✕ REJEITAR</button>
+      </div>`;
+      document.getElementById('dreApprove').addEventListener('click',()=>{
+        dreRef.child('cardResponse').set({docId:v.docId,ok:true,t:Date.now()});
+      });
+      document.getElementById('dreDenyBtn').addEventListener('click',()=>{
+        dreRef.child('cardResponse').set({docId:v.docId,ok:false,t:Date.now()});
+      });
+    } else {
+      badge.style.display='none';
+      box.textContent='sem leituras pendentes';
+    }
+  });
+
+  dreRef.child('docs').on('value',s=>{
+    dreDocs=s.val()||{};
+    if(dreSelId&&!dreDocs[dreSelId]) dreSelId=null;
+    dreRenderList(); dreRenderForm();
+  });
+
+  // ---- DOCUMENTOS-SEMENTE (estilo SCP/DRE — edite tudo à vontade) ----
+  const DRE_SEEDS={
+    s01:{code:'D-001',title:'REGISTRO DE PERFURAÇÃO — POÇO 7',lock:'open',level:1,order:10,body:[
+      'REGISTRO OPERACIONAL — PERFURAÇÃO','POÇO 7 — PLATAFORMA "O DESERTO"','',
+      '04/09 — 0610. Avanço 214m. Formação sedimentar regular.',
+      '04/09 — 1445. Avanço 260m. Troca da broca B-11 (desgaste normal).',
+      '05/09 — 0300. Avanço 312m. NOTA: retorno de lama com coloração incomum (cinza-esverdeado). Amostra enviada ao laboratório da Seção C.',
+      '05/09 — 1130. Avanço 340m. Vibração de baixa frequência registrada nos sensores da coluna. Engenharia atribui a ressonância da tubulação.',
+      '06/09 — 0215. Avanço interrompido. Perda parcial de circulação a 366m.',
+      '06/09 — 0230. Leituras do sonar de fundo inconsistentes entre varreduras consecutivas. Recalibração agendada.',
+      '06/09 — 0600. Operação suspensa por ordem do Coordenador de Seção. Sem justificativa registrada neste terminal.','',
+      'FIM DO REGISTRO. Continuação em D-019 (acesso restrito).'
+    ].join('\n')},
+    s02:{code:'D-002',title:'MANUTENÇÃO PREVENTIVA — BOMBAS DE LASTRO',lock:'open',level:1,order:11,body:[
+      'ORDEM DE SERVIÇO 771-B','MANUTENÇÃO PREVENTIVA — SISTEMA DE LASTRO','',
+      'Bomba L-1: vazão nominal. Vedações trocadas.',
+      'Bomba L-2: vazão nominal.',
+      'Bomba L-3: ruído metálico intermitente sob carga. Origem não localizada. Recomenda-se inspeção com a bomba ABERTA na próxima parada.',
+      'Bomba L-4: vazão nominal.','',
+      'OBS. do técnico: o ruído da L-3 não acompanha o ciclo da bomba. Registrado a pedido do supervisor.','',
+      'Assinado: ████ ██████, Téc. Naval II'
+    ].join('\n')},
+    s03:{code:'D-007',title:'MEMORANDO — POLÍTICA DE COMUNICAÇÃO EXTERNA',lock:'open',level:2,order:12,body:[
+      'MEMORANDO INTERNO — CIRCULAR 7/C','DE: COORDENAÇÃO DE SEÇÃO','PARA: TODO O PESSOAL','',
+      '1. Toda comunicação com o continente passa pelo canal semanal supervisionado. Sem exceções.',
+      '2. Correspondência pessoal é lida antes do envio. Isto não é novidade e não é negociável.',
+      '3. Perguntas de familiares sobre a natureza do trabalho devem ser respondidas com o material do Anexo 2 ("prospecção sísmica").',
+      '4. O desligamento voluntário segue disponível a qualquer momento, condicionado ao período de observação padrão de 90 dias em instalação de trânsito.',
+      '5. Lembrete: vocês não estão aqui pelo petróleo.','',
+      'A Coordenação agradece a discrição de todos.'
+    ].join('\n')},
+    s04:{code:'D-019',title:'RELATÓRIO DE INCIDENTE — TURNO NOTURNO 14/03',lock:'password',pass:'PROTOCOLO-9',level:2,order:13,body:[
+      'RELATÓRIO DE INCIDENTE — 14/03, TURNO NOTURNO','CLASSIFICAÇÃO: RESTRITO — LIBERAÇÃO MÓVEL','',
+      '0243. Operador da sala de bombas reporta som de "batida ritmada" no casco sul, abaixo da linha d\'água. Intervalo regular de 11 segundos.',
+      '0251. Segundo operador confirma. O intervalo agora é de 9 segundos.',
+      '0308. Mergulhador de plantão INDISPONÍVEL (ver adendo). Inspeção adiada.',
+      '0334. As batidas cessam.',
+      '0335. ██████████████████████████████████ na moonpool.',
+      '0412. Contagem de pessoal: completa. Repetida às 0430: completa. Repetida às 0500 por ordem da Coordenação: ██ ███████.','',
+      'ADENDO: o mergulhador de plantão foi encontrado em seu alojamento, acordado, sentado de frente para a parede. Não respondeu ao chamado. Encaminhado à Seção Médica.','',
+      'AÇÃO: Protocolo 9 ativado. Este relatório substitui a versão anterior.'
+    ].join('\n')},
+    s05:{code:'D-031',title:'INVENTÁRIO DO SELO DE ARQUIVO — ALA C',lock:'open',level:1,order:14,body:[
+      'INVENTÁRIO — SELO DE ARQUIVO, ALA C','',
+      'Caixa C-01: registros de perfuração 1988-1991. COMPLETA.',
+      'Caixa C-02: correspondência supervisionada (cópias). COMPLETA.',
+      'Caixa C-03: fitas de hidrofone, rolos 1-40. COMPLETA.',
+      'Caixa C-04: fitas de hidrofone, rolos 41-80. FALTAM ROLOS 77, 78, 79.',
+      'Caixa C-05: relatórios médicos. TRANSFERIDA (destino não registrado).',
+      'Caixa C-06: ██████████████. REMOVIDA POR ORDEM SUPERIOR.','',
+      'Nota do arquivista: a ordem de remoção da C-06 não tem assinatura. O carimbo é legítimo. Registro mantido por obrigação de inventário.'
+    ].join('\n')},
+    s06:{code:'A-113',title:'ANOMALIA A-113 — "O CARDUME EM FORMAÇÃO"',lock:'password',pass:'MAREA',level:3,order:20,body:[
+      'REGISTRO DE ANOMALIA — A-113','DESIGNAÇÃO: "O CARDUME EM FORMAÇÃO"','CLASSE: OBSERVACIONAL','',
+      'DESCRIÇÃO: Cardume de aprox. 300 indivíduos (espécie não identificada, morfologia próxima a Clupeidae) observado em 6 ocasiões entre 200m e 340m de profundidade.',
+      'O cardume mantém formação geométrica FIXA — um icosaedro regular de ~7m de aresta — independente de corrente, predadores ou luz. Os indivíduos trocam de posição a cada 90 segundos, exatos, sem que a forma se deforme.',
+      'Contagem por fotografia: 300 indivíduos em todas as ocasiões. Nenhum a mais. Nenhum a menos.','',
+      'PROTOCOLO: Não iluminar diretamente. Não coletar espécimes. A tentativa de coleta de 12/07 está descrita no Adendo A-113-2, cujo acesso foi revogado.','',
+      'ADENDO A-113-1: análise das fotografias indica que os indivíduos não possuem olhos. A formação, no entanto, orienta um dos vértices para a câmera. Em todas as fotografias.'
+    ].join('\n')},
+    s07:{code:'A-129',title:'ANOMALIA A-129 — "SINO DE RETORNO"',lock:'card',cardLevel:2,level:3,order:21,body:[
+      'REGISTRO DE ANOMALIA — A-129','DESIGNAÇÃO: "SINO DE RETORNO"','CLASSE: CONTIDA — ALA C, NICHO 4','',
+      'DESCRIÇÃO: Sino de mergulho de fabricação ████████ (aprox. 1938), recuperado do leito a 380m. Estrutura íntegra apesar da idade.',
+      'Quando ocupado, selado e submerso abaixo de 300m, o A-129 retorna à superfície com o ocupante VIVO e ILESO — inclusive em testes onde o suprimento de ar era insuficiente para o tempo de mergulho.',
+      'O ocupante retorna com memória completa e coerente do mergulho.',
+      'A memória não corresponde ao mergulho realizado.',
+      'Os quatro voluntários descrevem o MESMO fundo, com as MESMAS coordenadas — um local que não existe em carta alguma. Descrevem também uma luz que os "acompanhou até a porta".','',
+      'PROTOCOLO: Ocupação proibida desde ██/██. O sino permanece selado. O nicho 4 é verificado semanalmente para confirmar que o sino ainda está vazio.',
+      'Na verificação de 03/11, a porta estava aberta pelo lado de dentro.'
+    ].join('\n')},
+    s08:{code:'A-137',title:'ANOMALIA A-137 — "A CAMADA QUENTE"',lock:'card',cardLevel:3,level:4,order:22,body:[
+      'REGISTRO DE ANOMALIA — A-137','DESIGNAÇÃO: "A CAMADA QUENTE"','CLASSE: AMBIENTAL — NÃO CONTÍVEL','',
+      'DESCRIÇÃO: Camada termal anômala detectada a ~1.480m, espessura de 2 a 4m, estável há pelo menos ██ anos.',
+      'Temperatura interna: 31°C constantes. A água imediatamente acima e abaixo segue o perfil térmico normal (4°C). Não há fonte hidrotermal conhecida na região. Não há mistura nas bordas — a transição ocorre em menos de 10cm, o que a termodinâmica não permite.',
+      'Instrumentos que atravessam a camada registram 40 a 90 segundos de dados a mais do que o tempo de travessia medido em superfície.',
+      'Os dados excedentes mostram leituras normais. De uma travessia que não aconteceu.','',
+      'PROTOCOLO: Equipamento tripulado não atravessa a camada sem autorização da Coordenação. Sondas descartáveis apenas.',
+      'ADENDO A-137-3: a hipótese do Dr. ██████ ("a camada é uma cicatriz") foi formalmente rejeitada pela banca. O Dr. ██████ solicitou desligamento na semana seguinte. Ver política de desligamento, Circular 7/C.'
+    ].join('\n')},
+    s09:{code:'A-141',title:'ANOMALIA A-141 — "VOZES NA LINHA DO CASCO"',censor:true,titleCensored:'ANOMALIA A-141 — "█████ ██ █████ ██ █████"',lock:'card',cardLevel:4,level:4,order:23,body:[
+      'REGISTRO DE ANOMALIA — A-141','DESIGNAÇÃO: "VOZES NA LINHA DO CASCO"','CLASSE: EM INVESTIGAÇÃO — PRIORIDADE DA SEÇÃO','',
+      'DESCRIÇÃO: Os hidrofones de casco captam, em noites sem operação de mergulho, um padrão acústico entre 40 e 90Hz vindo da fenda.',
+      'O padrão não é biológico conhecido. Não é geológico. A análise espectral de 14/02 encontrou estrutura FORMANTE — a assinatura física da fala.',
+      'Não há palavras. Há a INTENÇÃO de palavras: o envelope, o ritmo, as pausas. Como alguém que aprendeu o formato de uma língua ouvindo através de uma parede.',
+      'O padrão responde. Emissões de teste (tons puros, 3s) são seguidas, após 40-70s, de uma imitação do tom — com a mesma estrutura formante sobreposta.',
+      'Em 22/02 a imitação veio ANTES da emissão de teste.','',
+      'PROTOCOLO: Suspensas as emissões de teste por ordem da Coordenação. Os rolos 77-79 (caixa C-04) foram transferidos para ██████████.',
+      'NOTA MANUSCRITA NA CÓPIA FÍSICA: "não é imitação. é ensaio." — sem assinatura.'
+    ].join('\n')},
+    s10:{code:'X-004',title:'REGISTRO SELADO X-004',censor:true,titleCensored:'█-███ — ████████████████',lock:'sealed',level:5,order:30,body:[
+      'ESTE REGISTRO ESTÁ SELADO POR ORDEM DA COORDENAÇÃO GERAL.','A EXISTÊNCIA DESTE REGISTRO É, EM SI, INFORMAÇÃO CLASSIFICADA.'
+    ].join('\n')}
+  };
+  document.getElementById('dreSeed').addEventListener('click',()=>{
+    if(!confirm('Semear os documentos padrão? (mescla com os existentes — não apaga nada)')) return;
+    Object.entries(DRE_SEEDS).forEach(([id,doc])=>dreRef.child('docs/'+id).set(doc));
+  });
 </script>
 </body>
 </html>
