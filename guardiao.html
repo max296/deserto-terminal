@@ -500,7 +500,7 @@
         </span>
       </div>
       <div class="hint">Clique num documento para editar. Trava define o que o terminal exige; "censurar" esconde o título no índice dos jogadores.</div>
-      <div style="font-size:10px;color:var(--ink-dim);margin-bottom:6px;line-height:1.6">OCULTAR tira o registro do índice dos jogadores. REVELAR faz ele <i>chegar</i> no terminal com uma transferência animada do databank de origem. Seção, databank e URL (áudio/foto/vídeo) ficam no formulário do registro.</div>
+      <div style="font-size:10px;color:var(--ink-dim);margin-bottom:6px;line-height:1.6">Registros ocultos ficam no DEPÓSITO, agrupados por DATABANK (o campo do formulário) — cada databank é um "disco". REVELAR CONJUNTO faz o disco inteiro chegar no terminal numa transferência só, com uma barra por registro. Revelar individual também funciona. OCULTAR devolve pro depósito.</div>
       <div id="dreDocList" style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px"></div>
       <div id="dreDocForm" style="display:none;border-top:1px solid var(--line);padding-top:14px"></div>
     </div>
@@ -1967,27 +1967,63 @@
   const SEC_LABELS={audio:'ÁUDIO',files:'ARQUIVO',notes:'NOTA',media:'FOTO/VÍDEO'};
   const secOfG=d=>SEC_ORDER_G.includes(d.section)?d.section:'files';
 
+  let dreOpenBanks=new Set();
   function dreRenderList(){
     const el=document.getElementById('dreDocList'); if(!el) return;
     const arr=Object.entries(dreDocs).map(([id,d])=>({id,...d}))
       .sort((a,b)=>(a.order??999)-(b.order??999)||String(a.code).localeCompare(String(b.code)));
     if(!arr.length){ el.innerHTML='<div style="font-size:11px;color:var(--ink-dim)">arquivo vazio — use SEMEAR PADRÃO</div>'; return; }
-    let html='';
-    for(const sec of SEC_ORDER_G){
-      const items=arr.filter(d=>secOfG(d)===sec);
-      if(!items.length) continue;
-      html+=`<div style="font-size:9px;letter-spacing:.16em;color:var(--ink-dim);margin:8px 0 2px">${SEC_NAMES[sec]}</div>`;
-      html+=items.map(d=>`
-      <div class="dre-doc-row" data-id="${d.id}" style="display:flex;gap:10px;align-items:center;padding:6px 10px;background:var(--panel2);border:1px solid ${d.id===dreSelId?'var(--live-dim)':'var(--line)'};border-radius:4px;cursor:pointer;font-size:11px;opacity:${d.hidden?'.5':'1'}">
+    const row=d=>`
+      <div class="dre-doc-row" data-id="${d.id}" style="display:flex;gap:10px;align-items:center;padding:6px 10px;background:var(--panel2);border:1px solid ${d.id===dreSelId?'var(--live-dim)':'var(--line)'};border-radius:4px;cursor:pointer;font-size:11px;opacity:${d.hidden?'.62':'1'}">
         <span style="color:var(--ink);min-width:64px">[${escapeHtml(d.code||'?')}]</span>
         <span style="flex:1;color:${d.censor?'var(--ink-dim)':'var(--ink)'}">${escapeHtml(d.title||'(sem título)')}${d.censor?' <span style="font-size:9px">(censurado no índice)</span>':''}</span>
         <span style="font-size:9px;letter-spacing:.1em;color:${LOCK_COLORS[d.lock]||'var(--ink-dim)'}">${LOCK_LABELS[d.lock]||'ABERTO'}${d.lock==='card'?' N'+(d.cardLevel||1):''}</span>
         <button class="btn dre-hide-btn" data-id="${d.id}" style="font-size:9px;padding:2px 8px;color:${d.hidden?'var(--warn)':'var(--ink-dim)'};border-color:${d.hidden?'var(--warn)':'var(--line)'}">${d.hidden?'REVELAR ▼':'OCULTAR'}</button>
-      </div>`).join('');
+      </div>`;
+    const vis=arr.filter(d=>!d.hidden), hid=arr.filter(d=>d.hidden);
+    // ===== o que os jogadores VEEM (formato por seção) =====
+    let html='<div style="font-size:10px;letter-spacing:.14em;color:var(--live);margin:2px 0 2px">ACERVO VISÍVEL — é isto que os jogadores veem</div>';
+    if(!vis.length) html+='<div style="font-size:10px;color:var(--ink-dim)">nada visível no terminal</div>';
+    for(const sec of SEC_ORDER_G){
+      const items=vis.filter(d=>secOfG(d)===sec);
+      if(!items.length) continue;
+      html+=`<div style="font-size:9px;letter-spacing:.16em;color:var(--ink-dim);margin:8px 0 2px">${SEC_NAMES[sec]}</div>`;
+      html+=items.map(row).join('');
     }
+    // ===== depósito oculto, organizado por CONJUNTO (databank) =====
+    html+='<div style="font-size:10px;letter-spacing:.14em;color:var(--warn);margin:16px 0 4px">DEPÓSITO OCULTO — por conjunto (databank)</div>';
+    if(!hid.length) html+='<div style="font-size:10px;color:var(--ink-dim)">nenhum registro oculto</div>';
+    const banks={};
+    hid.forEach(d=>{ const b=String(d.bank||'SEM CONJUNTO').toUpperCase(); (banks[b]=banks[b]||[]).push(d); });
+    Object.keys(banks).sort().forEach(b=>{
+      const items=banks[b];
+      html+=`<details class="dre-bank" data-bank="${escapeHtml(b)}"${dreOpenBanks.has(b)?' open':''} style="border:1px solid var(--line);border-radius:4px;padding:4px 8px;background:var(--panel2);margin-bottom:4px">
+        <summary style="cursor:pointer;font-size:10px;display:flex;gap:10px;align-items:center;list-style:none">
+          <span style="color:var(--ink)">▣ ${escapeHtml(b)}</span>
+          <span style="color:var(--ink-dim)">${items.length} registro${items.length>1?'s':''}</span>
+          <button class="btn dre-reveal-set" data-bank="${escapeHtml(b)}" style="font-size:9px;padding:2px 8px;margin-left:auto;color:var(--warn);border-color:var(--warn)">▼ REVELAR CONJUNTO (disco no leitor)</button>
+        </summary>
+        <div style="display:flex;flex-direction:column;gap:3px;margin-top:6px">${items.map(row).join('')}</div>
+      </details>`;
+    });
     el.innerHTML=html;
+    el.querySelectorAll('details.dre-bank').forEach(dt=>dt.addEventListener('toggle',()=>{
+      if(dt.open) dreOpenBanks.add(dt.dataset.bank); else dreOpenBanks.delete(dt.dataset.bank);
+    }));
   }
   document.getElementById('dreDocList').addEventListener('click',e=>{
+    const rs=e.target.closest('.dre-reveal-set');
+    if(rs){
+      e.preventDefault(); e.stopPropagation();
+      const b=rs.dataset.bank;
+      // UM update multi-path = UM evento no terminal = chega tudo como UM disco
+      const upd={};
+      Object.entries(dreDocs).forEach(([id,d])=>{
+        if(d.hidden&&String(d.bank||'SEM CONJUNTO').toUpperCase()===b) upd[id+'/hidden']=false;
+      });
+      if(Object.keys(upd).length) dreRef.child('docs').update(upd);
+      return;
+    }
     const hb=e.target.closest('.dre-hide-btn');
     if(hb){
       const d=dreDocs[hb.dataset.id];
