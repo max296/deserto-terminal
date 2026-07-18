@@ -14,16 +14,17 @@
   #room::after{content:'';position:absolute;inset:0;z-index:6;pointer-events:none;
     background:radial-gradient(ellipse 75% 70% at 50% 44%, transparent 40%, rgba(0,0,0,.55) 78%, rgba(0,0,0,.85) 100%)}
   #tableWrap{position:absolute;left:-6%;right:-6%;bottom:0;height:42%;overflow:hidden;
-    filter:brightness(.30) saturate(.55)}
+    filter:brightness(.55) saturate(.6)}
   #tableWrap img{position:absolute;left:0;bottom:0;width:100%;height:170%;object-fit:cover;
     object-position:bottom}
   /* a luz que a tela joga na sala + o REFLEXO no tampo da mesa */
   #glow{position:absolute;inset:0;pointer-events:none;z-index:3;
     background:
-      radial-gradient(ellipse 44% 38% at 50% 40%, rgba(70,90,140,.11), rgba(30,40,70,.05) 55%, transparent 75%),
-      radial-gradient(ellipse 30% 12% at 50% 78%, rgba(90,120,175,.10), transparent 70%);
+      radial-gradient(ellipse 50% 44% at 50% 40%, rgba(85,110,170,.26), rgba(45,60,105,.12) 55%, transparent 78%),
+      radial-gradient(ellipse 38% 16% at 50% 76%, rgba(110,145,205,.24), rgba(70,95,150,.08) 60%, transparent 80%),
+      linear-gradient(180deg, transparent 55%, rgba(70,95,150,.06) 70%, transparent 92%);
     transition:opacity .3s}
-  #glow.off{opacity:.05}
+  #glow.off{opacity:.04}
 
   /* ===== O MONITOR (câmera perto, ASSENTADO na mesa) ===== */
   #rig{position:absolute;left:50%;top:46.5%;transform:translate(-50%,-50%);z-index:2}
@@ -35,7 +36,7 @@
       drop-shadow(0 22px 30px rgba(0,0,0,.85)) drop-shadow(0 5px 9px rgba(0,0,0,.75))}
   /* a própria tela ilumina o bezel ao redor (posicionado via JS) */
   #bezelGlow{position:absolute;z-index:6;pointer-events:none;mix-blend-mode:screen;
-    background:radial-gradient(ellipse 50% 50% at 50% 50%, rgba(96,128,190,.34), rgba(70,95,150,.13) 55%, transparent 76%);
+    background:radial-gradient(ellipse 50% 50% at 50% 50%, rgba(105,140,205,.46), rgba(75,100,160,.18) 55%, transparent 78%);
     transition:opacity .3s}
   #bezelGlow.off{opacity:.05}
   /* poeira/idade por cima do chassi */
@@ -60,8 +61,10 @@
   /* TUI */
   #tuiHead{position:absolute;left:0;right:0;top:0;height:24px;padding:3px 10px;
     background:#141c38;color:#dfe4ee;font-size:13px;letter-spacing:.06em;white-space:pre;overflow:hidden}
-  #tuiBody{position:absolute;left:0;right:0;top:26px;bottom:24px;padding:6px 14px;
+  #tuiBody{position:absolute;left:0;right:0;top:26px;bottom:24px;padding:8px 106px 8px 16px;
     white-space:pre-wrap;overflow:hidden;font-size:14px}
+  .rev{opacity:0;animation:revl .04s steps(1) forwards}
+  @keyframes revl{to{opacity:1}}
   #tuiFoot{position:absolute;left:0;right:0;bottom:0;height:22px;padding:2px 10px;
     background:#10152a;color:#6d7690;font-size:12px;letter-spacing:.04em;white-space:pre;overflow:hidden}
 
@@ -77,12 +80,10 @@
   .blink{animation:blink 1s step-end infinite}
   @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
 
-  /* globo wireframe — SEMPRE visível */
+  /* globo wireframe — SEMPRE visível (o índice não invade este canto) */
   #globeCv{position:absolute;right:10px;top:32px;z-index:8;opacity:.9}
-  #dreName{position:absolute;right:10px;top:118px;z-index:8;text-align:right;
-    font-size:12px;color:#aab6d8;letter-spacing:.08em;line-height:1.5;
-    transition:opacity 2.5s}
-  #dreName span{font-size:9px;color:#5f6a8c;letter-spacing:.03em}
+  #dreName{position:absolute;right:12px;top:118px;z-index:8;text-align:right;
+    font-size:11px;color:#aab6d8;letter-spacing:.1em;transition:opacity 2.5s}
 
   /* boot */
   #bootScr{position:absolute;inset:0;background:#04050a;color:#b8c0ce;z-index:20;
@@ -128,7 +129,7 @@
           <div id="tuiBody"></div>
           <div id="tuiFoot"></div>
           <canvas id="globeCv" width="84" height="84"></canvas>
-          <div id="dreName">DRE//<br><span>Division of Reality Engineering</span></div>
+          <div id="dreName">DRE//</div>
           <div id="bootScr"></div>
           <canvas id="vgaNoise" width="96" height="72"></canvas>
           <div id="vgaScan"></div>
@@ -181,6 +182,21 @@
         else { px[i4]*=0.55; px[i4+1]*=0.55; px[i4+2]*=0.55; } // borda escura: assenta
       }
     }
+    // 3) FEATHER: as bordas (inclusive a interna do furo) viram degradê de 2px —
+    //    o serrilhado da imagem pequena esticada some
+    {
+      const snap=new Uint8Array(W0*H0);
+      for(let i=0;i<W0*H0;i++) snap[i]=px[i*4+3];
+      for(let y=2;y<H0-2;y++)for(let xx=2;xx<W0-2;xx++){
+        const i4=(y*W0+xx)*4;
+        if(snap[y*W0+xx]===0) continue;
+        const d1=snap[(y-1)*W0+xx]===0||snap[(y+1)*W0+xx]===0||snap[y*W0+xx-1]===0||snap[y*W0+xx+1]===0;
+        if(d1){ px[i4+3]=105; continue; }
+        const d2=snap[(y-2)*W0+xx]===0||snap[(y+2)*W0+xx]===0||snap[y*W0+xx-2]===0||snap[y*W0+xx+2]===0
+          ||snap[(y-1)*W0+xx-1]===0||snap[(y-1)*W0+xx+1]===0||snap[(y+1)*W0+xx-1]===0||snap[(y+1)*W0+xx+1]===0;
+        if(d2) px[i4+3]=185;
+      }
+    }
     g.putImageData(id,0,0);
     // furo da tela: grow-rect na máscara transparente a partir de (0.5, 0.36)
     const W=c.width,H=c.height;
@@ -221,13 +237,15 @@
     rig.style.width=w+'px'; rig.style.height=h+'px';
     if(!screenFrac) return;
     const sh=document.getElementById('screenHost');
-    // 1.5% de sangria pra cobrir restos do xadrez nos cantos arredondados
-    const bw=screenFrac.w*1.03*w, bh=screenFrac.h*1.04*h;
+    const bw=screenFrac.w*1.01*w, bh=screenFrac.h*1.02*h;
     sh.style.left=(screenFrac.cx*w-bw/2)+'px';
     sh.style.top=(screenFrac.cy*h-bh/2)+'px';
     sh.style.width=bw+'px'; sh.style.height=bh+'px';
+    // ÁREA SEGURA: o VGA encolhe 3% pra dentro — a moldura nunca cobre conteúdo
     const vga=document.getElementById('vga');
-    vga.style.transform=`scale(${(bw/640).toFixed(4)},${(bh/480).toFixed(4)})`;
+    const inX=bw*0.032, inY=bh*0.032;
+    vga.style.left=inX+'px'; vga.style.top=inY+'px';
+    vga.style.transform=`scale(${((bw-inX*2)/640).toFixed(4)},${((bh-inY*2)/480).toFixed(4)})`;
     // luz da tela no chassi: elipse maior centrada no furo
     const bg=document.getElementById('bezelGlow');
     const gw2=screenFrac.w*1.65*w, gh2=screenFrac.h*1.75*h;
@@ -285,10 +303,11 @@
     gctx.beginPath(); gctx.arc(CX,CY,R,0,6.283); gctx.stroke();
   }
 
-  // ===== RUÍDO ===== */
+  // ===== RUÍDO (intensidade cresce com a INSTABILIDADE) =====
   const ncv=$('vgaNoise'), nctx=ncv.getContext('2d');
   setInterval(()=>{
     if(state==='off') return;
+    ncv.style.opacity=(0.055+(1-stability/100)*0.11).toFixed(3);
     const id=nctx.createImageData(96,72);
     for(let i=0;i<id.data.length;i+=4){
       const v=Math.random()*255|0;
@@ -297,15 +316,28 @@
     nctx.putImageData(id,0,0);
   },100);
 
-  // jitter horizontal ocasional (sincronismo ruim)
+  // jitter horizontal ocasional (sincronismo ruim; piora com a instabilidade)
   setInterval(()=>{
     if(state==='off'||brownoutActive) return;
-    if(Math.random()<0.35){
+    if(Math.random()<0.22+(1-stability/100)*0.55){
       const w=$('vgaWrap');
       w.style.marginLeft=(Math.random()*4-2).toFixed(1)+'px';
       setTimeout(()=>{ w.style.marginLeft='0'; },90+Math.random()*140);
     }
   },3600);
+
+  // SOLUÇOS: instabilidade degrada a imagem o tempo todo (não só nas quedas) —
+  // rolagem vertical + estouro de brilho por uma fração de segundo
+  function microGlitch(){
+    const w=$('vgaWrap');
+    w.style.transform='translateY('+((Math.random()*10-5)|0)+'px)';
+    w.style.filter='brightness('+(1.25+Math.random()*0.8).toFixed(2)+') contrast(1.15)';
+    setTimeout(()=>{ w.style.transform=''; w.style.filter=''; },80+Math.random()*180);
+  }
+  setInterval(()=>{
+    if(state==='off'||brownoutActive) return;
+    if(Math.random()<0.10+(1-stability/100)*0.6) microGlitch();
+  },2400);
 
   // ===== HELPERS DE TEXTO =====
   function wrapText(txt,width){
@@ -330,6 +362,12 @@
   }
 
   // ===== RENDER =====
+  let revealNext=false; // transição de tela: o conteúdo aparece LINHA A LINHA (lento, de época)
+  function reveal(lines,per){
+    if(!revealNext) return lines.join('\n');
+    revealNext=false;
+    return lines.map((l,i)=>`<span class="rev" style="animation-delay:${i*(per||30)}ms">${l}</span>`).join('\n');
+  }
   function render(){
     const head=$('tuiHead'), body=$('tuiBody'), foot=$('tuiFoot');
     if(state==='index'){
@@ -349,7 +387,7 @@
       }
       if(!docsArr.length) rows.push('<span class="gy">  (arquivo vazio — selo rompido?)</span>');
       if(docsArr.length>VIS) rows.push(`<span class="gy">  … ${docsArr.length} registros — ↑↓ navega</span>`);
-      body.innerHTML=rows.join('\n');
+      body.innerHTML=reveal(rows,34);
       foot.textContent='↑↓ NAVEGAR   ENTER ABRIR                          DRE//RESTRITO';
     }
     else if(state==='doc'){
@@ -361,8 +399,7 @@
       const slice=docLines.slice(docPage*PAGE,(docPage+1)*PAGE);
       const lvl=d.level||1;
       const stamp=lvl>=3?'rdbar':'nvbar';
-      body.innerHTML=`<span class="${stamp}">DRE//CLASSIFICADO — NÍVEL ${lvl}</span>\n\n`+
-        slice.map(esc).join('\n');
+      body.innerHTML=reveal([`<span class="${stamp}">DRE//CLASSIFICADO — NÍVEL ${lvl}</span>`,''].concat(slice.map(esc)),26);
       foot.textContent=`PÁG ${docPage+1}/${pages}   ←→ PÁGINA   ESC VOLTAR`;
     }
     else if(state==='password'){
@@ -409,6 +446,19 @@
   function openSel(){
     const d=docsArr[selIdx]; if(!d) return;
     curDoc=d;
+    // o disco é VELHO: toda abertura passa por uma leitura demorada de setor
+    state='loading';
+    const secHex=(0x2000+Math.floor(Math.random()*0xDFFF)).toString(16).toUpperCase();
+    $('tuiHead').textContent=`[${d.code||'?'}]`;
+    $('tuiBody').innerHTML=`\n<span class="gy">LENDO SETOR 0x${secHex} <span class="blink">▉</span></span>`;
+    $('tuiFoot').textContent='AGUARDE — NÃO DESLIGUE O TERMINAL';
+    setTimeout(()=>{
+      if(state!=='loading') return;
+      revealNext=true;
+      openSel2(d);
+    },480+Math.random()*750);
+  }
+  function openSel2(d){
     if(unlocked[d.id]||d.lock==='open'||!d.lock){ openViewer(d); return; }
     if(d.lock==='sealed'){ deniedDoc=d; state='denied'; render(); return; }
     if(d.lock==='password'){ passBuf=''; passMsg=''; state='password'; render(); return; }
@@ -446,20 +496,26 @@
   }
   function openViewer(d){
     curDoc=d; docPage=0;
-    docLines=wrapText(d.body||'(registro corrompido)',64);
+    docLines=wrapText(d.body||'(registro corrompido)',58);
+    revealNext=true;
     state='doc'; render();
   }
   function tryPassword(){
     const d=curDoc;
-    const want=String(d.pass||'').trim().toLowerCase();
-    if(want&&passBuf.trim().toLowerCase()===want){
-      dreRef.child('unlocked/'+d.id).set(true);
-      unlocked[d.id]=true;
-      openViewer(d);
-    } else {
-      passMsg='CÓDIGO INVÁLIDO — TENTATIVA REGISTRADA'; passBuf='';
-      render();
-    }
+    // verificação LENTA (máquina de 30 anos consultando o disco)
+    $('tuiBody').innerHTML=`\n<span class="gy">VERIFICANDO CREDENCIAL <span class="blink">▉</span></span>`;
+    setTimeout(()=>{
+      if(state!=='password') return;
+      const want=String(d.pass||'').trim().toLowerCase();
+      if(want&&passBuf.trim().toLowerCase()===want){
+        dreRef.child('unlocked/'+d.id).set(true);
+        unlocked[d.id]=true;
+        openViewer(d);
+      } else {
+        passMsg='CÓDIGO INVÁLIDO — TENTATIVA REGISTRADA'; passBuf='';
+        render();
+      }
+    },800+Math.random()*700);
   }
 
   // ===== TECLADO =====
@@ -473,7 +529,11 @@
     else if(state==='doc'){
       if(e.key==='ArrowRight'||e.key==='PageDown'){ docPage++; render(); }
       else if(e.key==='ArrowLeft'||e.key==='PageUp'){ docPage--; render(); }
-      else if(e.key==='Escape'){ state='index'; render(); }
+      else if(e.key==='Escape'){
+        // até voltar demora um tico
+        $('tuiBody').innerHTML=''; state='loading';
+        setTimeout(()=>{ state='index'; revealNext=true; render(); },230);
+      }
     }
     else if(state==='password'){
       if(e.key==='Enter'){ tryPassword(); }
@@ -506,7 +566,9 @@
     [5100,'CARREGANDO DRE//OS v3.2'],
     [6100,'VERIFICANDO SELO DE ARQUIVO ... INTACTO'],
     [6900,'MONTANDO ÍNDICE ............... 10 ANOS SEM ACESSO'],
-    [8000,'']
+    [7800,''],
+    [7900,'DIVISION OF REALITY ENGINEERING'],
+    [8600,'']
   ];
   function powerOn(){
     if(state!=='off') return;
@@ -618,6 +680,8 @@
     const v=s.val();
     stability=(typeof v==='number')?v:80;
     if(booted) scheduleBrownout();
+    // feedback IMEDIATO ao mexer no knob: instável = a imagem reclama na hora
+    if(booted&&stability<55&&!brownoutActive) microGlitch();
   });
   dreRef.child('cardLevel').on('value',s=>{
     cardLevel=(typeof s.val()==='number')?s.val():0;
