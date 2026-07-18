@@ -592,6 +592,12 @@
     try{ AC.createMediaElementSource(el).connect(dst); }catch(e){}
     if(AC.state==='suspended') AC.resume().catch(()=>{});
   }
+  // URL de outro site: o filtro de alto-falante exige CORS. Tentamos com CORS;
+  // se o host não deixar, tocamos DIRETO (limpo) — som limpo é melhor que mudo.
+  function isCrossOrigin(u){
+    try{ return /^https?:/i.test(u)&&new URL(u,location.href).origin!==location.origin; }
+    catch(e){ return false; }
+  }
   setInterval(()=>{
     if(!hissGain) return;
     const playing=(audioEl&&!audioEl.paused&&!audioEl.ended)||(mediaVid&&!mediaVid.paused&&!mediaVid.ended);
@@ -620,8 +626,19 @@
   function openAudio(d){
     curDoc=d; stopAudio();
     if(d.url){
-      audioEl=new Audio(d.url);
-      tapePitch(audioEl); routeSpeaker(audioEl);
+      if(isCrossOrigin(d.url)){
+        const el=new Audio(); el.crossOrigin='anonymous'; el.src=d.url;
+        el.addEventListener('error',()=>{
+          if(audioEl!==el) return;
+          const plain=new Audio(d.url); tapePitch(plain); // sem CORS: direto, sem filtro
+          audioEl=plain; plain.play().catch(()=>{});
+        },{once:true});
+        tapePitch(el); routeSpeaker(el);
+        audioEl=el;
+      } else {
+        audioEl=new Audio(d.url);
+        tapePitch(audioEl); routeSpeaker(audioEl);
+      }
       audioEl.play().catch(()=>{});
     }
     state='audio'; revealNext=true;
@@ -662,7 +679,7 @@
   }
   function paintMedia(d){
     const mb=$('mediaBox');
-    const isVid=/\.(mp4|webm|mov|ogv)(\?|$)/i.test(d.url||'')||d.mediaType==='video';
+    const isVid=/\.(mp4|webm|mov|ogv)(\?|$)/i.test(d.url||'')||/^data:video/i.test(d.url||'')||d.mediaType==='video';
     $('tuiHead').textContent=`[${d.code}] ${isVid?'REGISTRO DE VÍDEO':'FOTOGRAMA DIGITALIZADO'} — ${dispTitle(d).slice(0,28)}`;
     if(!d.url){
       mediaVid=null; mb.style.display='none'; mb.innerHTML='';
@@ -672,11 +689,17 @@
     } else {
       $('tuiBody').innerHTML='';
       mb.style.display='flex';
-      mb.innerHTML=isVid?`<video src="${esc(d.url)}" autoplay loop></video>`
+      const xo=isVid&&isCrossOrigin(d.url);
+      mb.innerHTML=isVid?`<video src="${esc(d.url)}"${xo?' crossorigin="anonymous"':''} autoplay loop></video>`
                         :`<img src="${esc(d.url)}" alt="">`;
       mediaVid=mb.querySelector('video');
       if(mediaVid){
-        tapePitch(mediaVid); routeSpeaker(mediaVid); // o som do vídeo sai do MESMO alto-falante velho
+        tapePitch(mediaVid);
+        if(xo) mediaVid.onerror=()=>{ // host sem CORS: recria direto, sem o filtro
+          mb.innerHTML=`<video src="${esc(d.url)}" autoplay loop></video>`;
+          mediaVid=mb.querySelector('video'); tapePitch(mediaVid);
+        };
+        routeSpeaker(mediaVid); // o som do vídeo sai do MESMO alto-falante velho
         $('tuiFoot').textContent='←→ REBOBINAR/AVANÇAR  ↑↓ MOTOR  ESPAÇO PAUSA  ESC VOLTAR';
       } else {
         $('tuiFoot').textContent=(dispTitle(d)).slice(0,48)+'   ESC VOLTAR';
