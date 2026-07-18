@@ -10,20 +10,34 @@
 
   /* ===== A SALA ESCURA (seção abandonada — só a luz da tela) ===== */
   #room{position:fixed;inset:0;background:#000;overflow:hidden}
-  #tableWrap{position:absolute;left:-6%;right:-6%;bottom:0;height:34%;overflow:hidden;
-    filter:brightness(.34) saturate(.6)}
-  #tableWrap img{position:absolute;left:0;bottom:0;width:100%;height:200%;object-fit:cover;
+  /* vinheta da sala: os cantos afundam no breu */
+  #room::after{content:'';position:absolute;inset:0;z-index:6;pointer-events:none;
+    background:radial-gradient(ellipse 75% 70% at 50% 44%, transparent 40%, rgba(0,0,0,.55) 78%, rgba(0,0,0,.85) 100%)}
+  #tableWrap{position:absolute;left:-6%;right:-6%;bottom:0;height:42%;overflow:hidden;
+    filter:brightness(.30) saturate(.55)}
+  #tableWrap img{position:absolute;left:0;bottom:0;width:100%;height:170%;object-fit:cover;
     object-position:bottom}
-  /* a luz que a tela joga na sala */
+  /* a luz que a tela joga na sala + o REFLEXO no tampo da mesa */
   #glow{position:absolute;inset:0;pointer-events:none;z-index:3;
-    background:radial-gradient(ellipse 46% 42% at 50% 42%, rgba(70,90,140,.10), rgba(30,40,70,.045) 55%, transparent 75%);
+    background:
+      radial-gradient(ellipse 44% 38% at 50% 40%, rgba(70,90,140,.11), rgba(30,40,70,.05) 55%, transparent 75%),
+      radial-gradient(ellipse 30% 12% at 50% 78%, rgba(90,120,175,.10), transparent 70%);
     transition:opacity .3s}
-  #glow.off{opacity:.06}
+  #glow.off{opacity:.05}
 
-  /* ===== O MONITOR (câmera perto) ===== */
-  #rig{position:absolute;left:50%;top:50%;transform:translate(-50%,-52%);z-index:2}
+  /* ===== O MONITOR (câmera perto, ASSENTADO na mesa) ===== */
+  #rig{position:absolute;left:50%;top:46.5%;transform:translate(-50%,-50%);z-index:2}
+  /* sombra de contato: o peso do monitor no tampo */
+  #contactShadow{position:absolute;left:2%;right:2%;bottom:-3.5%;height:9%;z-index:1;
+    background:radial-gradient(ellipse 50% 50% at 50% 50%, rgba(0,0,0,.85), rgba(0,0,0,.45) 55%, transparent 78%)}
   #crtImg{display:block;width:100%;height:100%;pointer-events:none;position:relative;z-index:4;
-    filter:brightness(.8) contrast(1.04)}
+    filter:brightness(.78) contrast(1.05)
+      drop-shadow(0 22px 30px rgba(0,0,0,.85)) drop-shadow(0 5px 9px rgba(0,0,0,.75))}
+  /* a própria tela ilumina o bezel ao redor (posicionado via JS) */
+  #bezelGlow{position:absolute;z-index:6;pointer-events:none;mix-blend-mode:screen;
+    background:radial-gradient(ellipse 50% 50% at 50% 50%, rgba(96,128,190,.34), rgba(70,95,150,.13) 55%, transparent 76%);
+    transition:opacity .3s}
+  #bezelGlow.off{opacity:.05}
   /* poeira/idade por cima do chassi */
   #dust{position:absolute;inset:0;z-index:5;pointer-events:none;opacity:.20;
     background:
@@ -124,6 +138,8 @@
       </div>
     </div>
     <img id="crtImg" alt="">
+    <div id="bezelGlow" class="off"></div>
+    <div id="contactShadow"></div>
   </div>
 </div>
 
@@ -143,11 +159,27 @@
     const g=c.getContext('2d');
     g.drawImage(crtRaw,0,0);
     const id=g.getImageData(0,0,c.width,c.height), px=id.data;
-    // checkerboard de "transparência" pintado: claro e sem saturação → vira alpha 0
+    const W0=c.width, H0=c.height;
+    // 1) checkerboard de "transparência" pintado: claro e sem saturação → alpha 0
     for(let i=0;i<px.length;i+=4){
       const r=px[i],g2=px[i+1],b=px[i+2];
       const mx=Math.max(r,g2,b),mn=Math.min(r,g2,b);
-      if(mx>168&&(mx-mn)<30) px[i+3]=0;
+      if(mx>160&&(mx-mn)<32) px[i+3]=0;
+    }
+    // 2) EROSÃO do halo: pixels claros de anti-alias colados na borda transparente
+    //    (os "pontos brancos" da borda) — duas passadas
+    for(let pass=0;pass<2;pass++){
+      const snap=new Uint8Array(W0*H0);
+      for(let i=0;i<W0*H0;i++) snap[i]=px[i*4+3];
+      for(let y=1;y<H0-1;y++)for(let xx=1;xx<W0-1;xx++){
+        const i4=(y*W0+xx)*4;
+        if(px[i4+3]===0) continue;
+        const nearClear=snap[(y-1)*W0+xx]===0||snap[(y+1)*W0+xx]===0||snap[y*W0+xx-1]===0||snap[y*W0+xx+1]===0;
+        if(!nearClear) continue;
+        const lum=(px[i4]+px[i4+1]+px[i4+2])/3;
+        if(lum>110) px[i4+3]=0;          // halo claro: some
+        else { px[i4]*=0.55; px[i4+1]*=0.55; px[i4+2]*=0.55; } // borda escura: assenta
+      }
     }
     g.putImageData(id,0,0);
     // furo da tela: grow-rect na máscara transparente a partir de (0.5, 0.36)
@@ -195,8 +227,13 @@
     sh.style.top=(screenFrac.cy*h-bh/2)+'px';
     sh.style.width=bw+'px'; sh.style.height=bh+'px';
     const vga=document.getElementById('vga');
-    const s=Math.min(bw/640,bh/480);
     vga.style.transform=`scale(${(bw/640).toFixed(4)},${(bh/480).toFixed(4)})`;
+    // luz da tela no chassi: elipse maior centrada no furo
+    const bg=document.getElementById('bezelGlow');
+    const gw2=screenFrac.w*1.65*w, gh2=screenFrac.h*1.75*h;
+    bg.style.left=(screenFrac.cx*w-gw2/2)+'px';
+    bg.style.top=(screenFrac.cy*h-gh2/2)+'px';
+    bg.style.width=gw2+'px'; bg.style.height=gh2+'px';
   }
   addEventListener('resize',layoutRig);
 
@@ -475,11 +512,11 @@
     if(state!=='off') return;
     $('screenHost').classList.remove('dead');
     $('vga').classList.remove('dead');
-    $('glow').classList.remove('off');
+    $('glow').classList.remove('off'); $('bezelGlow').classList.remove('off');
     state='boot'; booted=false;
     const b=$('bootScr');
     b.style.display='block'; b.textContent='';
-    const failAt=Math.random()<0.5?(3+Math.floor(Math.random()*4)):-1; // 50%: morre no meio
+    const failAt=Math.random()<0.35?(3+Math.floor(Math.random()*4)):-1; // 35%: morre no meio
     let step=0, t0=performance.now();
     const run=(script,offset)=>{
       const tick=()=>{
@@ -523,7 +560,7 @@
     if(brownTimer) clearTimeout(brownTimer);
     $('screenHost').classList.add('dead');
     $('vga').classList.add('dead');
-    $('glow').classList.add('off');
+    $('glow').classList.add('off'); $('bezelGlow').classList.add('off');
     $('bootScr').style.display='none';
   }
 
@@ -535,10 +572,10 @@
     w.classList.add('collapse');
     setTimeout(()=>{
       $('vga').classList.add('dead');
-      $('glow').classList.add('off');
+      $('glow').classList.add('off'); $('bezelGlow').classList.add('off');
       setTimeout(()=>{
         $('vga').classList.remove('dead');
-        $('glow').classList.remove('off');
+        $('glow').classList.remove('off'); $('bezelGlow').classList.remove('off');
         w.classList.remove('collapse');
         w.classList.add('reviving');
         setTimeout(()=>{ w.classList.remove('reviving'); brownoutActive=false; if(after) after(); },520);
@@ -549,7 +586,8 @@
   function scheduleBrownout(){
     if(brownTimer) clearTimeout(brownTimer);
     if(stability>=100) return;
-    const base=(18+stability*1.6)*1000; // s=65 → ~2min médio
+    // s=80 (default) → ~6.6min médio entre quedas; s=0 → ~1-2min; 100 → nunca
+    const base=(60+stability*4.2)*1000;
     const delay=base*(0.5+Math.random());
     brownTimer=setTimeout(()=>{
       if(state!=='off'&&state!=='boot'&&!brownoutActive){
@@ -578,7 +616,7 @@
   });
   dreRef.child('stability').on('value',s=>{
     const v=s.val();
-    stability=(typeof v==='number')?v:65;
+    stability=(typeof v==='number')?v:80;
     if(booted) scheduleBrownout();
   });
   dreRef.child('cardLevel').on('value',s=>{
