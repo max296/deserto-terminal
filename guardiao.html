@@ -497,7 +497,6 @@
         <span style="display:flex;gap:8px">
           <button class="btn" id="dreNewDoc" style="font-size:10px">+ NOVO</button>
           <button class="btn" id="dreSeed" style="font-size:10px">SEMEAR PADRÃO</button>
-          <button class="btn" id="dreResetUnlocks" style="font-size:10px;color:var(--warn)">RESETAR LIBERAÇÕES</button>
         </span>
       </div>
       <div class="hint">Clique num documento para editar. Trava define o que o terminal exige; "censurar" esconde o título no índice dos jogadores.</div>
@@ -2038,7 +2037,7 @@
           <input id="dreF-pass" value="${escapeHtml(d.pass||'')}" style="${inp};width:130px"></div>`:''}
         ${d.lock==='card'?`<div><div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px">NÍVEL DO CARTÃO</div>
           <input id="dreF-cardlvl" type="number" min="1" max="5" value="${d.cardLevel||1}" style="${inp};width:60px"></div>`:''}
-        <div><div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px">NÍVEL EXIBIDO</div>
+        <div><div style="font-size:9px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:3px" title="Só teatro: o carimbo 'DRE//CLASSIFICADO — NÍVEL X' no topo do doc aberto (3+ fica vermelho). Não tranca nada — quem tranca é a TRAVA.">CARIMBO DE NÍVEL (teatro) ⓘ</div>
           <input id="dreF-level" type="number" min="1" max="5" value="${d.level||1}" style="${inp};width:60px"></div>
         <label style="display:flex;gap:6px;align-items:center;font-size:11px;color:var(--ink-dim);cursor:pointer">
           <input type="checkbox" id="dreF-censor" ${d.censor?'checked':''}> censurar título no índice
@@ -2050,7 +2049,6 @@
       <textarea id="dreF-body" style="${inp};width:100%;min-height:170px;resize:vertical;line-height:1.6">${escapeHtml(d.body||'')}</textarea>
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn" id="dreF-save" style="color:var(--live);border-color:var(--live-dim)">SALVAR</button>
-        <button class="btn" id="dreF-relock" style="font-size:10px">RE-TRANCAR (limpa liberação deste doc)</button>
         <button class="btn" id="dreF-del" style="color:var(--danger);margin-left:auto">EXCLUIR</button>
       </div>`;
     el.querySelectorAll('.dreF-lock').forEach(b=>b.addEventListener('click',()=>{
@@ -2084,9 +2082,6 @@
       };
       dreRef.child('docs/'+dreSelId).set(doc);
     });
-    document.getElementById('dreF-relock').addEventListener('click',()=>{
-      dreRef.child('unlocked/'+dreSelId).set(null);
-    });
     document.getElementById('dreF-del').addEventListener('click',()=>{
       if(!confirm('Excluir este documento?')) return;
       dreRef.child('docs/'+dreSelId).set(null);
@@ -2099,10 +2094,6 @@
     const id='doc'+Date.now().toString(36);
     dreRef.child('docs/'+id).set({code:'D-000',title:'NOVO DOCUMENTO',section:'files',lock:'open',level:1,order:50,body:''});
     dreSelId=id;
-  });
-  document.getElementById('dreResetUnlocks').addEventListener('click',()=>{
-    if(confirm('Resetar TODAS as liberações (senhas/cartões já abertos voltam a trancar)?'))
-      dreRef.child('unlocked').set(null);
   });
 
   // energia / estabilidade / cartão
