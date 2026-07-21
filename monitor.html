@@ -239,6 +239,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="firebase-config.js"></script>
 <script>
   // ===== MUNDO: fonte única — default embutido + edições do worldMap (Firebase) =====
@@ -645,10 +646,12 @@
     grabbedNow=v;
   });
   subRef.child('glassCrack').on('value',s=>{
-    const v=!!s.val();
-    if(v&&!glassBad) addLog('⚠ DANO ESTRUTURAL NO VISOR','danger');
+    const raw=s.val();
+    const lvl=raw===true?3:Math.max(0,Math.min(5,raw|0));
+    const v=lvl>0;
+    if(lvl>0&&(!glassBad||lvl>(glassBad|0))) addLog('⚠ DANO ESTRUTURAL NO VISOR — NÍVEL '+lvl+'/5','danger');
     else if(!v&&glassBad) addLog('visor: integridade restaurada');
-    glassBad=v;
+    glassBad=v?lvl:false;
   });
   subRef.child('worldMap').on('value',s=>{
     const v=s.val()||{};
