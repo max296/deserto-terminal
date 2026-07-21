@@ -221,6 +221,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="firebase-config.js"></script>
 <script>
+var _unsubAuth = firebase.auth().onAuthStateChanged(function(_authUser){
+  if(!_authUser) return;
+  _unsubAuth();
   // ====== posicao do visor em cada casco (fração da imagem) ======
   // medido das imagens reais
   const HULLS = {
@@ -3207,4 +3210,5 @@
     if(!newCoral) coralActive = false;
   });
   function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+});
 </script></body></html>
