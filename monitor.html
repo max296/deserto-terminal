@@ -242,6 +242,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="firebase-config.js"></script>
 <script>
+var _unsubAuth = firebase.auth().onAuthStateChanged(function(_authUser){
+  if(!_authUser) return;
+  _unsubAuth();
   // ===== MUNDO: fonte única — default embutido + edições do worldMap (Firebase) =====
   const UNITS_PER_M=10, TILE=40, GRID_ROWS=640;
   let X_MIN_W=-400, GRID_COLS=21, COL_OFFSET=0;
@@ -698,6 +701,7 @@
   },320);
 
   loop();
+});
 </script>
 </body>
 </html>
