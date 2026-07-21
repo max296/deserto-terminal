@@ -163,6 +163,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="firebase-config.js"></script>
 <script>
+var _unsubAuth = firebase.auth().onAuthStateChanged(function(_authUser){
+  if(!_authUser) return;
+  _unsubAuth();
   const dreRef=sessionRef.child('dre');
 
   // ===== MOLDURA: chroma-key do checkerboard + detecção do furo da tela =====
@@ -1140,6 +1143,7 @@
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
+});
 </script>
 </body>
 </html>
